@@ -12,111 +12,117 @@
 | **Modules** | PSUPR, PRMLS, ISSM |
 | **Document version** | v1, for submission |
 
-**CLAIM-CMEV** denotes Cross-Modal Evidence Verification (CMEV) applied to motor claims. CLAIM is a domain prefix rather than an acronym. The name states the method and the application without asserting that the system adjudicates, which is consistent with the non-goals in §2.6.
+**In plain terms:** CLAIM-CMEV checks the repairs and costs listed in a motor survey report against damage photographs and reference repair costs. It gives the surveyor findings to review, with links to the evidence.
+
+CMEV stands for **Cross-Modal Evidence Verification**. “Cross-modal” means using different types of evidence: images and document text. CLAIM identifies the motor-claims application; it is not an acronym.
 
 ---
 
 ## 1. Executive summary
 
-Motor own-damage claims in Singapore are settled on the basis of a visual judgement made by one surveyor standing in front of one vehicle. That judgement produces a parts list, the parts list produces a costed estimate, and the estimate determines the payout. The photographs that support the judgement, often several hundred per claim, are archived and never machine-read. No structured record of part, damage state, and cost accumulates.
+A motor own-damage claim covers damage to the policyholder's own vehicle. The workshop prepares an estimate, a surveyor inspects the vehicle and assesses the repairs, and a claim handler approves the claim. The surveyor's work includes identifying damaged parts, checking repair entries, negotiating costs, and preparing a report.
 
-Two consequences follow. Surveyor capacity is spent on visual recognition work that is repetitive and automatable, which constrains the skilled negotiation and repair-decision work only a surveyor can do. And because no part-level cost history exists, an inflated line item can only be caught by whichever surveyor happens to see it.
+CLAIM-CMEV aims to reduce the manual work involved in preparing and checking that report. It processes the photographs and report separately, then compares their results. The photograph-processing modules identify vehicle parts and visible damage. The document-processing modules extract each repair entry: the part, the proposed operation, and the declared cost. A comparison module checks whether the photographs support the repair entry and whether the cost falls within a reference range.
 
-CLAIM-CMEV addresses both with a single intervention. The system reads the damage photographs and the survey report as two separate modalities, converts each into a structured representation, and reconciles them. Where the declared repair scope is supported by the photographic evidence, the system confirms it. Where a declared part shows no observable damage, or a declared cost falls outside the reference band for that part and vehicle class, the system raises a flag with a stated reason and the specific photograph that justifies it. Where photographic coverage is insufficient to decide, the system requests an additional view rather than flagging.
+The system presents four possible results for each declared entry: no discrepancy found, photographic support missing despite adequate coverage, cost outside the reference range, or insufficient evidence to assess the entry. Visible damage missing from the report is shown separately as a possible repair-list addition. The surveyor reviews the evidence, corrects the list, and records the agreed amounts. Claim approval remains with the claim handler.
 
-The deliverable is a structured pipeline with four stages: a vision branch performing part and damage segmentation, a document branch performing line-item recognition on the survey report, a reconciliation engine, and a surveyor workbench. Every confirmed survey writes a structured record back to a reference cost table, so the productivity system and the cost-baseline system are one system rather than two.
+The project will deliver nine functional modules and the supporting application components needed to connect them: file intake, background processing, data storage, review APIs, and model and cost-table versioning. The prototype will include three working screens: vehicle overview, repair-list review, and evidence viewer. Section 10 defines how these components fit together.
 
-The system is specified as a commercial product rather than as a research prototype. The primary user is the surveyor, working on a tablet in a workshop with vehicles queued behind them, and the interface is designed around that context: pre-filled parts lists reviewed rather than authored, flags dismissible in one action with a recorded reason, and the raw photograph always one tap away from any machine judgement. Sections 5 to 8 set out the commercial positioning, the personas, the surveyor journey, and the interface specification. The product is positioned as a surveyor productivity tool that produces a cost-intelligence asset as a by-product, because the productivity benefit is immediate and measurable while the cost intelligence compounds and is what makes the product durable once installed.
+A longer-term product could build a repair-cost history from reviewed claims and final approved amounts. This would support comparisons between similar repairs. The project will demonstrate that process using synthetic cost data because the team does not have a suitable public dataset linking damage photographs to settled repair costs. Results will therefore show whether the comparison logic works, not whether the system predicts real repair prices accurately.
 
-The project satisfies all four of the technical aspects listed in the module requirements, against a stated minimum of three. It uses supervised learning for segmentation and line-item recognition, unsupervised outlier detection for cost anomalies with no fraud labels used anywhere, transformer-based deep learning across both modalities, hybrid fusion of two independently trained branches in the reconciliation engine, and multi-view aggregation as an intelligent sensing and sense-making step.
+The intended benefits are less manual preparation, more consistent checks, and reusable part-level records. Model accuracy, editing effort, and review usability will be evaluated within the project. Actual time savings and financial benefits require a deployment study.
 
 ---
 
 ## 2. Problem statement and motivation
 
-### 2.1 The problem, in plain terms
+### 2.1 The problem
 
-When a car is damaged in Singapore, nobody looks up what the repair costs. One person decides.
+The surveyor reviews the workshop's estimate, inspects the vehicle, identifies damaged parts, assesses repair or replacement, and negotiates costs. These tasks require both visual recognition and professional judgement.
 
-The workshop writes a bill first. The insurer does not take it on trust, so it sends its own surveyor to the workshop to check. The surveyor walks around the car, decides which panels are damaged, decides for each one whether it can be beaten out or has to be replaced, negotiates the price down, and writes a report. The report contains a list of parts, a price against each part, and often several hundred photographs of the damage.
+The project addresses two limitations in this workflow:
 
-Everything downstream comes from that parts list: what the insurer pays, what goes into the loss data, and what the policyholder's premium looks like next year.
+- **Repeated manual checks.** Surveyors compile parts lists and compare repair entries with photographs. Automating parts of this work could leave more time for repair decisions and negotiation.
+- **Records that are difficult to compare.** Photographs and PDF reports may be retained without a consistent record linking the vehicle, damaged part, repair operation, and cost. Historical claims are then difficult to use as references for a new repair entry.
 
-Two things are wrong with this arrangement.
+For example, a total claim payment of S$2,400 does not show how much was paid to refinish a front bumper. A record linking the bumper, damage type, vehicle model, operation, and approved cost would be more useful for checking a later bumper quote.
 
-**The surveyor spends time on the wrong half of the job.** Looking at a photograph and saying "that is a front bumper and it is dented" is the repetitive half. Judging whether a dented bumper with a radar sensor behind it can be refinished or must be replaced, and arguing the labour hours with a workshop that wants the replacement, is the skilled half. The same person does both, and the first half eats the time available for the second.
+### 2.2 Which repair amount does the system check?
 
-**The evidence is then thrown away.** The report is filed as a PDF. The photographs go into an archive and are never read by anything again, so nothing accumulates. The insurer knows it paid S$2,400 on that claim. It does not hold a record saying that a scuffed front bumper on a 2019 Corolla, refinished rather than replaced, costs a particular amount. That is the record that would let it recognise the next quote that is 40% above it.
+**The system checks the repair costs declared in the surveyor's report.** Three amounts occur at different stages of a claim:
 
-Without that record, an inflated line item can only be caught by whichever surveyor happens to be standing in front of it, on that day, with that queue behind them.
+1. **Workshop estimate:** the workshop's initial proposed repairs and prices. This is the starting point for the surveyor's review and negotiation.
+2. **Surveyor's declared estimate:** the repairs and costs recorded in the survey report. CLAIM-CMEV compares these entries with the photographs and reference cost ranges.
+3. **Final approved amount:** the amount the claim handler approves after review. It becomes available later and can be used to update the historical cost reference.
 
-Both problems have the same cause. The evidence in a motor claim is never converted into data.
+```mermaid
+flowchart TD
+    W["Workshop estimate"] --> S["Surveyor's declared estimate"]
+    S --> A["Claim-handler review and approval"]
+    P["Damage photographs"] --> V["CLAIM-CMEV checks"]
+    S --> V
+    R["Existing reference costs"] --> V
+    V --> H["Surveyor reviews findings"]
+    H --> A
+    A --> F["Final approved amount"]
+    F --> U["Future cost-reference update"]
+```
 
-### 2.2 Three cost objects, distinguished
+The distinction prevents the system from treating an opening quote as an approved repair cost, or using a claim's eventual outcome while assessing that same claim. A surveyor-agreed amount is stored as a reviewed estimate until final approval is recorded. For the project demonstration, final approval is represented by clearly labelled test records; integration with an insurer's approval system is outside scope.
 
-The workflow produces three different money figures that must not be conflated:
+### 2.3 What the system checks
 
-| Symbol | Object | Produced by | Role |
-|---|---|---|---|
-| `C_wks` | Opening repair estimate | Workshop | Negotiating position; not the evidence under test |
-| `C_est` | Declared costed estimate submitted with the survey report | Surveyor | The evidence under test |
-| `C_act` | Post-adjudication approved cost | Claim handler | Realised settlement; the label |
+A **repair entry**, also called a **line item**, contains a part, an operation such as repair or replacement, and a cost. The complete repair list is the **declared repair scope**.
 
-The system interrogates `C_est` against the photographic evidence. `C_act` is the supervisory signal, available only retrospectively.
+| Check | Question | Example finding |
+|---|---|---|
+| Photographic support | Is damage visible on a declared part, in photographs clear enough to assess it? | An adjacent panel is listed for repair, but no damage is detected in the views covering it |
+| Cost range | Is the declared cost within the reference range for a comparable repair? | The price exceeds the range for the same part, operation, damage type, and vehicle class |
+| Missing repairs | Is visible damage absent from the report? | A damaged rear door is not listed |
 
-### 2.3 The task, stated precisely
+Adding an undamaged adjacent panel is sometimes called **panel spillover**. A declared part without supporting damage may be called a **phantom part**. A cost discrepancy could involve excess labour hours or **grade substitution**, such as charging for an original equipment manufacturer (OEM) part when an aftermarket part is fitted. The system identifies entries for review; a cost flag alone cannot establish these causes.
 
-Given a photograph set **P** (tens to hundreds of images of one damaged vehicle) and a declared scope **S** = {(part, operation, cost), …} extracted from the survey report, determine whether **S** is supported by **P**, and localise any part of **S** that is not.
+If a part is not visible, is obscured, or appears only in poor-quality photographs, the result is **insufficient evidence**. The system requests a useful additional view instead of flagging an unsupported repair.
 
-Three discrepancy classes are in scope:
+### 2.4 Industry context
 
-- **Coverage.** A part appears in the declared scope but no damage to it is observable in any photograph. Sub-cases are phantom parts, and panel spillover, where an adjacent undamaged panel is added to the scope of a genuinely damaged one.
-- **Cost band.** A declared operation or price falls outside the observed distribution for that part, damage type, and vehicle class. Sub-cases are labour-hour inflation, and grade substitution, where an OEM part is billed for an aftermarket fitting.
-- **Under-scoping.** Damage is visible in the photographs but absent from the declared scope. This is a repair-quality and policyholder-fairness failure rather than a fraud one, and the system should surface it.
+The current draft records Singapore motor insurance gross written premiums of S$1.28 billion in 2025, a 20.9% share of domestic general insurance, and an underwriting loss of S$6.9 million. It also records an 11% increase in net incurred claims while accident counts stayed broadly flat. The draft attributes these figures to the General Insurance Association of Singapore (GIA), together with an estimate of roughly S$140 million per year spent paying and investigating fraudulent and inflated claims.
 
-### 2.4 The sector-level symptom
+*These figures, their reporting years, and their sources must be verified before submission.*
 
-Motor is the largest domestic general insurance segment in Singapore, with S$1.28 billion in gross written premiums in 2025 and a 20.9% share, and it recorded an underwriting loss of S$6.9 million that year. Net incurred claims rose 11% while recorded accident counts stayed broadly flat. The industry attributes the divergence to rising severity.
+Repair costs can increase for valid reasons, including electric vehicle (EV) batteries, structural aluminium, and advanced driver-assistance systems (ADAS) such as sensors in bumpers and windscreens. Aggregate claim totals cannot by themselves separate these increases from inflated repair entries. Linking damage and repair costs at part level could help insurers investigate the reasons for cost changes.
 
-*[Figures to be cited to GIA annual statistics before submission.]*
+### 2.5 Who is affected
 
-That attribution may well be correct. EV battery packs, structural aluminium, and ADAS sensors embedded in bumpers and windscreens do raise repair costs. But it cannot currently be tested. Rising repair prices and rising claim inflation are observationally identical in aggregate loss data. They separate only at part level, and no insurer holds part-level cost history linked to damage evidence. The sector cannot diagnose its own loss ratio.
-
-Against this, the General Insurance Association of Singapore estimates that roughly S$140 million per year is consumed paying and investigating fraudulent and inflated claims.
-
-### 2.5 Who is worse off
-
-| Stakeholder | Loss under the status quo |
+| Stakeholder | Problem the project addresses |
 |---|---|
-| Insurer | Leakage on inflated line items; no ability to attribute loss-ratio movement to severity or to inflation |
-| Policyholder | Inflation is priced into next year's premiums; under-scoped repairs return the vehicle with undetected damage |
-| Honest workshop | Competes against workshops that inflate, in a market where inflation is not systematically detected |
-| Surveyor | Scarce expert judgement spent on recognition work |
-| Regulator / GIA | No structured basis to distinguish a severity trend from an inflation trend |
+| Insurer | Unnecessary repair payments and limited detail for explaining changes in claims costs |
+| Policyholder | Missing repairs and the potential effect of higher claims costs on premiums |
+| Honest workshop | Difficulty supporting a reasonable quote with comparable repair evidence |
+| Surveyor | Time spent identifying parts, preparing lists, and checking entries manually |
+| Regulator / GIA | Limited structured evidence for analysing repair-cost trends |
 
 ### 2.6 What the system does not do
 
-- **It does not decide the claim.** It pre-fills a parts list and raises flags. A surveyor confirms, edits, and enters the agreed amount. Every output is a proposal.
-- **It does not treat absence of evidence as evidence of absence.** A part declared but not visible in any supplied photograph produces a request for an additional view rather than a flag. Photographic coverage of a damaged vehicle is incomplete by default, and a system that penalises incomplete coverage would penalise honest claims with bad photography.
-- **It does not detect hard fraud.** Staged collisions, phantom passengers, and policy-inception fraud fall outside the evidence this system reads.
-- **It does not use fraud labels.** No component of this project is trained on a fraud outcome. The cost-anomaly component is unsupervised by design, which is both a methodological choice and a requirement given that no such labels are available.
+- Approve or reject a claim, choose a settlement amount, or replace the surveyor's repair judgement.
+- Treat an unphotographed part as an undamaged part.
+- Detect staged collisions, false passenger claims, or fraud at policy inception.
+- Train on fraud outcomes. The project has no fraud labels; unusual costs are identified from reference cost patterns.
 
-### 2.7 Legitimate divergence must be modelled
+### 2.7 Valid reasons for a mismatch
 
-A declared cost can exceed the photographic evidence for honest reasons. The system is only defensible if these are modelled as a distinct class rather than treated as noise:
+A declared repair or cost may be reasonable even when external photographs do not explain it. The review workflow must allow the surveyor to record:
 
-- **Hidden damage.** Structural or mechanical damage discovered on teardown that no external photograph could show.
-- **Genuine severity.** ADAS recalibration, EV battery inspection protocols, and aluminium repair procedures carry real cost that the visible damage does not convey.
-- **Parts price movement.** Supply shocks and model-year changes between the reference period and the claim.
-- **Photographic incompleteness.** Angles, lighting, occlusion, dirt, and standing water.
+- Hidden structural or mechanical damage found after dismantling the vehicle.
+- ADAS calibration, EV inspection, or specialist repair procedures.
+- Changes in parts prices or availability.
+- Poor lighting, obstruction, dirt, water, or missing photographic views.
 
-A system that cannot separate these from inflation would penalise severe damage and bad photography, and any claims operation would be right to reject it.
+These explanations remain part of the assessment record. The system must withhold a judgement when the available evidence cannot support one.
 
-### 2.8 Why this is tractable now
+### 2.8 Why the project is feasible
 
-The photographs already exist. They are captured routinely and in volume, then discarded as data, so the input to an automated assessment is a by-product of a process the insurer already runs. Part segmentation and damage segmentation from vehicle imagery are established tasks with published datasets. So are multi-view aggregation and document-layout extraction from scanned reports.
-
-The reconciliation between them does not exist: reading a costed line of text and asking whether the photographs support it. That is the contribution.
+Claim workflows already produce photographs and reports. Public datasets provide training examples for identifying vehicle parts, locating damage, and extracting document fields. The project connects these tasks through shared part names and a comparison engine. Its contribution is the complete, traceable check of declared repair entries against the available evidence.
 
 ---
 
@@ -124,648 +130,572 @@ The reconciliation between them does not exist: reading a costed line of text an
 
 ### 3.1 Primary goal
 
-Build a working structured pipeline that ingests a claim's damage photographs and survey report, produces a per-line-item assessment of whether the declared repair scope and cost are supported by the photographic evidence, and presents that assessment to a surveyor with the supporting image evidence attached.
+Build a working pipeline that reads a claim's photographs and survey report, checks each declared repair entry, and presents the findings with supporting evidence for surveyor review.
 
-### 3.2 Specific objectives
+### 3.2 Technical objectives
 
-1. **Part segmentation.** Train a segmentation model that identifies vehicle panels from claim-style photographs in a vocabulary that can be mapped to survey-report part names.
-2. **Damage segmentation.** Train a segmentation model that identifies damage type and extent, and intersect its masks with the part masks to produce (part, damage type) observations.
-3. **Multi-view aggregation.** Aggregate per-image observations across the photograph set of one vehicle into a single vehicle-level damage state, with duplicate suppression.
-4. **Line-item recognition.** Extract (part, operation, cost) triples from the survey report with page and line localisation, so that any flag can be traced to its source on the page.
-5. **Cost band modelling.** Learn a reference cost band per (part, damage type, vehicle class) key, with a calibrated prediction interval rather than a point estimate.
-6. **Reconciliation.** Implement the coverage, cost-band, and evidence-sufficiency checks, and produce a per-line-item verdict with a stated reason.
-7. **Workbench.** Present the assessment in a surveyor-facing interface, capture confirmations and edits, and write structured records back.
+1. **Identify vehicle parts.** Label the image regions belonging to each supported vehicle part.
+2. **Identify damage.** Label damage type and affected area, then match each damage region to its part.
+3. **Combine views.** Merge observations across photographs of the same vehicle without counting the same damage repeatedly.
+4. **Extract repair entries.** Read each part, operation, and cost from the report, keeping the source page and location.
+5. **Build reference cost ranges.** Estimate lower and upper bounds for comparable repairs and report how many records support each range.
+6. **Compare the results.** Check photographic support, costs, and missing repairs. Explain findings and withhold judgement when evidence is insufficient.
+7. **Store reviewed records.** Save surveyor corrections and agreed amounts, and support a separate update using final approved costs.
 
 ### 3.3 Product objectives
 
-Alongside the modelling objectives, the project delivers the product artefacts that make the system usable rather than merely functional:
-
-8. **Surveyor workbench prototype.** Implement the vehicle overview, reconciliation, and evidence screens as a working interface against real model output (§8.10).
-9. **Interface specification.** Specify all six screens and the audit view, including the interaction rules that follow from the field context, so that the unimplemented screens are documented rather than absent.
-10. **User journey definition.** Establish the current-state and target-state surveyor journey with the intervention points identified, so that the productivity claim is anchored to specific workflow steps rather than asserted in general.
+8. Build the vehicle overview, repair-list review, and evidence viewer using real model output.
+9. Specify the remaining screens and audit view, with static mockups showing their intended behaviour.
+10. Describe and evaluate the workflow steps where the system could reduce manual effort.
 
 ### 3.4 Research questions
 
-- **RQ1.** Can part and damage segmentation trained on public and synthetic data produce a vehicle-level damage state accurate enough to support line-item reconciliation, and what is the accuracy ceiling imposed by photographic conditions?
-- **RQ2.** Does joint part-and-damage supervision from synthetic data improve mask intersection quality over independently trained part and damage models?
-- **RQ3.** Can multi-view aggregation reduce duplicate damage counting to a level where the vehicle-level state is usable, and what is the residual error?
-- **RQ4.** Does a calibrated interval cost model produce flag rates that a claims operation could act on, and how does flag precision degrade as reference-table support thins?
+- **RQ1:** Are the part and damage models accurate enough to produce a useful vehicle damage summary? How do photograph quality and coverage affect the result?
+- **RQ2:** Does training with synthetic images labelled for both parts and damage improve the matching of damage regions to vehicle parts?
+- **RQ3:** How well does combining views remove duplicate detections, and what errors remain in the vehicle summary?
+- **RQ4:** How useful are the cost flags, and how does their precision change when fewer comparable reference records are available?
 
-### 3.5 What is explicitly out of scope
+### 3.5 What is outside the project scope
 
-Real-time deployment, integration with a production claims management system, hard-fraud detection, structural damage inference from external photographs, and any claim of validated repair-cost prediction against real workshop invoices. The last of these is discussed in §12.4.
+Production deployment, real-time processing guarantees, integration with a live claims-management system, automated settlement, detection of non-visual fraud, and inference of hidden structural damage are outside scope. The project also cannot validate repair-cost accuracy against real workshop invoices with the data currently available (§12.4).
 
 ---
 
 ## 4. Mapping to course requirements
 
-The module requires that the project develop, integrate, and demonstrate at least three of four listed aspects. This project addresses all four.
+The proposal targets the course's minimum of three of four required aspects and aims to demonstrate all four. The table lists the proposed methods and also identifies the intelligent sensing contribution. The grouping and the treatment of cost anomaly detection should be confirmed against the assessment rubric before submission.
 
-| Required aspect | Where it is satisfied | Evidence at assessment |
+| Aspect | Proposed implementation | Evidence for assessment |
 |---|---|---|
-| **Supervised learning** | Module 1 part segmentation (21 classes); Module 2 damage segmentation (8 classes); Module 4 line-item recognition on annotated documents; Module 6 cost band regression | Trained model weights, per-class evaluation metrics, held-out test results |
-| **Unsupervised learning** | Module 7 cost outlier detection. No fraud labels are used anywhere in the project. Deviation from the learned band is the anomaly signal, and the band is learned from cost data alone. | Outlier scores on held-out estimates; flag rate distribution; behaviour under injected anomalies |
-| **Machine learning / deep learning** | SegFormer hierarchical transformer encoders for both segmentation heads; LayoutLMv3 or Donut for visually rich document understanding; gradient boosting with conformal intervals for the cost model | Architecture documentation, training curves, ablations |
-| **Hybrid / ensemble approach** | Module 8 reconciliation engine fuses two independently trained modalities. The vision branch and document branch share no weights and no training data; their outputs are combined only at the assessment stage. | Comparison of reconciliation performance against each branch alone |
-| **Intelligent sensing / sense-making** | Module 3 multi-view aggregation converts many raw images into one structured vehicle-level damage state | Duplicate suppression rate; per-vehicle state accuracy against ground truth |
+| Supervised learning | Part segmentation (Module 1), damage segmentation (Module 2), line-item recognition (Module 5), and cost regression (Module 6) | Trained models and results on data kept separate from training |
+| Unsupervised learning | Cost anomaly detection without fraud labels (Module 7); course classification to confirm | Cost deviation scores, flag rates, and results on deliberately altered repair entries |
+| Machine learning / deep learning | SegFormer for image segmentation; LayoutLMv3 or Donut for document extraction; gradient boosting for costs | Model design, training results, and comparisons between configurations |
+| Hybrid / ensemble approach | Combine the independently trained image and document outputs in Module 8 | Compare the combined result with each branch used alone |
+| Intelligent sensing / sense-making | Combine many photographs into one vehicle damage summary in Module 3 | Duplicate-removal results and accuracy of the vehicle summary |
 
-The unsupervised and hybrid aspects deserve a note, because both are easy to claim weakly and both are load-bearing here.
+**Supervised cost prediction and anomaly detection are different steps.** Module 6 learns a range from cost examples. Module 7 checks for unusual values relative to that range. Neither uses fraud outcomes, but the absence of fraud labels does not by itself make cost regression unsupervised. The team must confirm that the selected anomaly method meets the course requirement.
 
-The **unsupervised** claim rests on the absence of fraud labels. This is not a limitation dressed as a feature. No public dataset labels motor claim line items as inflated, and an insurer's internal fraud outcomes are unavailable to this project. The cost model therefore learns what normal costs look like from cost data alone, and anomaly is defined as deviation from the learned interval. This is the appropriate method given the data, and it is genuinely unsupervised.
-
-The **hybrid** claim rests on the two branches being independent. The vision branch is trained on segmentation datasets and never sees a survey report. The document branch is trained on business documents and never sees a vehicle photograph. The reconciliation engine is where the two meet, and its input is two structured representations rather than two feature vectors. This is fusion at the decision level, and the ablation in §14 is designed to demonstrate what the fusion adds.
+**The image and document models meet after prediction.** Each produces a structured result, and the comparison engine combines those results. This is called decision-level fusion. It allows findings to retain links to their source photographs and report entries.
 
 ---
 
-## 5. Product definition and commercial framing
+## 5. Proposed product and commercial model
 
-### 5.1 What is being sold
+### 5.1 Product purpose
 
-CLAIM-CMEV is decision-support software sold to motor insurers, deployed into the survey and adjudication step of own-damage claims handling. It is not sold as a fraud detection product and it is not sold as an automated settlement engine. Both of those positions have been tried in this market and both create a procurement objection the product cannot answer: an insurer will not buy a system that makes payment decisions it cannot defend to a regulator or a complainant.
+CLAIM-CMEV is proposed as decision-support software for motor insurers. Its primary purpose is to help surveyors prepare and check repair assessments. Structured records created during review would also support repair-cost analysis over time.
 
-The product is positioned instead as a **surveyor productivity tool that produces a cost-intelligence asset as a by-product**. That framing matters commercially as well as technically. The productivity benefit is immediate, measurable in the first month, and attributable to a named cost centre. The cost-intelligence benefit compounds over time and is what makes the product hard to displace once installed, because the accumulated reference table belongs to the deployment and grows with use.
+The immediate benefit to evaluate is reduced manual effort. The longer-term benefit is a growing history of comparable repairs and approved costs. Both are intended outcomes that require evidence from deployment.
 
-### 5.2 Value proposition by buyer
+### 5.2 Value to buyers
 
-| Buyer | What they are buying | How they measure it |
+| Buyer | Intended benefit | Measure |
 |---|---|---|
-| Head of Motor Claims | Throughput per surveyor without headcount growth | Claims closed per surveyor per week; survey turnaround time |
-| Chief Underwriting Officer | Ability to attribute loss-ratio movement to severity or to inflation | Part-level cost trend series that did not previously exist |
-| Head of SIU | Systematic pre-screening of estimates instead of sampled review | Proportion of estimates checked; recovery per investigator hour |
-| Chief Risk / Compliance | An auditable, explainable assist that keeps the human decision-maker in place | Complete audit trail per flag; documented model governance |
-| CFO | Reduced leakage on inflated line items | Leakage per claim before and after |
+| Head of Motor Claims | More assessments completed with the available surveyors | Claims completed per surveyor; turnaround time |
+| Chief Underwriting Officer | More detail on changes in repair costs | Cost trends by part, operation, and vehicle class |
+| Head of Special Investigation Unit (SIU) | Consistent screening of repair entries | Review coverage and investigation yield |
+| Risk / Compliance | Assessments that can be reconstructed and explained | Completeness of evidence and review records |
+| Chief Financial Officer | Fewer unnecessary repair payments | Validated change in avoidable cost per claim |
 
 ### 5.3 Commercial model
 
-The intended model is a per-claim-processed subscription with a platform fee, rather than per-seat licensing. Per-claim aligns the vendor's revenue with the volume the insurer actually runs through the system, and it avoids the failure mode where an insurer buys ten seats and uses two.
+The proposed pricing is a platform fee plus a charge per claim processed. Each insurer owns its reference cost data, which is kept separate from other customers' data. A commercial deployment would run inside the insurer's environment or in a dedicated customer environment, with controlled access to claim documents and photographs.
 
-Two commercial characteristics follow from the architecture rather than from a pricing preference. First, the reference cost table is **tenant-owned and tenant-isolated**. An insurer's settled-cost history is competitively sensitive and no insurer will accept it being pooled across a vendor's customer base. Second, the system is deployed **inside the insurer's environment or a dedicated tenant**, because claim photographs contain licence plates, location metadata, and in some cases identifiable people.
+### 5.4 Deployment stages
 
-### 5.4 Deployment sequencing
-
-| Stage | Scope | Commercial purpose |
+| Stage | What happens | Evidence needed before progressing |
 |---|---|---|
-| Pilot | One claim type, one workshop panel, shadow mode with no surveyor-facing output | Establish baseline accuracy against surveyor decisions without changing anyone's workflow |
-| Assisted | Surveyor workbench live; pre-fill and flags visible; all decisions human | Prove the productivity claim on real throughput |
-| Accumulating | Write-back active; reference table refreshing from confirmed surveys | Cost intelligence becomes available; product becomes hard to remove |
-| Portfolio | Cost trend reporting to underwriting and pricing | Expands the buying centre beyond claims |
+| Pilot in shadow mode | Process a limited set of claims without showing findings to surveyors | Compare results with existing assessments and measure errors |
+| Assisted review | Show proposed parts lists, findings, and evidence | Measure review effort, corrections, and surveyor feedback |
+| Cost-history updates | Add eligible final approved records to new cost-table versions | Check record quality, coverage, and price-range calibration |
+| Portfolio reporting | Summarise cost trends for claims and underwriting teams | Confirm that trends have sufficient data and a clear interpretation |
 
-Shadow mode first is a deliberate commercial choice as much as a technical one. It lets the insurer see accuracy on their own claims before any surveyor is asked to change how they work, which removes the largest objection in the sales conversation.
+These stages describe a future commercial rollout. The project demonstrates processing, review, and a controlled cost-reference update using test data.
 
-### 5.5 Competitive position and honest limits
+### 5.5 Product limits
 
-Existing automated damage assessment products predict damage and estimate cost from photographs. CLAIM-CMEV does something narrower and more defensible: it does not produce an independent estimate, it tests a declared estimate against the evidence supplied with it. That distinction is the product's position. It means the system never has to be right about what a repair should cost in absolute terms; it has to be right about whether a specific declared line is supported.
-
-Three limits are stated to buyers rather than discovered by them. The system cannot see hidden or structural damage. It cannot distinguish genuine severity from inflation where the severity is invisible in a photograph. And its cost bands are only as good as the settled-claims history behind them, which means coverage is uneven and thin coverage produces abstention rather than a guess.
+CLAIM-CMEV checks an existing repair assessment. It does not generate a settlement amount. It cannot explain costs caused by damage that is invisible in the supplied evidence, and it cannot prove inflation from a price difference alone. Reference ranges also depend on the quantity, quality, and age of their source records.
 
 ---
 
 ## 6. Users and personas
 
-The survey step has one primary user. Everyone else consumes its output.
+| ID | User | Role |
+|---|---|---|
+| **P1** | **Surveyor / motor assessor** | Primary user. Reviews parts and findings, checks evidence, corrects entries, and records agreed amounts |
+| P2 | Claims executive / handler | Uses the reviewed assessment and records the final approval |
+| P3 | SIU investigator | Examines selected claims and their supporting records |
+| P4 | Claims operations manager | Monitors claim progress, processing time, and review patterns |
+| P5 | Model risk / compliance officer | Reviews evidence, model versions, cost-table versions, and human decisions |
+| P6 | Workshop manager | Receives questions about specific repair entries during negotiation |
+| P7 | Policyholder | Indirect beneficiary of complete repairs and efficient assessment; does not operate the system |
 
-| # | Persona | Role in the product | Frequency of use |
-|---|---|---|---|
-| **P1** | **Surveyor / motor assessor** | **Primary user.** Works in the workbench on every claim. Confirms, edits, or rejects each proposed line and enters the agreed amount. | Every claim, many times daily |
-| P2 | Claims executive / handler | Receives the completed structured assessment and settles against it. Sees flags that survived surveyor review. | Every claim, downstream |
-| P3 | SIU investigator | Power user. Reviews claims where flags cluster or repeat across a workshop. Uses the structured history for pattern work. | Selective, deep use |
-| P4 | Claims operations manager | Monitors throughput, flag rates, override rates, and queue health. Does not open individual claims routinely. | Daily dashboard |
-| P5 | Model risk / compliance officer | Audits how flags were produced, which model version and which cost-table version applied, and whether the human remained the decision-maker. | Periodic and on complaint |
-| P6 | Workshop manager | Indirect user. Receives a challenge on a specific line with the photograph attached rather than a general dispute about the total. | Per disputed claim |
-| P7 | Policyholder | Not a user. Benefits through faster settlement and through under-scoping being surfaced rather than missed. | Never |
+### 6.1 Primary user: the surveyor
 
-**A note on primacy.** An earlier internal product specification treated the claims executive as the primary user. The current architecture centres the surveyor, and this proposal follows the architecture. The reason is that the surveyor is the only person in the chain who is standing in front of the vehicle at the moment the parts list is created, which makes them both the largest beneficiary of pre-fill and the only person who can supply the confirmation that the write-back loop needs. The claims executive is a consumer of the output, not the operator of the system.
+The surveyor works near the vehicle, usually with a tablet or phone. Lighting and network coverage may be poor, and other vehicles may be waiting. The interface must support quick review and access to original evidence.
 
-### 6.1 Primary persona detail: the surveyor
-
-**Context of use.** Standing in a workshop, often outdoors or in a covered bay, on a tablet or phone rather than a desk. Frequently one-handed. Poor lighting, poor connectivity, gloves sometimes. Several vehicles queued behind the current one.
-
-**Goals.** Get through the queue. Not miss damage that will resurface as a supplementary claim. Not concede a replacement where a repair would do. Have a defensible reason for every figure entered.
-
-**Frustrations with the status quo.** Re-typing a parts list that the photographs already show. Arguing price without data. Being second-guessed later with no record of why a decision was made.
-
-**What would make them reject the product.** Being told they are wrong by a system that cannot see what they can see. Extra clicks per claim. Anything that slows the queue. Flags they cannot dismiss and cannot explain.
-
-That last point drives the interface design more than any other requirement. Every flag must be dismissible in one action, and every dismissal must be recorded rather than argued with.
+The surveyor needs to identify all relevant damage, assess repair or replacement, negotiate reasonable costs, and explain the final assessment. The system is useful only if its proposed list saves work and its findings are easy to verify or correct.
 
 ---
 
-## 7. Surveyor user journey
+## 7. Surveyor workflow
 
-### 7.1 Current state
+### 7.1 Current workflow
 
-| Step | Action | Time | Pain |
+The timings below are planning estimates from the proposal and still require validation with a practising surveyor.
+
+| Step | Current activity | Estimated time | Proposed support |
 |---|---|---|---|
-| 1 | Travel to workshop | 30–60 min | Unavoidable |
-| 2 | Walk the vehicle, note damage | 10–20 min | Skilled work, appropriate |
-| 3 | Photograph damage from all angles | 10–15 min | Necessary, already digital |
-| 4 | Compile parts list manually | 15–25 min | **Repetitive; the target** |
-| 5 | Cross-check workshop estimate line by line | 15–30 min | **Rationed by queue pressure; the target** |
-| 6 | Negotiate scope and price | 15–45 min | Skilled work, appropriate |
-| 7 | Write report, attach photographs | 20–30 min | **Repetitive; partially the target** |
-| 8 | Submit; report filed as PDF | 5 min | **Evidence lost as data here** |
+| 1 | Travel to workshop | 30–60 min | None |
+| 2 | Inspect the vehicle | 10–20 min | Evidence available for reference |
+| 3 | Photograph the damage | 10–15 min | Indicate missing or inadequate views |
+| 4 | Compile the parts list | 15–25 min | Propose damaged parts from photographs |
+| 5 | Check repair entries | 15–30 min | Compare the declared assessment with evidence and costs |
+| 6 | Negotiate repairs and prices | 15–45 min | Show evidence and reference ranges |
+| 7 | Prepare the report | 20–30 min | Save structured entries and produce an assessment export |
+| 8 | Submit the assessment | About 5 min | Retain the reviewed record and its evidence links |
 
-Steps 4, 5, and 7 are where the product intervenes. Steps 2 and 6 are deliberately untouched, because they are the work only a surveyor can do.
+### 7.2 Proposed workflow
 
-### 7.2 Target state
+```mermaid
+flowchart TD
+    A["Inspect vehicle and upload photographs"] --> B["Review proposed damaged parts"]
+    B --> C["Provide draft survey report or structured repair entries"]
+    C --> D["Run evidence and cost checks"]
+    D --> E["Review findings and source evidence"]
+    E --> F{"More evidence needed?"}
+    F -->|Yes| G["Add a photograph, correct an entry, or record an explanation"]
+    G --> D
+    F -->|No| H["Negotiate and record agreed repairs and amounts"]
+    H --> I["Submit reviewed assessment"]
+    I --> J["Claim handler records final approval later"]
+```
 
-| Step | Action | Change |
-|---|---|---|
-| 1 | Travel to workshop | Unchanged |
-| 2 | Walk the vehicle, note damage | Unchanged |
-| 3 | Photograph damage; images upload as captured | Capture guidance prompts for missing angles |
-| 4 | **Open workbench: parts list already populated** | Compiled, not typed. Surveyor reviews rather than authors. |
-| 5 | **Review flagged lines with evidence attached** | Every line pre-checked, not a sample. Flags carry photograph and band. |
-| 6 | Negotiate scope and price | Unchanged, but now with the band as a reference position |
-| 7 | Confirm, edit, or reject each line; enter agreed amounts | Structured entry replaces free-text authoring |
-| 8 | Submit; **structured record written back** | Evidence becomes data. Report generated from the structure. |
+The photograph-based parts list can be prepared before a survey report exists. Full comparison starts only when a draft survey report or surveyor-entered repair list is available. This distinction avoids requiring a completed report before the surveyor can use the parts-list assistance.
 
-### 7.3 The journey in narrative form
+### 7.3 Example review
 
-The surveyor arrives at the workshop with the claim already open on the tablet. Photographs taken at intake, or by the workshop, have already been processed, so the workbench is populated before the surveyor touches it.
+An illustrative cost finding could read: “Quarter panel repair declared at S$1,150. Reference range: S$620–S$890, based on 47 comparable records.” The surveyor can inspect the damage photographs and reference information, then accept the finding or dismiss it with a reason.
 
-They walk the vehicle as they always have. This is the part the product does not attempt to replace, and the interface stays out of the way during it.
+An illustrative photographic finding could read: “No damage detected on the front bumper in four adequate covering views.” The linked photographs let the surveyor check the model's result. If the bumper cannot be assessed from those photographs, the interface asks for better evidence instead.
 
-They then open the parts list. It is already populated with the panels the system observed as damaged, each with the damage type and the photograph that shows it. The surveyor's task is review rather than authoring. Where the system got a panel right, they confirm it. Where it missed a panel, they add it, and the addition is recorded as a miss for later evaluation. Where it proposed a panel that is not damaged, they remove it, and that is recorded too.
+After negotiation, the surveyor records the agreed repair entries. The system preserves both the original entries and the reviewed values. Final approved amounts are recorded separately when they become available (§2.2).
 
-Next they work the flags. Each flag states what it is, why it fired, and what evidence supports it. A flag reading *front bumper declared for replacement, no damage observed in the four photographs covering that panel* is shown with those four photographs and the part mask overlaid. A flag reading *quarter panel repair declared at S$1,150, reference band S$620 to S$890, based on 47 comparable claims* is shown with the band and its support count. The surveyor either accepts the flag and takes it into the negotiation, or dismisses it in one action with a reason chosen from a short list.
+### 7.4 What will determine adoption
 
-Where the system could not decide, it says so rather than guessing. A part declared but not visible in any photograph produces a request for another view, not an accusation. The surveyor either takes the photograph or records why it cannot be taken.
-
-They then negotiate as they always have, with the band available as a reference position rather than as a ruling.
-
-Finally they enter the agreed amount per line and submit. The report is generated from the structured record rather than typed, and each confirmed line writes back to the reference cost table. The next surveyor working on a comparable vehicle gets a slightly better band because of it.
-
-### 7.4 Critical journey moments
-
-Three moments determine whether the product is adopted or abandoned.
-
-**First open of a populated parts list.** If the pre-filled list is visibly wrong on the first claim, trust is lost and every subsequent list is treated as noise. This is why shadow mode precedes assisted mode, and why pre-fill accuracy is a first-class metric in §14.3.
-
-**First flag the surveyor disagrees with.** The system will be wrong sometimes. What matters is that disagreement is cheap. One action to dismiss, a reason recorded, no argument, no escalation, no repeat of the same flag on the same line.
-
-**First flag the surveyor agrees with.** This is where the product earns its place. A flag that catches a line the surveyor would have passed under queue pressure, presented with the photograph that proves it, converts a sceptic.
+- The proposed parts list must save more editing work than it creates.
+- Each finding must explain the issue and link directly to the supporting evidence.
+- A surveyor must be able to correct an entry or dismiss a finding without unnecessary steps.
+- A dismissed finding must not reappear unchanged on the same assessment revision.
 
 ---
 
 ## 8. User interface specification
 
-Six screens. The workbench is the product; everything else is periphery.
+The product design contains six screens and an audit view. The prototype implements Screens 2, 3, and 4. The other views are static mockups.
 
 ### 8.1 Screen 1 — Claim queue
 
-**User:** P1, P4.
-
-Claims awaiting survey, sorted by age with an optional sort by flag count. Each row shows claim reference, vehicle, photograph count, processing status, and the number of flags raised. Processing status matters because a surveyor arriving at a workshop needs to know whether the vision branch has finished before they open the claim.
+**Users:** P1, P4. Show claim reference, vehicle, photograph count, processing state, and finding count. Distinguish queued, processing, ready, incomplete, and failed claims. A processing failure must not appear as a completed assessment with no findings.
 
 ### 8.2 Screen 2 — Vehicle overview
 
-**User:** P1.
+**User:** P1. Show a vehicle diagram with damaged parts highlighted and a coverage indicator for each supported part. Separate “damage detected”, “no damage detected in adequate views”, and “not assessable”. List possible damaged parts not yet included in the repair report.
 
-The observed damage state at a glance, before any line-by-line work. A schematic vehicle diagram with observed-damaged panels highlighted, a photograph coverage indicator per panel region, and a count of declared lines against observed damage.
+### 8.3 Screen 3 — Parts list and comparison
 
-The coverage indicator is the important element and it is easy to omit. It shows which regions of the vehicle have adequate photographic coverage and which do not, so the surveyor can take the missing photographs before starting the review rather than being interrupted partway through.
+**User:** P1. Show one row per declared entry with part, operation, declared cost, result, reference range, and review action. Keep the original declared value visible when an entry is edited.
 
-### 8.3 Screen 3 — Parts list and reconciliation (the primary screen)
-
-**User:** P1.
-
-A table with one row per declared line item. Columns: part, operation, declared cost, verdict, reference band, and action.
-
-Verdicts render distinctly and in a fixed order of visual weight:
-
-| Verdict | Presentation | Available actions |
+| Internal result | Display label | Review action |
 |---|---|---|
-| `ok` | Neutral, no styling | Confirm; Edit |
-| `unsupported` | Flagged, prominent | View evidence; Accept flag; Dismiss with reason |
-| `cost_outlier` | Flagged, with band shown inline | View comparables; Accept flag; Dismiss with reason |
-| `insufficient_evidence` | Informational, distinct from flags | Request photograph; Mark as unphotographable with reason |
+| `ok` | No discrepancy found in the available checks | Confirm or edit |
+| `unsupported` | No visible damage detected in adequate views | View evidence; accept or dismiss finding |
+| `cost_outlier` | Cost outside reference range | View range and supporting record count; accept or dismiss finding |
+| `insufficient_evidence` | More information needed | Request a view, correct extraction, or record a manual assessment |
 
-The fourth verdict must not look like a flag. It is a request, not an accusation, and if the interface renders it in the same visual language as a flag then the design has undone the reasoning in §2.6.
+`insufficient_evidence` is informational and must look different from a discrepancy flag. Its explanation identifies whether the missing information is photographic, documentary, or cost-related.
 
-**Additions.** A surveyor can add a line the system did not propose. Additions are recorded as system misses and feed evaluation.
+Show possible missing repairs in a separate list because they have no declared report row yet. The surveyor can add, edit, or dismiss a proposed entry. Record additions and removals for evaluation; an addition is not automatically a model error, since it may reflect newly discovered hidden damage.
 
-**One-action dismissal.** Every flag can be dismissed in a single interaction with a reason selected from a short fixed list: hidden damage expected, ADAS or calibration cost, parts price movement, photograph inadequate, system error, other. The reason list is short deliberately, because a long list under queue pressure produces whatever option sits first.
+**Dismissal:** selecting a reason records the dismissal without another confirmation step. The proposed reasons are hidden damage, ADAS or calibration cost, parts price change, inadequate photograph, system error, and other. The team will agree the final list before implementation.
 
 ### 8.4 Screen 4 — Evidence viewer
 
-**User:** P1, P3.
+**Users:** P1, P3. Show the relevant photographs with part and damage overlays. An overlay is a coloured region marking the model's prediction. Allow one-tap access to the original photograph and navigation through all views covering the part. Also show the source report page with the declared entry highlighted.
 
-Opened from any flag. Shows the photographs covering the disputed panel with the part mask and damage mask overlaid, a toggle to hide overlays and see the raw image, and the ability to page through every photograph that covers that panel.
+### 8.5 Screen 5 — Cost range detail
 
-Mask overlay must be toggleable. A surveyor needs to see the unmodified photograph to make their own judgement, and an interface that only shows the machine's interpretation of the image is asking them to trust rather than to verify.
-
-### 8.5 Screen 5 — Cost band detail
-
-**User:** P1, P3.
-
-Opened from a cost flag. Shows the band, the declared value against it, the support count behind the band, the as-of date of the cost table version applied, and a distribution view of comparable settled claims.
-
-Support count and as-of date are displayed rather than hidden. A band derived from twelve records is a weak argument and the surveyor should be able to see that it is weak, because presenting a thin band with the same confidence as a well-supported one is how a system loses credibility permanently.
+**Users:** P1, P3. Show the declared amount against the lower and upper reference bounds, the number of supporting records, the comparison criteria, currency, and cost-table date and version. A distribution chart can show how comparable approved costs are spread within and around the range. Synthetic demonstration data must be labelled as synthetic.
 
 ### 8.6 Screen 6 — Operations dashboard
 
-**User:** P4, P5.
-
-Claims processed, average survey time, flag rate by type, surveyor override rate by flag type, and reference table coverage by vehicle class.
-
-**Override rate is the health metric, not flag rate.** A high flag rate with a high override rate means the system is generating noise. A moderate flag rate with a low override rate means it is working. Presenting flag volume alone would create pressure to tune for more flags, which is the wrong incentive.
+**Users:** P4, P5. Show claims processed, processing and review times, findings by type, dismissal rates, and reference-data coverage. Review dismissal rates alongside finding counts: a high count alone does not show useful performance.
 
 ### 8.7 Audit view
 
-**User:** P5.
+**User:** P5. For a historical assessment, show its input revision, original and edited entries, findings, linked evidence, model and cost-table versions, reviewer actions, reasons, and approval status. These records allow a later reviewer to reconstruct the assessment.
 
-For any historical claim: every flag raised, the model version and cost-table version that produced it, the evidence linked, the surveyor's action, the dismissal reason if any, and the final agreed amount. This exists because a complaint or a regulatory query about a specific claim must be answerable months later, and because the governance position in §5.2 is unsupportable without it.
-
-### 8.8 Interface requirements that follow from the field context
+### 8.8 Interface requirements
 
 | Requirement | Reason |
 |---|---|
-| Works on tablet at arm's length, one-handed where possible | Surveyor is standing at a vehicle, not at a desk |
-| Legible in direct sunlight and in a dim covered bay | Workshop conditions |
-| Tolerates intermittent connectivity; queues submissions | Workshops frequently have poor coverage |
-| No flag can require more than one action to dismiss | Queue pressure; see §7.4 |
-| Raw photograph always reachable in one tap from any flag | Verification, not trust |
-| Every screen states which cost-table version is in use | Reproducibility of any flag |
+| Large controls and text readable on a tablet | The surveyor may be standing beside a vehicle |
+| Clear display in bright and dim conditions | Workshop lighting varies |
+| Preserve unsent edits during a connection interruption and show retry status | A failed submission must not lose review work |
+| Dismiss a finding by selecting its reason | Keep repeated review actions quick |
+| Open the original photograph in one tap from a photographic finding | Support independent inspection |
+| Show the assessment and cost-table versions | Identify which results are being reviewed |
+| Separate processing failure, missing evidence, and a completed check | Prevent incomplete work from appearing as a successful assessment |
 
-### 8.9 What the interface deliberately does not include
+### 8.9 Excluded interface behaviour
 
-No recommended settlement figure. No confidence score presented as a percentage next to a payout. No ranking of workshops by suspicion. No automatic escalation of a claim without a surveyor action.
+The interface does not recommend a settlement amount, assign a fraud probability to a payout, rank workshops by suspicion, or escalate a claim automatically. Payment and escalation decisions require human action.
 
-Each of these was considered and excluded for the same reason: they move the system from proposing to deciding, which contradicts §2.6 and would make the product unsellable to the compliance buyer in §5.2.
+### 8.10 Prototype scope
 
-### 8.10 Project scope for the interface
+Screens 2–4 will use actual pipeline results. The prototype will support evidence navigation, edits, dismissals, review persistence, and a basic structured assessment export. Screens 1, 5, 6, and the audit view will be static mockups; the underlying evidence and review records will still be stored for testing.
 
-Within this project, the team implements Screens 2, 3, and 4 as a working prototype. These three carry the demonstration end to end: observed state, reconciliation, and evidence. Screens 1, 5, and 6 and the audit view are specified here and implemented as static mockups only. This is stated so that the scope boundary is visible rather than discovered at demonstration.
+The prototype will demonstrate preservation and retry of unsent review edits. Full offline file synchronisation, production identity integration, live claim approval, and insurer-specific report generation are outside the build scope.
 
 ---
 
 ## 9. Solution overview
 
-CLAIM-CMEV is a structured pipeline rather than an end-to-end model. Three considerations drove this choice.
+The system uses separate image and document models, followed by explicit comparison rules. This allows each model to use an appropriate training dataset and makes it possible to trace a finding to a photograph, report entry, and cost-table version.
 
-**Traceability.** A flag raised against a claim must be explainable to a surveyor, to a claims manager, and potentially to a policyholder. A structured pipeline produces an intermediate representation at each stage, so a flag can be traced back to a specific mask on a specific photograph and a specific line on a specific page. An end-to-end model would produce a score without that trail.
+The system answers two different questions. Photographs support a judgement about **visible damage**. Historical records support a judgement about **cost comparability**. Neither establishes that a particular repair operation is technically required; the surveyor retains that decision.
 
-**Modularity under a fixed budget.** The project has five members and a bounded time budget. A structured pipeline decomposes into modules with defined interfaces, which allows parallel work. An end-to-end model would serialise the team behind a single training loop.
+### 9.1 Decision flow for a declared repair entry
 
-**Data availability.** Each stage can be trained on data that exists. An end-to-end model would require paired (photograph set, survey report, outcome) training data, which does not exist publicly and cannot be assembled within this project.
+```mermaid
+flowchart TD
+    A["Declared repair entry"] --> B{"Entry readable<br/>and supported?"}
+    B -->|No| I["Insufficient evidence:<br/>explain what is missing"]
+    B -->|Yes| C{"Adequate views?"}
+    C -->|No| I
+    C -->|Yes| D{"Damage detected?"}
+    D -->|No| U["Unsupported:<br/>show covering views"]
+    D -->|Yes| E{"Comparable range<br/>with enough records?"}
+    E -->|No| I
+    E -->|Yes| F{"Cost within range?"}
+    F -->|No| O["Cost outlier:<br/>show range and evidence"]
+    F -->|Yes| K["No discrepancy found"]
+```
 
-End-to-end fusion and contrastive alignment between the two modalities are retained as experimental comparators (§14.5) rather than as the deliverable. They answer the question of what the structured pipeline gives up, without putting the deliverable at risk.
+The engine stores each check separately as well as the overall result. For example, an entry may have photographic support but insufficient cost history. The interface must show that distinction rather than imply that no check was completed.
 
-The system produces one of four verdicts per declared line item:
+### 9.2 Finding repairs missing from the report
 
-| Verdict | Condition | Action presented to surveyor |
-|---|---|---|
-| `ok` | Declared part observed damaged; declared cost within band | Pre-filled, no flag |
-| `unsupported` | Declared part not observed damaged in any photograph that covers it | Flag with the covering photographs shown |
-| `cost_outlier` | Part observed damaged; declared cost outside band | Flag with band, support count, and comparable claims |
-| `insufficient_evidence` | Declared part not visible in any photograph | Request additional view; no flag raised |
-
-The fourth verdict is the one that makes the system defensible in operation. It is what prevents poor photographic coverage from being read as dishonesty.
+The engine also compares the vehicle damage summary with the declared list in the reverse direction. A supported damage observation with no matching repair entry becomes a proposed addition for surveyor review. It keeps its photograph references and is not assigned an invented declared cost.
 
 ---
 
 ## 10. Architecture and data flow
 
-### 10.1 Online path: inference on one claim
+### 10.1 Components and deployment boundaries
 
-```
-╔════════════════════════════════════════════════════════════════════════════╗
-║                           ONLINE  ·  PER CLAIM                             ║
-╚════════════════════════════════════════════════════════════════════════════╝
+A **module** is a unit of functionality. A **microservice** is a separately deployed application with its own interface. The nine functional modules in §11 do not require nine microservices.
 
-      ┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐
-      │  N damage photos  │   │  surveyor report  │   │  vehicle attrs    │
-      │  (tens–hundreds)  │   │  scan / PDF       │   │  make/model/year  │
-      └─────────┬─────────┘   └─────────┬─────────┘   └─────────┬─────────┘
-                │                       │                       │
-   ┌────────────▼────────────┐  ┌───────▼────────────────┐      │
-   │  ① VISION BRANCH        │  │  ② DOCUMENT BRANCH     │      │
-   │                         │  │                        │      │
-   │  ┌───────────────────┐  │  │  ┌──────────────────┐  │      │
-   │  │ part segmentation │  │  │  │ text + layout    │  │      │
-   │  │ SegFormer 21 cls  │  │  │  │ detection (OCR)  │  │      │
-   │  └─────────┬─────────┘  │  │  └────────┬─────────┘  │      │
-   │            ▼            │  │           ▼            │      │
-   │  ┌───────────────────┐  │  │  ┌──────────────────┐  │      │
-   │  │ damage segment'n  │  │  │  │ line-item        │  │      │
-   │  │ SegFormer  8 cls  │  │  │  │ recognition      │  │      │
-   │  └─────────┬─────────┘  │  │  │ LayoutLMv3/Donut │  │      │
-   │            ▼            │  │  └────────┬─────────┘  │      │
-   │  ┌───────────────────┐  │  └───────────┼────────────┘      │
-   │  │ mask intersection │  │              │                   │
-   │  │   part × damage   │  │              ▼                   │
-   │  └─────────┬─────────┘  │      DECLARED SCOPE              │
-   │            ▼            │   [(part, operation, cost), …]   │
-   │  ┌───────────────────┐  │              │                   │
-   │  │ multi-view        │  │              │                   │
-   │  │ aggregation       │  │              │                   │
-   │  │ (sense-making)    │  │              │                   │
-   │  └─────────┬─────────┘  │              │                   │
-   └────────────┼────────────┘              │                   │
-                ▼                           │                   │
-     OBSERVED DAMAGE STATE                  │                   │
-  [(part, damage type, confidence), …]      │                   │
-                │                           │                   │
-                └───────────┬───────────────┴───────────────────┘
-                            ▼
-             ┌──────────────────────────────┐      ┌────────────────────┐
-             │  ③ RECONCILIATION ENGINE     │      │  REFERENCE COST    │
-             │                              │ read │  TABLE             │
-             │  a) coverage check           │◄─────┤                    │
-             │     declared ⊆ observed?     │      │  key:  part ×      │
-             │     → phantom part,          │      │        damage ×    │
-             │       panel spillover        │      │        veh class   │
-             │                              │      │  val:  [lo, hi]    │
-             │  b) cost band check          │      │        band        │
-             │     declared cost vs [lo,hi] │      └─────────▲──────────┘
-             │     → labour inflation,      │                │
-             │       grade substitution     │                │
-             │                              │                │
-             │  c) evidence sufficiency     │                │
-             │     part declared but in     │                │
-             │     no photo → request view, │                │
-             │     do NOT flag              │                │
-             └──────────────┬───────────────┘                │
-                            ▼                                │
-             ┌──────────────────────────────┐                │
-             │  ④ SURVEYOR WORKBENCH (UI)   │                │
-             │                              │                │
-             │  · pre-filled parts list     │                │
-             │  · flags + reasons           │                │
-             │  · mask overlay on photo     │                │
-             │  · surveyor confirms / edits │                │
-             │    and enters agreed amount  │                │
-             └──────────────┬───────────────┘                │
-                            │                                │
-                            └────────────────────────────────┘
-                              WRITE-BACK
-                              confirmed (part, damage, agreed cost)
+For this project, use a workbench application, a backend application, an image-processing worker, and a document-processing worker. A worker runs longer tasks in the background so that the interface can remain responsive. Cost-model training and reference-table refresh run as offline jobs. This design allows image and document processing to run independently while keeping deployment manageable for five members.
 
-                    ══ this loop is what builds the baseline ══
+```mermaid
+flowchart TD
+    UI["Surveyor workbench<br/>Module 9"] <--> API["Backend application<br/>Intake, jobs, comparison and review<br/>Modules 7-8"]
+    API --> Q["Background job queue"]
+    Q --> VIS["Image worker<br/>Modules 1-3"]
+    Q --> DOC["Document worker<br/>Modules 4-5"]
+    API <--> STORE
+    VIS <--> STORE
+    DOC <--> STORE
+    STORE[("Shared storage<br/>Claim database, files and model versions")]
+    OFF["Offline training and cost refresh<br/>Including Module 6"] <--> STORE
 ```
 
-### 10.2 Offline path: training
+The arrows show data access and task submission. The backend contains the job coordinator, comparison rules, cost lookup, and review API. The job coordinator starts comparison only after the required worker results for the same claim revision are available. The queue can be a persistent job table for the prototype; it does not require a separate message-broker service.
 
-```
-╔════════════════════════════════════════════════════════════════════════════╗
-║                          OFFLINE  ·  TRAINING                              ║
-╚════════════════════════════════════════════════════════════════════════════╝
-
-   PART masks              DAMAGE masks             DocILE / CORD
-   998 img · 21 cls        814 img ·  8 cls         6.7k docs · LIR track
-   (polygon, Supervisely)  (polygon, Supervisely)   (line-item annotated)
-         │                       │                        │
-         └───────────┬───────────┘                        │
-                     ▼                                    ▼
-   ┌──────────────────────────────────┐    ┌────────────────────────────┐
-   │  shared segmentation harness     │    │  VDU fine-tune             │
-   │  Supervisely → COCO → SegFormer  │    │  LayoutLMv3 / Donut        │
-   │  (two heads, one codebase)       │    │                            │
-   └────────────────┬─────────────────┘    └─────────────┬──────────────┘
-                    ▼                                    ▼
-          part + damage weights                  line-item weights
-                    │                                    │
-                    └──────────────► ① ◄─────────────────┘  ──► ②
-
-
-   prices_dataset.csv                    synthetic surveyor reports
-   630 rows · 18 parts × 5 models        · layout transfer target ONLY
-   × 7 years × 3 competing shops         · never used for accuracy claims
-         │                                        │
-         │  3 quotes per part = observed          └──► ② (transfer eval)
-         │  legitimate price dispersion
-         ▼
-   ┌──────────────────────────────────┐
-   │  cost band model                 │
-   │  GBM on (part, damage, vehicle)  │
-   │  + quantile / conformal interval │
-   │            → [lo, hi]            │
-   └────────────────┬─────────────────┘
-                    ▼
-          REFERENCE COST TABLE  ──► ③
-          (seeded offline, grown online by write-back)
-```
-
-### 10.3 Interfaces between modules
-
-Three contracts cross lane boundaries. They are fixed in the first working session so the lanes can then run independently.
-
-```
-  OBSERVED DAMAGE STATE   (lanes 1, 2 → lane 4)
-    [ { part: str, damage: str, confidence: float,
-        photo_ids: [str], mask_area_px: int } ]
-
-  DECLARED SCOPE          (lane 3 → lane 4)
-    [ { part: str, operation: "repair"|"replace",
-        cost: float, line_no: int, page: int } ]
-
-  ASSESSMENT              (lane 4 → lane 5)
-    [ { part: str, damage: str, band: [lo, hi], declared: float|null,
-        flag: "ok"|"cost_outlier"|"unsupported"|"insufficient_evidence",
-        reason: str, evidence: [photo_id] } ]
-```
-
-A shared part vocabulary is a prerequisite for all three. The 21 segmentation mask classes, the 18 priced parts in the cost dataset, and the part names appearing in survey reports must be mapped to one canonical list before the reconciliation engine can do anything. This mapping is small, unglamorous, and blocks every other lane, so it is assigned explicitly in §13 and scheduled first.
-
----
-
-## 11. Modules description and details
-
-### Module 1 — Part segmentation
-
-**Task.** Semantic segmentation of vehicle panels from a single photograph.
-
-**Approach.** SegFormer, comprising a hierarchically structured transformer encoder producing multiscale features and a lightweight MLP decoder. The hierarchical encoder requires no positional encoding, which avoids the interpolation penalty that appears when test resolution differs from training resolution. Claim photographs vary widely in resolution, so this property is directly relevant rather than incidental.
-
-**Classes.** 21, from the Humans in the Loop taxonomy: windshield, back-windshield, front-window, back-window, front-door, back-door, front-wheel, back-wheel, front-bumper, back-bumper, headlight, tail-light, hood, trunk, licence-plate, mirror, roof, grille, rocker-panel, quarter-panel, fender.
-
-**Output.** Per-pixel part labels with confidence.
-
-**Known limitation.** The 21-class vocabulary is not side-aware. A survey report distinguishes near-side from off-side, and this vocabulary does not. Mitigation is discussed in §15, R2.
-
-### Module 2 — Damage segmentation
-
-**Task.** Semantic segmentation of damage regions and types.
-
-**Approach.** The same SegFormer harness with a different label set and a different head. Modules 1 and 2 share one codebase, one data format, and one training pipeline, so the work is to build the harness once and train two heads rather than to build two systems.
-
-**Classes.** 8: dent, cracked, scratch, flaking, broken part, paint chip, missing part, corrosion.
-
-**Mask intersection.** Part masks and damage masks are intersected to yield (part, damage type, mask area) observations per photograph. The intersection is where the two heads become one assessment, and it is the step for which joint part-and-damage supervision from CrashCar101 is expected to help (RQ2).
-
-**Known difficulty.** Dent, scratch, and crack are visually similar and can be intertwined on the same panel. Published work on this task reports these as the hard classes. Per-class metrics will be reported rather than a single aggregate, so that a good mean does not conceal failure on the classes that matter for the repair-versus-replace decision.
-
-### Module 3 — Multi-view aggregation
-
-**Task.** Convert per-photograph observations into one vehicle-level damage state.
-
-**Why it is necessary.** If the same dent is counted three times across three photographs, the observed damage state is wrong and every downstream reconciliation inherits the error. Duplicate suppression is not a refinement; it is a correctness requirement.
-
-**Approach.** Project single-view detections onto a shared 3D vehicle representation and merge detections that project to the same region, following the method of van Ruitenbeek and Bhulai. The published evaluation on a drive-through camera rig reduced duplicate damage detections by nearly 99% and false positives by 96%, using only single-view models and single-view training data. This avoids requiring multi-view training data, which does not exist publicly (§12.3).
-
-**Output.** The observed damage state, with each observation carrying the list of photograph identifiers that support it. That list is what the workbench displays as evidence.
-
-**Course mapping.** This module is the intelligent sensing and sense-making component: many raw sensory inputs are reduced to one structured, interpretable state.
-
-### Module 4 — Document text and layout detection
-
-**Task.** OCR and layout analysis of the survey report.
-
-**Approach.** Text detection and recognition with layout structure preserved, producing tokens with bounding boxes and page positions. Positional information is retained throughout, because the workbench must show where on the page a flagged line item originated.
-
-### Module 5 — Line-item recognition
-
-**Task.** Extract (part, operation, cost) triples from the costed estimate table in the survey report.
-
-**Approach.** LayoutLMv3 or Donut fine-tuned on the DocILE Line Item Recognition track. Business documents carry a table of invoiced goods and services where each item is a set of key information such as name, quantity, and price, and Line Item Recognition is the task of assigning key information to items in that table. This is structurally the same problem as extracting part, operation, and cost from a costed survey estimate.
-
-**Localisation, not just extraction.** DocILE distinguishes Key Information Extraction from Key Information Localization and Extraction, where the difference is positional information. This project needs the localised variant, because a flag without a page and line number is not actionable for a surveyor reviewing a hundred-page report.
-
-**Output.** The declared scope, with page and line number attached to each triple.
-
-### Module 6 — Cost band model
-
-**Task.** Produce a `[lo, hi]` band for each (part, damage type, vehicle class) key.
-
-**Approach.** Gradient boosting over the key features, with quantile regression or conformal prediction to produce a calibrated interval rather than a point estimate. The interval is the deliverable; a point estimate would give no principled basis for deciding whether a declared cost is anomalous.
-
-**Training data.** `prices_dataset.csv`, 630 rows covering 18 parts across 5 vehicle models, 7 model years, and 3 competing workshops. The three competing quotes per part are the important structural feature: they give the model an observation of legitimate price dispersion between workshops, so that normal inter-workshop variation is inside the band rather than flagged as anomalous.
-
-**Support reporting.** Every band carries a support count. A band derived from twelve observations and a band derived from four hundred warrant different confidence, and the reconciliation engine must know which it is holding.
-
-### Module 7 — Cost outlier detection
-
-**Task.** Determine whether a declared cost falls outside the expected distribution for its key.
-
-**Approach.** Unsupervised. No fraud labels exist and none are used. The band from Module 6 defines the expected region, and deviation from it is the anomaly signal. Where the band is unavailable or its support falls below a minimum threshold, the engine abstains rather than guessing.
-
-**Course mapping.** This is the unsupervised learning component.
-
-### Module 8 — Reconciliation engine
-
-**Task.** Combine the observed damage state and the declared scope into a per-line-item assessment.
-
-**Three checks, in order:**
-
-1. **Evidence sufficiency, first.** Is the declared part visible in any photograph at all? If not, the verdict is `insufficient_evidence` and processing of that line stops. This check runs first deliberately, so that a part which was never photographed can never reach the coverage check and be flagged as unsupported.
-2. **Coverage.** For parts that are visible, is damage observed? If the part is visible and undamaged in every photograph that covers it, the verdict is `unsupported`.
-3. **Cost band.** For parts that are observed damaged, is the declared cost within the band, and does the band have sufficient support? If outside a sufficiently supported band, the verdict is `cost_outlier`.
-
-**Course mapping.** This is the hybrid fusion component. The two branches are trained separately on disjoint data and meet only here.
-
-### Module 9 — Surveyor workbench
-
-**Task.** Present the assessment and capture the surveyor's decision. The full interface is specified in §8; this module is its implementation.
-
-**Scope within this project.** Screens 2, 3, and 4 are built as a working prototype against live model output. Screens 1, 5, and 6 and the audit view are static mockups (§8.10).
-
-**Contents.** The pre-filled parts list; flags with stated reasons; mask overlays on the source photographs; the band and its support count where a cost flag was raised; and controls for the surveyor to confirm, edit, or reject each line and enter the agreed amount.
-
-**Write-back.** Each confirmed line produces a structured (part, damage type, agreed cost, vehicle class) record that updates the reference cost table. This is the mechanism by which the system produces the cost baseline as a by-product of ordinary use.
-
----
-
-## 12. Data sources
-
-Every dataset below was checked for licence terms. Two entries in the earlier internal architecture note, PASCAL-Part and freMTPL2, have been superseded and the reasons are recorded in §12.6.
-
-### 12.1 Part segmentation
-
-| Dataset | Content | Classes | Licence | Role |
-|---|---|---|---|---|
-| **HITL Car Parts and Car Damages** | 998 part images plus 814 damage images, polygon masks, 24,851 polygons | 21 part classes; 8 damage classes | CC0 1.0 (public domain) | Primary. The only source found carrying parts and damage under one release, at the cleanest available licence. |
-| **DSMLR Car-Parts-Segmentation** (KMITL) | Multi-view images, COCO-format instance masks, plates and faces anonymised | 18 part classes, side-aware | Research use, GitHub release | Secondary, for side-aware labels. |
-| **Ultralytics Carparts-Seg** | 3,833 images, pixel masks, pre-split | 23 classes | AGPL-3.0 | Reserve. AGPL propagates and must be assessed before use. |
-
-**Taxonomy shortfall.** None of these vocabularies covers panels that survey reports routinely price: A/B/C pillars, sill, wheel arch liner, radiator support, and the ADAS-bearing components such as radar brackets and camera mounts. Left-right side is present in DSMLR but absent from HITL. Dataset selection alone cannot close this gap; it requires a mapping layer, supplementary annotation, or both, and it is carried as risk R2.
-
-### 12.2 Damage segmentation
-
-| Dataset | Content | Classes | Licence | Role |
-|---|---|---|---|---|
-| **VehiDE** | 13,945 images, 32,000+ labelled instances | 8 damage classes | Kaggle mirror; original terms to verify | Primary by volume. |
-| **CarDD** | 4,000 high-resolution images, 9,000+ instances | 6 damage classes | Signed licensing form required; not self-serve | Primary by quality, subject to access. |
-| **CrashCar101** | Procedurally generated synthetic images from damaged 3D car models, pixel-accurate annotations for both parts and damage | Configurable | Academic release (WACV 2024) | Joint supervision and multi-view generation. |
-
-Two operational facts about CarDD. Its images average 684,231 pixels against roughly 50,334 pixels for the older public car-damage dataset, and that gap has consequences beyond appearance: VehiDE's authors ran an annotator experiment and found high-resolution images yielded more discovered damage instances, because low-resolution photographs hid small, indistinct damage from annotators entirely. Image resolution is therefore a confounder in the evidence-sufficiency logic, and a claim photographed at low resolution will systematically under-report damage. Second, CarDD does not own the copyright to its images; access requires agreeing to Flickr and Shutterstock terms via a signed form emailed to the authors. This is a lead-time risk carried as R1.
-
-**CrashCar101 is central rather than supplementary.** It uses a procedural pipeline that damages 3D car models and renders 2D images paired with pixel-accurate annotations for both part and damage categories. Models trained on real plus synthetic data outperformed real-only training for part segmentation, and the authors demonstrated sim-to-real transfer for damage segmentation. It addresses three of this project's problems at once: it supplies the joint part-and-damage annotation that Module 2's mask intersection requires and that no real dataset provides; it allows the team to define its own part taxonomy rather than inherit one, which partially answers §12.1; and it generates controlled multi-view renders of the same vehicle, which is the input Module 3 needs.
-
-### 12.3 The multi-view gap
-
-Module 3 aggregates evidence across many photographs of one vehicle. Every public damage dataset above is a collection of independent single images, not images grouped by vehicle. No public claim-level multi-view damage corpus exists.
-
-Two responses, both viable, with the choice recorded as an open decision in §15:
-
-- Synthesise multi-view groups from CrashCar101, which renders arbitrary camera positions around one damaged 3D model with ground truth.
-- Avoid multi-view training entirely, using the single-view projection method described in Module 3.
-
-### 12.4 The cost-label gap
-
-**No public dataset pairs vehicle damage images with actual repair costs.** This was verified directly. Published work in this area either uses proprietary insurer data or manually estimates prices from parts websites, which its own authors acknowledge is unreliable. The 2025 WIREs systematic review of 55 papers on AI vehicle damage detection reaches the same conclusion about data availability being the field's binding constraint.
-
-This drives the following declared assumption, which is stated rather than buried.
-
-**Assumption A1 (seeded baseline).** *An insurer deploying CLAIM-CMEV already holds a settled-claims history from which an initial reference cost table can be derived, and CLAIM-CMEV refreshes that table continuously as confirmed surveys write back.*
-
-A1 is defensible on its own terms. An insurer settling motor own-damage claims for years holds paid amounts, workshop invoices, and parts lines in its claims and finance systems. What it does not hold is that history linked to damage evidence at part level, which is the gap described in §2.1. Seeding the table is a historical-data engineering exercise on records the insurer already owns rather than a new data-collection programme, and it is orthogonal to the modelling contribution of this project.
-
-Four consequences are carried into the design:
-
-- The seeded table is coarse and the refreshed table is fine. Legacy records give aggregate paid amounts and inconsistent part naming, so the seed yields wide bands on a partial key set. Every confirmed survey narrows them.
-- Band width must be an explicit output. The reconciliation engine reports the support behind the band it applied and declines to flag against a band below a minimum support threshold.
-- The table is versioned and time-decayed. Parts prices move, so a band computed from 2019 records is not evidence about a 2026 claim. Records are weighted by recency and the table carries an as-of date, so any flag can be reproduced against the table version that produced it.
-- Coverage is uneven by construction. Common panels on common vehicles get tight bands early; low-volume models and rare damage types stay wide or unsupported for a long time. The workbench surfaces this rather than hiding it behind a default.
-
-**For the project deliverable**, the team uses `prices_dataset.csv`, a documented synthetic table of 630 rows spanning 18 parts, 5 vehicle models, 7 model years, and 3 competing workshops. The evaluation claim concerns the reconciliation logic: whether the engine correctly flags a line item outside a given band and correctly abstains when support is thin. It does not concern the absolute accuracy of the band values, and the report will state this boundary explicitly.
-
-### 12.5 Document extraction
-
-| Dataset | Content | Task | Licence |
+| Component | Responsibility | Input → output | Deployment / owner |
 |---|---|---|---|
-| **DocILE** | 6,680 annotated real business documents, ~100k synthetic, ~1M unlabelled for pre-training; 55 annotation classes | Key Information Localization and Extraction; Line Item Recognition | MIT |
-| **CORD** | 1,000 receipts (800/100/100), word- and line-level annotations, OCR output with boxes | 30 entities under 4 super-categories | CC BY-SA 4.0 |
-| **SROIE** (ICDAR 2019) | ~1,000 scanned receipts (626 train / 347 test) | Text localisation, OCR, KIE of company, address, date, total | MIT |
-| **FUNSD** | 199 noisy scanned forms (149/50) | Entity extraction and linking | Non-commercial academic |
+| Workbench | Display results and collect review actions | Assessment and evidence → corrections, decisions, and agreed amounts | Frontend; Lane 5 |
+| Claim intake and review API | Validate uploads, create claim revisions, retrieve evidence, save reviews, and export assessments | Files, vehicle details, and user actions → stored records and job identifiers | Backend; Lane 5 |
+| Job coordinator | Schedule work, track completion, retry failed tasks, and start comparison | Claim revision → processing states and completed assessment | Backend; Lane 5 |
+| Image analysis | Check image quality; identify parts and damage; combine views and assess coverage | Photographs → part coverage and vehicle damage observations | Image worker, Modules 1–3; Lanes 1–2 |
+| Document analysis | Read text and layout; extract and normalise repair entries | Survey report → entries with source locations and extraction confidence | Document worker, Modules 4–5; Lane 3 |
+| Cost lookup and comparison | Retrieve comparable ranges; check evidence, costs, and missing repairs | Normalised entries, observations, and ranges → explained findings | Backend, Modules 7–8; Lane 4 |
+| Review and approval records | Preserve original entries, surveyor decisions, and separately supplied final approvals | Review actions or approval import → versioned history and eligible cost records | Backend; Lane 5 with Lane 4 |
+| Training and reference refresh | Train and evaluate models; build new cost-table versions | Training data or eligible approved records → evaluated model files and cost ranges | Offline jobs, including Module 6; relevant model lanes |
+| Shared storage | Retain files, metadata, results, job states, and version identifiers | Component reads and writes → retrievable evidence and reproducible assessments | File storage and relational database; Lane 5 |
 
-DocILE is the primary document dataset for the reasons given under Module 5. It is MIT licensed, its 55 annotation classes exceed earlier KIE datasets by a wide margin, its test set includes zero- and few-shot layouts, and its published baselines include LayoutLMv3 and a DETR-based Table Transformer, which gives the team a starting point. CORD and SROIE serve as smaller benchmarks for the OCR and field-extraction stages. CORD is share-alike, which matters if any derived artefact is published.
+Part-name mapping is a shared library and versioned mapping file used by both workers and the comparison engine. Lane 4 owns it with input from Lanes 1–3. It must preserve side information, such as left or right, and mark unknown parts rather than forcing an incorrect match.
 
-**Transfer gap.** All of these are invoices, receipts, and generic forms. None is a motor survey report and none is in a Singapore insurer's layout. The document models are pre-trained on DocILE and fine-tuned on a small set of synthetic survey reports constructed by the team. Those synthetic reports are a layout-transfer target only and are never used to support an accuracy claim, because a model evaluated on documents generated from the same template it was fine-tuned on would report a number that means nothing.
+### 10.2 Data flow when processing a claim
 
-### 12.6 Superseded data decisions
+```mermaid
+sequenceDiagram
+    actor S as Surveyor
+    participant A as Backend API
+    participant J as Job coordinator
+    participant V as Image worker
+    participant D as Document worker
+    participant R as Comparison module
+    S->>A: Upload photos, report and vehicle details
+    A->>A: Validate and store a new input revision
+    A-->>S: Claim ID, revision and processing status
+    A->>J: Schedule analysis for this revision
+    par Image analysis
+        J->>V: Process stored photographs
+        V-->>J: Coverage and damage results saved
+    and Document analysis
+        J->>D: Process stored report
+        D-->>J: Repair entries and source locations saved
+    end
+    J->>R: Compare matching-revision results
+    R->>R: Read fixed cost-table version and save findings
+    R-->>A: Assessment ready
+    S->>A: Open results and supporting evidence
+    A-->>S: Findings, source links and reference ranges
+    S->>A: Save corrections, reasons and agreed amounts
+    A-->>S: Review revision saved
+```
 
-Two datasets appearing in earlier internal notes have been dropped, and the reasons are recorded here so the decision is not silently reversed.
+1. **Intake:** assign stable identifiers to the claim, each file, and the input revision. Validate file type, readability, vehicle metadata, and monetary fields. Keep the original files.
+2. **Image analysis:** record image dimensions and quality limitations; identify parts and damage; match damage regions to parts; merge repeated views; store coverage even when no damage is detected.
+3. **Document analysis:** read each page, group fields into repair entries, and map names to the shared vocabulary. Retain original text and page coordinates so the surveyor can check extraction errors.
+4. **Comparison:** combine results for the same input revision, retrieve a fixed cost-table version, apply the checks in §9.1, and identify possible missing entries (§9.2).
+5. **Review:** show stored results and evidence. Save user actions separately from model predictions. New photographs or changed declared entries create a new assessment revision; prior results remain available.
+6. **Later approval:** record final approved amounts through a controlled import. Eligible records are included in a later cost-reference refresh, not in the assessment that originally checked them.
 
-**freMTPL2** contains 677,991 French motor third-party-liability policies and 26,639 claim amounts. Its `ClaimAmount` field is a third-party-liability claim amount, not a verified own-damage workshop invoice, and it carries no images, no part identifiers, and no repair line items. It cannot serve as repair-cost ground truth for this project, and the tabular anomaly-detection exercise it would support is a separate exercise that does not connect to the vision branch. The unsupervised requirement is satisfied instead by Module 7, which operates on the cost objects this project actually reasons about.
+For photographs without a report, complete image analysis and show the proposed damage list. Mark comparison as awaiting declared entries. If a worker fails, retain the successful branch's result but show the overall assessment as incomplete until the required work succeeds.
 
-**PASCAL-Part** provides car-component labels but on older natural-scene imagery captured for general object recognition rather than damage assessment, and its part vocabulary is coarser than HITL's. HITL supersedes it on vocabulary, on image relevance, and on licence.
+### 10.3 Data exchanged between modules
 
-### 12.7 Volume assessment
+Every processing result carries the claim ID, input revision, processing status, schema version, and relevant model or mapping versions. A schema defines the fields and their meanings so that independently built modules can exchange compatible records.
 
-Combining HITL, DSMLR, VehiDE, and CarDD yields roughly 20,000 real damaged-vehicle images with instance masks, augmentable via CrashCar101. This is adequate for fine-tuning pre-trained segmentation backbones and inadequate for training from scratch, which the project does not attempt. On the document side, DocILE's roughly 6,700 real and 100,000 synthetic documents are ample for pre-training. The binding constraint is the number of realistic survey reports available for fine-tuning, and that number will be stated in the final report rather than left implicit.
+| Record | Required information | Why it is needed |
+|---|---|---|
+| Claim input | Claim ID, vehicle make/model/year, available vehicle features, file IDs, currency, input revision | Associates all inputs with one vehicle and processing run |
+| Part coverage | Normalised part and side, covering photo IDs, part-mask references, visibility/quality state, reason | Distinguishes an adequately photographed part from an unseen or unassessable part |
+| Damage observation | Observation ID, part and side, damage type, confidence, affected area, photo IDs, mask references, duplicate-group ID | Describes damage once while preserving every supporting view |
+| Declared repair entry | Stable entry ID, original and normalised part names, side, operation, amount, currency, extraction confidence, page and bounding box | Supports reliable matching and navigation back to the report |
+| Reference cost range | Comparison key, lower/upper bounds, currency, record count, calibration level, as-of date, table version, synthetic-data marker | Shows whether a cost comparison is relevant and sufficiently supported |
+| Assessment finding | Finding ID, entry or observation ID, results of individual checks, overall result, reason, evidence references, applied cost range and versions | Drives the interface and allows the finding to be reproduced |
+| Review / approval | Assessment revision, reviewer, timestamp, action, reason, original and edited values, agreed amount, approval status, final approved amount when available | Separates machine results, surveyor judgement, and final approval |
+
+A bounding box is the rectangular location of text on a report page. A mask is the region of an image assigned to a part or damage type. Store file references to these artefacts rather than copying large images into database records or queue messages.
+
+**Cost matching:** compare the same part, side where relevant, operation, damage type, vehicle class, and currency. Repair and replacement must not share a range by default. Preserve available quantity, labour, and parts-grade information; if the report and reference table use incompatible cost units or required fields are missing, withhold the cost check and explain why. Do not infer a missing damage label in a price dataset without documenting how it was obtained.
+
+**Missing values:** an unavailable cost range is stored as absent, not as a zero-price range. Possible missing repairs reference an observation and have no declared entry ID or amount until the surveyor adds them.
+
+### 10.4 Training and reference-data updates
+
+Training runs separately from claim processing. Serving workers load an evaluated model version; they do not retrain while a surveyor waits.
+
+```mermaid
+flowchart TD
+    I["Annotated real and synthetic images"] --> P["Map labels and split training, validation and test data"]
+    P --> V["Train part and damage models"]
+    D["Annotated documents and layout examples"] --> T["Train document extraction model"]
+    V --> E["Evaluate on held-out data"]
+    T --> E
+    E --> M["Publish versioned model files"]
+    M --> W["Image and document workers"]
+    S["Synthetic cost data for the project"] --> C["Prepare comparable cost records"]
+    A["Final approved records in a future deployment"] --> C
+    C --> B["Fit cost model and calibrate ranges"]
+    B --> Q["Check coverage, record counts and range width"]
+    Q --> R["Publish a new cost-table version"]
+    R --> L["Comparison module uses a fixed version per assessment"]
+```
+
+Use separate training, calibration, and test partitions. Keep photographs of the same vehicle together when vehicle identifiers are available. Keep related synthetic views and report templates together to avoid testing on near-duplicates of training examples. Record where source datasets lack the identifiers needed to guarantee separation.
+
+Cost refresh reads eligible final approved entries, excludes duplicate and superseded records, and gives recent records appropriate weight. Surveyor dismissals and unapproved estimates do not automatically become approved cost examples. Publish a new table version after evaluation; preserve earlier versions so past findings can be reproduced. The demonstration uses a controlled synthetic approval import to exercise this path.
+
+### 10.5 Storage and failure handling
+
+- **File storage:** original photographs and reports, rendered report pages, predicted masks, and assessment exports.
+- **Relational records:** claims, file metadata, job states, coverage, observations, repair entries, findings, reviews, approval imports, and reference cost tables.
+- **Versioned model storage:** model files, label mappings, training configuration, and evaluation results.
+
+Task retries must not create duplicate observations, reviews, or cost records. Use stable record IDs and a unique job key consisting of claim, revision, task, and model version. A stale worker result may be retained for its own revision but must not replace the current assessment.
+
+A cost-table update must not silently change an assessment already under review. Reassessment creates a new result revision and records the newly applied table version. Access to files and records is checked through the backend; a future multi-insurer deployment must also enforce customer separation.
 
 ---
 
-## 13. Team allocation
+## 11. Functional modules
 
-Five members. The work divides into five lanes with the interfaces in §10.3 as the boundaries.
+The modules below implement the technical objectives. Section 10.1 shows which application or worker runs each module.
 
-| Lane | Scope | Modules | Member |
+### Module 1 — Vehicle part segmentation
+
+**Purpose:** identify vehicle parts in a photograph by labelling their pixels. This is called semantic segmentation.
+
+**Method:** fine-tune SegFormer on annotated part images. Use a shared image-training pipeline with Module 2, with separate labels and model outputs.
+
+**Initial classes:** the 21 HITL categories are windshield, back-windshield, front-window, back-window, front-door, back-door, front-wheel, back-wheel, front-bumper, back-bumper, headlight, tail-light, hood, trunk, licence-plate, mirror, roof, grille, rocker-panel, quarter-panel, and fender.
+
+**Output:** part masks, confidence, and photograph references. HITL does not distinguish left and right sides; the shared vocabulary and supplementary labels must address this, or mark the side as unresolved.
+
+### Module 2 — Damage segmentation and part matching
+
+**Purpose:** locate damage and associate it with a vehicle part.
+
+**Method:** fine-tune SegFormer for eight initial damage classes: dent, cracked, scratch, flaking, broken part, paint chip, missing part, and corrosion. Find the overlap between damage and part masks. For example, a scratch region overlapping a front-door region becomes a front-door scratch observation.
+
+**Output:** per-image part, damage type, affected area, confidence, and mask references. Evaluate dents, scratches, and cracks separately because they may look similar or occur together. RQ2 tests whether joint part-and-damage labels improve this matching step.
+
+### Module 3 — Multi-view aggregation and coverage
+
+**Purpose:** combine photographs into one vehicle damage summary and record which parts can be assessed.
+
+**Method:** investigate mapping single-view detections onto a common 3D vehicle representation and merging detections that occupy the same region, following van Ruitenbeek and Bhulai. Use controlled multi-view images from CrashCar101 for development and evaluation where real grouped photographs are unavailable. Record the limits of applying this method to uncontrolled workshop views.
+
+**Output:** merged damage observations, supporting photographs, and a separate coverage record for each supported part. Coverage considers visibility, image quality, and unresolved side or part identity. It must include visible parts without detected damage; a damage-only list cannot distinguish these from unphotographed parts.
+
+### Module 4 — Document text and layout extraction
+
+**Purpose:** read text and preserve its position on survey-report pages.
+
+**Method:** use optical character recognition (OCR) for scanned pages and retain page layout and word coordinates. Extract available embedded PDF text where suitable. If the selected document model reads page images directly, preserve an equivalent route back to the source entry.
+
+**Output:** page text, word or region locations, reading order, and extraction-quality indicators. Unreadable content is marked for correction.
+
+### Module 5 — Repair line-item recognition
+
+**Purpose:** group document fields into complete repair entries.
+
+**Method:** adapt LayoutLMv3 or Donut using DocILE and survey-report layout examples. Map extracted part names and operations to the shared vocabulary while retaining the original text. Preserve quantity, labour, and parts-grade fields when available.
+
+**Output:** part, operation, amount, currency, confidence, stable entry ID, and source-page location. Missing or uncertain required fields are exposed for review before cost comparison.
+
+### Module 6 — Reference cost model
+
+**Purpose:** provide a lower and upper cost bound for a comparable repair, rather than a single predicted price.
+
+**Method:** train a gradient-boosting model with quantile regression or conformal prediction to construct prediction intervals. A prediction interval is a range intended to contain a stated proportion of comparable costs. Check its actual coverage on held-out data.
+
+**Input:** the documented synthetic cost table for the project (§12.4). Separate repair and replacement and retain currency and cost units. Confirm which part, damage, operation, and vehicle combinations the data actually supports.
+
+**Output:** versioned ranges with supporting record counts, dates, comparison criteria, and calibration results. Unsupported combinations have no range.
+
+### Module 7 — Cost anomaly detection
+
+**Purpose:** identify declared costs outside a sufficiently supported reference range.
+
+**Method:** compare each eligible amount with Module 6's bounds and calculate its deviation. No fraud outcomes are used. Missing ranges, incompatible cost units, or inadequate reference counts produce a withheld cost check rather than a cost flag.
+
+**Output:** within-range, outside-range, or insufficient-support result, with the applied bounds and reason. The team must confirm the course classification of this anomaly method (§4).
+
+### Module 8 — Evidence comparison
+
+**Purpose:** combine the image findings, declared repair entries, and cost results.
+
+**Method:** apply the ordered checks in §9.1 and the reverse comparison in §9.2. Preserve individual check outcomes. An uncertain extraction or an unassessable part must not become an unsupported-repair flag.
+
+**Output:** explained findings with report locations, photographs, masks, and cost-table references; plus possible missing repairs for review. This module implements decision-level fusion of the two model branches.
+
+### Module 9 — Surveyor workbench and review capture
+
+**Purpose:** let a surveyor inspect the results and record a reviewed assessment.
+
+**Method:** implement Screens 2–4 against the backend API. Support evidence overlays, original images and report pages, edits, additions, dismissals with reasons, and agreed amounts. Keep user decisions separate from model predictions.
+
+**Output:** a stored review revision and basic assessment export. A later approval import supplies final approved cost records for the refresh path. The remaining screens are static mockups (§8.10).
+
+---
+
+## 12. Data sources and limitations
+
+The tables below retain the dataset sizes and licence information recorded in the proposal. Outstanding access and licence checks are listed in §16; this document revision does not verify the releases or their terms.
+
+### 12.1 Vehicle part images
+
+| Dataset | Recorded contents | Classes | Recorded licence / access | Planned use |
+|---|---|---|---|---|
+| HITL Car Parts and Car Damages | 998 part images and 814 damage images; polygon masks; 24,851 polygons | 21 part classes and 8 damage classes | CC0 1.0 | Primary part dataset and supplementary damage data |
+| DSMLR Car-Parts-Segmentation | Multi-view images; COCO-format masks; anonymised plates and faces | 18 part classes, including side information | Research use; GitHub release | Supplementary part and side labels |
+| Ultralytics Carparts-Seg | 3,833 images with masks and predefined splits | 23 classes | AGPL-3.0 | Reserve; assess licence implications before use |
+
+These labels do not cover every component priced in a survey report. Examples include pillars, wheel arch liners, radiator supports, and ADAS mounts. Build an explicit mapping between dataset labels and report terms. Unmapped parts or unresolved sides remain unassessable unless suitable additional labels are available.
+
+### 12.2 Damage images
+
+| Dataset | Recorded contents | Classes | Recorded licence / access | Planned use |
+|---|---|---|---|---|
+| VehiDE | 13,945 images; more than 32,000 labelled instances | 8 damage classes | Kaggle mirror; original terms to verify | Main source by volume, subject to licence confirmation |
+| CarDD | 4,000 high-resolution images; more than 9,000 instances | 6 damage classes | Signed licensing form required | Supplementary high-quality damage data, subject to access |
+| CrashCar101 | Generated images of damaged 3D vehicles, with part and damage labels | Configurable | Academic release associated with WACV 2024 | Joint labels and controlled multi-view experiments |
+
+Different datasets use different damage categories and annotation formats. Convert them to the project vocabulary and document categories that cannot be mapped reliably.
+
+Image quality is relevant to the task itself: small damage may be invisible in low-resolution or blurred photographs. Record quality limitations when assessing coverage. CrashCar101 offers controlled labels and views, but improvements on generated images must be tested on real photographs before claiming transfer to workshop conditions.
+
+### 12.3 Photographs grouped by vehicle
+
+The team has not identified a suitable public claim-level damage dataset containing complete photograph groups for each vehicle. Module 3 needs such groups to evaluate repeated views of the same damage.
+
+Use CrashCar101 to construct controlled groups and investigate the single-view projection method in Module 3. The method choice and the availability of real grouped test images remain open. Results from synthetic groups must be reported separately from results on real vehicles.
+
+### 12.4 Repair-cost data and the initial reference table
+
+The team has not identified a suitable public dataset pairing damage photographs with final repair costs at line-item level. The literature cited in this proposal identifies limited access to repair data as a constraint.
+
+**Assumption A1 — initial cost history:** a future insurer deployment has historical approved repair records from which an initial reference table can be prepared. CLAIM-CMEV can then add eligible records from subsequent approved claims.
+
+Preparing that history requires normalising part names, repair operations, vehicle categories, currencies, and cost units. Historical claim totals alone do not provide the part-level evidence required by this project. The availability and quality of suitable insurer records remain deployment assumptions.
+
+The project plans to use a **synthetic `prices_dataset.csv`**, described in the current design as 630 rows covering 18 parts, 5 vehicle models, 7 model years, and 3 workshops. Confirm the row structure, whether workshop quotes are columns or separate rows, and how operation and damage type are represented. Do not assume all combinations exist.
+
+Synthetic prices allow the team to test whether the engine flags an amount outside a supplied range and withholds a check when reference support is weak. They do not validate real-world repair prices, savings, or fraud detection.
+
+Each published reference range must show its supporting record count and date. Common repairs may have more support than rare ones. New data may improve coverage and calibration, but does not guarantee narrower ranges. Retain prior table versions and evaluate each refresh before using it for new assessments (§10.4).
+
+### 12.5 Document datasets
+
+| Dataset | Recorded contents | Task | Recorded licence |
 |---|---|---|---|
-| 1 | Part segmentation, 21 classes | 1 | *to confirm* |
-| 2 | Damage segmentation, 8 classes; multi-view aggregation | 2, 3 | *to confirm* |
-| 3 | Document branch: OCR, layout, line-item recognition | 4, 5 | *to confirm* |
-| 4 | Reconciliation engine; cost band model; reference table | 6, 7, 8 | *to confirm* |
-| 5 | Systems and product: API, workbench UI (§8.10), pipeline orchestration, evaluation harness, deliverables | 9 | *to confirm* |
+| DocILE | 6,680 annotated real documents; about 100,000 synthetic and 1 million unlabelled documents; 55 annotation classes | Field extraction, source localisation, and line-item recognition | MIT |
+| CORD | 1,000 receipts, split 800/100/100; text and location annotations | Receipt field extraction; 30 entities in 4 categories | CC BY-SA 4.0 |
+| SROIE | About 1,000 scanned receipts; 626 training and 347 test examples | Text recognition and extraction of company, address, date, and total | MIT |
+| FUNSD | 199 scanned forms, split 149/50 | Entity extraction and linking | Non-commercial academic |
 
-Lanes 1 and 2 share one training harness. The data format, the conversion pipeline, and the training loop are identical; only the label set and the head differ. The two members pair on the shared codebase and then split the heads and their evaluation, rather than building the same thing twice.
+DocILE is the primary source because its line-item task is relevant to extracting repair-table entries. The other datasets support smaller document-reading benchmarks.
 
-**Sequencing.** The canonical part vocabulary is built first, before any lane starts modelling. It maps the 21 segmentation classes, the 18 priced parts, and survey-report part names onto one list. Lane 4 cannot begin until it exists, and lanes 1 through 3 will produce mutually incompatible outputs without it. It is small and unglamorous work that blocks everything, so it is assigned to a named owner in the first session and scheduled ahead of all model work.
+These datasets are business documents, receipts, and forms, not Singapore motor survey reports. Use synthetic survey reports to adapt the layout, while keeping related templates out of independent test partitions. Report performance on public benchmarks and any real survey reports separately. Synthetic-template results alone cannot establish accuracy on real reports.
 
-**Product ownership.** Lane 5 owns the user-facing surface, but the interface rules in §8.8 and §8.9 are product decisions rather than implementation choices and are agreed by the whole team before build. Two of them constrain other lanes. The `insufficient_evidence` verdict must not render as a flag, which requires lane 4 to emit it as a distinct verdict rather than as a low-confidence flag. And every flag must carry the cost-table version that produced it, which requires lane 4 to version the table from the start rather than retrofitting versioning later.
+### 12.6 Datasets excluded from the design
 
-**Integration checkpoints.** The three interface contracts are frozen in the first working session. Each lane produces a stub conforming to its output contract within the first week, so that the end-to-end pipeline runs on stub data before any model is trained. This surfaces interface disagreements while they are cheap to fix.
+- **freMTPL2:** French third-party-liability policies and claim amounts, without damage photographs or repair entries. It cannot provide part-level own-damage repair-cost ground truth.
+- **PASCAL-Part:** general natural-scene images with a coarser car-part vocabulary. HITL is the preferred starting point for this project.
+
+### 12.7 Data sufficiency
+
+The planned real image sources provide approximately 20,000 images, subject to access, filtering, duplicates, and compatible annotations. The team will fine-tune pretrained models rather than train from scratch. The main constraints are realistic survey reports, vehicle-grouped photographs, and real approved repair costs. Record the actual usable dataset sizes and splits in the final report.
+
+---
+
+## 13. Team allocation and integration plan
+
+The five workstreams below are referred to as lanes. Member assignments remain to be confirmed.
+
+| Lane | Responsibility | Modules / components | Member |
+|---|---|---|---|
+| 1 | Part labels, part segmentation, and part-mask evaluation | Module 1; image worker with Lane 2 | To confirm |
+| 2 | Damage segmentation, duplicate removal, and photographic coverage | Modules 2–3; image worker | To confirm |
+| 3 | Text extraction, report layout, and repair-entry extraction | Modules 4–5; document worker | To confirm |
+| 4 | Shared part mapping, cost data and model, anomaly checks, and comparison | Modules 6–8; backend comparison and offline cost refresh | To confirm |
+| 5 | Workbench, API, jobs, storage, review and approval import, and integration tests | Module 9; application infrastructure and evaluation harness | To confirm |
+
+Lanes 1 and 2 share data-conversion and training code. All lanes use the record definitions in §10.3. Lane 5 provides the integration framework; each model owner supplies and tests the code that runs their module within it.
+
+| Checkpoint | Required output |
+|---|---|
+| First working session | Agree part names, record schemas, cost units, processing states, and module ownership |
+| First week | Connect all components using sample outputs; demonstrate upload, processing, review, and persistence |
+| Model integration | Replace sample outputs with trained models; test evidence links and uncertain-input handling |
+| Evaluation | Freeze test data and versions; run module, comparison, and workflow evaluations |
+| Demonstration | Process an unseen test case, review its evidence, save corrections, and demonstrate a separate synthetic approval and cost refresh |
 
 ---
 
@@ -773,120 +703,122 @@ Lanes 1 and 2 share one training harness. The data format, the conversion pipeli
 
 ### 14.1 Module-level metrics
 
-| Module | Metric | Target | Basis for target |
+**Metric definitions:** Intersection over Union (IoU) measures the overlap between a predicted image region and its labelled region; mIoU averages that score across classes. Precision measures how many predictions or flags are correct. Recall measures how many relevant items are found. F1 combines precision and recall. Average precision (AP) summarises precision across recall levels. Prediction-interval coverage measures the proportion of known costs falling inside the predicted range.
+
+| Module | Metric | Initial target | Interpretation |
 |---|---|---|---|
-| 1. Part segmentation | mIoU; per-class IoU | mIoU ≥ 0.60; no panel class below 0.40 | Published part-segmentation results on comparable class counts |
-| 2. Damage segmentation | mIoU; per-class IoU; AP | mIoU ≥ 0.45; dent, scratch, crack reported separately | These three are the acknowledged hard classes |
-| 3. Multi-view aggregation | Duplicate suppression rate; vehicle-level state F1 | ≥ 90% duplicate reduction | Published method reports ~99% on a controlled rig; a lower target reflects uncontrolled claim photography |
-| 5. Line-item recognition | F1 on complete (part, operation, cost) triples; localisation accuracy | F1 ≥ 0.75 on DocILE LIR; degradation on synthetic reports reported, not targeted | DocILE published baselines |
-| 6. Cost band model | Prediction interval coverage; mean band width | Empirical coverage within 5 points of nominal 90% | Conformal prediction calibration standard |
+| 1. Part segmentation | mIoU and per-class IoU | mIoU ≥ 0.60; no panel class below 0.40 | Check each part as well as overall overlap |
+| 2. Damage segmentation | mIoU, per-class IoU, and AP | mIoU ≥ 0.45 | Report dents, scratches, and cracks separately |
+| 3. Multi-view aggregation | Duplicate reduction and vehicle-summary F1 | At least 90% duplicate reduction | Also measure lost or incorrectly merged damage observations |
+| 5. Line-item recognition | F1 for complete entries and source-location accuracy | F1 ≥ 0.75 on DocILE line-item evaluation | Map this benchmark to repair fields explicitly; report survey-report results separately |
+| 6. Cost model | Interval coverage and average range width | Coverage within 5 percentage points of the nominal 90% | With synthetic costs, this measures calibration on synthetic data only |
 
-Targets are stated as targets. They will be re-baselined after the first training run and any revision will be recorded with its reason rather than silently adjusted downward.
+These are initial project targets, not achieved results. Review them after the first baseline run and document any revision. Keep the test set fixed when comparing model versions.
 
-### 14.2 Reconciliation evaluation
+### 14.2 Comparison-engine evaluation
 
-The reconciliation engine is evaluated on a held-out set of claims with **injected discrepancies of known type**. Because no labelled inflated claims exist, the team constructs the test set by taking claims where declared scope and observed damage agree, then programmatically injecting each discrepancy class: phantom parts, panel spillover, cost inflation at several magnitudes, and grade substitution.
+Create held-out test cases with known repair lists and damage observations. Introduce controlled discrepancies: unsupported parts, added adjacent panels, cost changes of different sizes, and omitted damaged parts. Include grade-substitution scenarios only where the test input represents parts grade; a changed price alone does not establish substitution.
 
-| Quantity | Definition | Target |
+Run these cases first on known structured inputs to test the comparison rules, then through the full pipeline to measure the effect of extraction and image errors. Keep these results separate. Constructed cases do not establish performance on real fraudulent claims.
+
+| Measure | Definition | Target |
 |---|---|---|
-| Flag precision | Flagged lines that carry an injected discrepancy | ≥ 0.70 |
-| Flag recall by class | Injected discrepancies detected, reported per class | Reported per class; no single aggregate |
-| False flag rate on clean claims | Flags raised on unmodified claims | ≤ 0.05 per claim |
-| Abstention correctness | Lines correctly assigned `insufficient_evidence` when the part is absent from all photographs | ≥ 0.95 |
+| Flag precision | Proportion of flagged entries containing an introduced discrepancy | ≥ 0.70 |
+| Recall by discrepancy type | Proportion of introduced discrepancies found, including missing repairs | Report separately by type |
+| False flags on clean cases | Mean number of flags per unmodified case | ≤ 0.05 flags per case |
+| Correct withholding of judgement | Proportion of entries correctly marked insufficient when their parts are absent from all views | ≥ 0.95 |
 
-Abstention correctness carries the highest target of the five deliberately. A system that flags an honest claim because the surveyor photographed the vehicle badly is worse than a system that misses an inflated line, and the evaluation should reflect that ordering.
+Also test blurred or obstructed views, unresolved part names, uncertain amounts, missing ranges, and sparse cost history. These cases must not turn missing information into a confident discrepancy finding. Report cost-detection recall against the size of the introduced cost change.
 
-**Detection floor.** Flag recall is reported against injection magnitude, so the report can state the smallest cost inflation the system reliably detects rather than reporting a single recall figure that conceals it.
+### 14.3 End-to-end and service checks
 
-### 14.3 End-to-end evaluation
-
-| Quantity | Definition |
+| Check | What it establishes |
 |---|---|
-| Parts list pre-fill accuracy | Proportion of the surveyor's final confirmed parts list correctly proposed by the system |
-| Edit distance | Number of surveyor edits required to reach the final list from the proposed one |
-| Evidence traceability | Proportion of flags where the linked photograph and page reference are correct |
+| Proposed-list accuracy and number of edits | How much correction is needed to reach the reviewed parts list |
+| Photograph, mask, and report-page links | Whether findings point to the correct source evidence |
+| Worker failure and retry | Incomplete processing is visible and retry does not duplicate records |
+| New-input revision | Results from old and new photographs or reports are not mixed |
+| Review save and reconnect | Corrections and reasons persist without duplicate submission |
+| Approval import and cost refresh | Unapproved estimates are excluded; approved records are not counted twice |
+| Reproduction of a prior assessment | The stored inputs and model, mapping, and cost-table versions explain the historical result |
 
-Pre-fill accuracy and edit distance are the productivity claim. They are the closest available proxy for surveyor time saved, which cannot be measured without a deployment.
+These checks cover the application components introduced in §10 as well as the model outputs. They demonstrate a working prototype, not production reliability or a measured financial benefit.
 
-### 14.4 Behaviour under thinning support
+### 14.4 Evaluation with fewer reference records
 
-The cost-band check is evaluated as reference-table support is artificially reduced, to characterise how flag precision degrades and to set the minimum support threshold empirically rather than by assertion. This answers RQ4 and it also produces the threshold value that Module 8 needs.
+Repeat the cost checks with progressively fewer comparable records. Measure flag precision, interval coverage, and range width. Use the results to select the minimum support threshold for cost checks. This answers RQ4 and supplies the threshold used by Modules 7–8.
 
-### 14.5 Product and usability evaluation
+### 14.5 Usability evaluation
 
-The productivity claim cannot be validated without a deployment, but three things can be evaluated within the project and should be, because a proposal that specifies an interface and never tests it has specified decoration.
+| Measure | Method |
+|---|---|
+| Review time | Compare manual preparation with workbench-assisted review on comparable cases; alternate order to reduce familiarity effects |
+| Finding comprehension | Ask a reviewer to explain why a finding was raised and what evidence supports it |
+| Dismissal effort | Count actions needed to dismiss a finding with a reason |
+| Evidence access | Confirm that the reviewer can open original photographs and the relevant report entry |
 
-| Quantity | Method | Purpose |
-|---|---|---|
-| Review time per claim | Timed walkthrough of the workbench against manual list compilation, on the same claims | Direct evidence for the step 4 and 5 intervention in §7.2 |
-| Flag comprehension | Present flags to a reviewer unfamiliar with the system and ask them to state why each fired | Tests whether the stated reason is sufficient on its own |
-| Dismissal cost | Count interactions required to dismiss a flag with a reason | Enforces the one-action rule in §8.8 |
+Use practising surveyors if available. Otherwise, use team members outside the implementing lane and state this limitation. The results are preliminary workflow evidence; deployment is needed to validate actual productivity gains.
 
-Where a practising surveyor is unavailable, these are run with team members outside the owning lane, and the substitution is stated rather than concealed. The result is indicative rather than a usability study, and the report will say so.
+### 14.6 Model comparisons
 
-### 14.6 Comparators
+Compare the combined pipeline with image-only and document-only checks to measure what the combination adds. Retain two experimental comparators from the original design:
 
-Two comparators are run to situate the structured pipeline, neither of which is the deliverable:
+- **Joint image-text model:** uses photographs and report text together to predict entry-level results.
+- **Image-text alignment:** tests whether a repair entry retrieves a relevant supporting photograph in a shared representation space.
 
-- **End-to-end fusion.** A single model taking photographs and report tokens jointly and predicting per-line verdicts. Expected to underperform given the data available, and run to quantify what the structured decomposition costs or saves.
-- **Contrastive alignment.** Aligning image and text representations in a shared space, evaluated on whether a declared line retrieves its supporting photograph. Run to test whether cross-modal alignment adds signal over explicit reconciliation.
+Use the same eligible held-out cases and report data limitations. These experiments do not replace the structured pipeline deliverable, and no performance advantage is assumed in advance.
 
 ### 14.7 Overall success criteria
 
-The project succeeds if:
+The project succeeds when:
 
-1. The end-to-end pipeline runs on an unseen claim and produces a per-line assessment with evidence attached.
-2. Module-level targets in §14.1 are met, or missed with a documented and diagnosed reason.
-3. The reconciliation engine meets the abstention-correctness target, which is the non-negotiable one.
-4. All four course requirement aspects are demonstrated with evidence per §4.
-5. The four research questions are answered, including answers of the form "no, and here is why", which is a valid result.
-6. The workbench prototype runs on live model output for the three in-scope screens, and the interface rules in §8.8 hold in the built version rather than only in the specification.
+1. An unseen test case passes through intake, analysis, comparison, and review with evidence attached.
+2. Module targets are met or any shortfall is measured and explained.
+3. The ≥ 0.95 target for correctly withholding judgement on unphotographed parts is met.
+4. The required course aspects are demonstrated, with the mapping confirmed against the rubric.
+5. All four research questions are answered using the evaluation results.
+6. The three working screens use model output, preserve review actions, and satisfy the prototype interface requirements.
+7. The controlled approval and cost-refresh demonstration preserves the distinction between declared, agreed, and approved amounts.
 
 ---
 
 ## 15. Risks and mitigation
 
-| ID | Risk | Impact | Likelihood | Mitigation | Owner |
-|---|---|---|---|---|---|
-| **R1** | CarDD access is delayed or refused. It requires a signed licensing form emailed to the authors, and turnaround is unknown. | Loss of the highest-quality damage dataset | Medium | Submit the request in week one. VehiDE alone provides 13,945 images and is sufficient to proceed. Treat CarDD as an enhancement, not a dependency. | Lane 2 |
-| **R2** | Panel taxonomy mismatch. No public vocabulary covers pillars, sill, wheel arch liner, radiator support, or ADAS mounts, and HITL is not side-aware. | Reconciliation cannot match declared parts to observed parts | **High** | Build the canonical mapping first (§13). Use DSMLR for side-awareness. Declare uncovered panels as an explicit limitation and route them to `insufficient_evidence` rather than mis-mapping them. | Lane 4 |
-| **R3** | No real survey reports available for document fine-tuning. | Line-item recognition is evaluated only on synthetic layouts | **High** | Pre-train on DocILE, which is real business documents. Use synthetic reports for layout transfer only and never for accuracy claims. State the number of realistic reports used in the report. | Lane 3 |
-| **R4** | Synthetic cost table undermines any cost-accuracy claim. | Cost-band results cannot be presented as validated | High, and accepted | Scope the evaluation claim to reconciliation logic rather than band accuracy (§12.4). Declare A1 openly. This risk is managed by honest scoping, not by engineering. | Lane 4 |
-| **R5** | Sim-to-real gap. CrashCar101 renders may not transfer to real claim photographs. | Joint supervision benefit fails to materialise | Medium | The authors demonstrated sim-to-real transfer for damage segmentation. Validate on real held-out data before relying on synthetic augmentation, and report the transfer result whichever way it falls. | Lanes 1, 2 |
-| **R6** | Duplicate damage counting across views inflates the observed state. | Every downstream reconciliation inherits the error | Medium | Module 3 is designed for this. Evaluate duplicate suppression as a first-class metric rather than assuming it works. | Lane 2 |
-| **R7** | Scope exceeds the available effort across nine modules and five members. | Incomplete deliverable | **High** | Stub the full pipeline in week one so an end-to-end path exists before any model is good. Degrade module quality rather than dropping modules, so the demonstration stays complete. | Lane 5 |
-| **R8** | Interface drift between lanes working in parallel. | Integration failure late in the project | Medium | Freeze the three contracts in §10.3 in the first session. Each lane ships a conforming stub in week one. | Lane 5 |
-| **R9** | Class imbalance in damage segmentation, with dent, scratch, and crack visually similar and unevenly represented. | Aggregate metric conceals failure on hard classes | Medium | Report per-class IoU throughout. Apply class-weighted loss. Never report a single aggregate without the per-class breakdown beside it. | Lane 2 |
-| **R10** | Image resolution confounds evidence sufficiency. Low-resolution photographs systematically hide small damage. | Under-reported damage read as absent damage | Medium | Record per-photograph resolution as a feature. Fold it into the evidence-sufficiency decision so low-resolution coverage counts as weaker coverage. | Lanes 2, 4 |
-| **R11** | Ultralytics Carparts-Seg is AGPL-3.0 and the licence propagates. | Licence contamination of project code | Low | Confirm implications before any use. HITL (CC0) and DSMLR are the primary sources and neither carries this constraint. | Lane 1 |
+| ID | Risk and effect | Likelihood | Planned response | Owner |
+|---|---|---|---|---|
+| R1 | CarDD access is delayed, reducing available damage data | Medium | Request access early; proceed with accessible, licensed alternatives | Lane 2 |
+| R2 | Part names or side labels cannot be matched across inputs | High | Build the shared mapping first; mark unsupported parts and unresolved sides as insufficient evidence | Lane 4 with Lanes 1–3 |
+| R3 | Real survey reports are unavailable, limiting document evaluation | High | Use public document benchmarks and synthetic layouts; state the limits on real-report accuracy | Lane 3 |
+| R4 | Synthetic costs are mistaken for validated repair prices | High | Label synthetic data and restrict claims to comparison logic and synthetic calibration | Lane 4 |
+| R5 | Gains from generated images do not transfer to real photographs | Medium | Evaluate on separate real images and report results by data source | Lanes 1–2 |
+| R6 | Multiple photographs cause duplicate or incorrectly merged damage | Medium | Measure both duplicate removal and preservation of distinct damage | Lane 2 |
+| R7 | Model and application scope exceeds five members' capacity | High | Integrate sample outputs in week one; group modules into the four runtime components in §10.1 | All lanes; Lane 5 coordinates |
+| R8 | Components exchange incompatible or stale records | Medium | Agree schemas early; require claim revisions and version fields; test integration and retries | Lane 5 with module owners |
+| R9 | Overall damage accuracy hides failure on rare or similar classes | Medium | Report per-class metrics and evaluate class-weighted training | Lane 2 |
+| R10 | Poor image quality hides damage and produces false findings | Medium | Use explicit coverage and image-quality states; test insufficient-evidence cases | Lanes 2, 4 |
+| R11 | Dataset licence terms do not fit the intended use | Low for reserve dataset; checks outstanding | Verify original terms before use, including AGPL-3.0 implications for Carparts-Seg | Relevant data owner |
+| R12 | Noisy findings or slow interactions discourage surveyor use | High | Evaluate corrections, comprehension, evidence access, and dismissal effort; use shadow mode before assisted deployment | Lane 5 |
+| R13 | Building all proposed screens delays the demonstration | Medium | Build Screens 2–4; provide static mockups for the remaining views | Lane 5 |
+| R14 | Unapproved or duplicate costs enter the reference history | Medium | Separate review and approval states; validate approval imports and refresh eligibility | Lanes 4–5 |
 
-| **R12** | Surveyor rejection. The interface adds steps, flags noisily, or contradicts what the surveyor can see, and the tool is worked around rather than used. | Product fails regardless of model quality | **High** | Shadow mode before assisted mode (§5.4). One-action dismissal with recorded reason. Raw photograph always reachable. Track override rate rather than flag rate as the health metric (§8.6). | Lane 5 |
-| **R13** | Interface scope creep. Six screens plus an audit view is more than the project can build alongside nine modules. | Deliverable incomplete | Medium | Three screens built, the rest specified and mocked, boundary stated up front in §8.10 rather than discovered at demonstration. | Lane 5 |
-
-### Risks accepted without mitigation
-
-Two limitations are inherent rather than manageable, and the report will state them as such rather than presenting weak mitigations.
-
-The system cannot see structural or mechanical damage that no external photograph shows. Hidden damage discovered on teardown is a legitimate source of divergence between declared cost and photographic evidence, and no amount of model quality changes that.
-
-The system cannot distinguish genuine severity from inflation where the severity is invisible. ADAS recalibration and EV battery inspection protocols carry real cost that the visible damage does not convey. Vehicle attributes partially proxy for this, and the residual is a permanent limitation of any vision-based approach.
+External photographs cannot reveal all structural or mechanical damage. They also cannot explain every legitimate specialist cost, such as an inspection or calibration procedure. These remain limits of the evidence, even if model accuracy improves.
 
 ---
 
-## 16. Open items before submission
+## 16. Open items before submission and implementation
 
-- [ ] Confirm lane assignments against member backgrounds and record them
-- [ ] Submit the CarDD licence request
-- [ ] Verify VehiDE original release terms, not only the Kaggle mirror
-- [ ] Instantiate a per-claim leakage figure from GIA data or a defensible proxy, to strengthen §2.4
-- [ ] Cite all GIA figures to source and confirm the 2025 statistics are final
-- [ ] Build the canonical part vocabulary and its mapping tables
-- [ ] Decide the multi-view strategy: CrashCar101 synthetic groups or single-view projection
-- [ ] Confirm AGPL-3.0 implications before any use of Carparts-Seg
-- [ ] Set the minimum support threshold for cost-band abstention empirically (§14.4)
-- [ ] Validate the surveyor journey in §7 with a practising motor surveyor, or record that it is based on documented workflow only
-- [ ] Agree the fixed dismissal-reason list in §8.3 across the team before the workbench is built
-- [ ] Confirm the three in-scope screens in §8.10 against the demonstration plan
+- [ ] Confirm member assignments and owners of the shared part vocabulary and data schemas.
+- [ ] Confirm the course-requirement grouping and whether the selected cost anomaly method satisfies unsupervised learning.
+- [ ] Verify and cite the GIA figures, including their applicable years and reporting status; develop a defensible per-claim cost example if data permits.
+- [ ] Submit the CarDD access request and verify original dataset licences, including VehiDE and any reserve datasets.
+- [ ] Complete the mapping between image labels, survey-report part names, operations, and left/right sides.
+- [ ] Confirm the synthetic cost table's row structure, currencies, units, operation fields, and damage labels.
+- [ ] Select the multi-view method and define separate synthetic and real evaluation sets.
+- [ ] Agree the schemas in §10.3, processing-state transitions, and backend/worker interfaces.
+- [ ] Define how final approval is represented in the demonstration and which records qualify for cost refresh.
+- [ ] Select the image-quality and minimum cost-support thresholds through evaluation.
+- [ ] Validate the surveyor workflow and timing assumptions, or document the absence of practitioner input.
+- [ ] Agree the dismissal-reason list and confirm Screens 2–4 against the demonstration plan.
 
 ---
 
