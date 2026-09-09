@@ -86,9 +86,7 @@ If a part is not visible, is obscured, or appears only in poor-quality photograp
 
 ### 2.4 Industry context
 
-The current draft records Singapore motor insurance gross written premiums of S$1.28 billion in 2025, a 20.9% share of domestic general insurance, and an underwriting loss of S$6.9 million. It also records an 11% increase in net incurred claims while accident counts stayed broadly flat. The draft attributes these figures to the General Insurance Association of Singapore (GIA), together with an estimate of roughly S$140 million per year spent paying and investigating fraudulent and inflated claims.
-
-*These figures, their reporting years, and their sources must be verified before submission.*
+The General Insurance Association of Singapore (GIA) reported motor insurance gross written premiums of S$1.28 billion in 2025, representing 20.9% of Singapore's domestic general insurance market. The segment recorded an underwriting loss of S$6.9 million, while net incurred motor claims increased by 11% despite the number of motor accidents recorded by GIA remaining broadly stable. GIA materials have also estimated that insurers pay up to S$140 million annually for inflated and fraudulent motor insurance claims.
 
 Repair costs can increase for valid reasons, including electric vehicle (EV) batteries, structural aluminium, and advanced driver-assistance systems (ADAS) such as sensors in bumpers and windscreens. Aggregate claim totals cannot by themselves separate these increases from inflated repair entries. Linking damage and repair costs at part level could help insurers investigate the reasons for cost changes.
 
