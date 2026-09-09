@@ -1,0 +1,62 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Frontend
+node_modules/
+coverage/
+.vite/
+playwright-report/
+test-results/
+
+# Editors, OS, and temporary Office files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+~$*
+*.tmp
+*.log
+.ipynb_checkpoints/
+
+# Local data: only directory markers and documentation are tracked
+/data/raw/**
+!/data/raw/.gitkeep
+/data/interim/**
+!/data/interim/.gitkeep
+/data/processed/**
+!/data/processed/.gitkeep
+/data/synthetic/**
+!/data/synthetic/.gitkeep
+
+# Generated artifacts
+/artifacts/models/**
+!/artifacts/models/.gitkeep
+/artifacts/cost_tables/**
+!/artifacts/cost_tables/.gitkeep
+/artifacts/evaluation/**
+!/artifacts/evaluation/.gitkeep
+/artifacts/exports/**
+!/artifacts/exports/.gitkeep
+
+# Local runtime state
+/runtime/
+*.sqlite
+*.sqlite3
