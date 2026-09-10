@@ -10,6 +10,12 @@ Repository scaffold and implementation specifications. Application code, trained
 
 Start with the [project proposal](docs/CLAIM-CMEV_project_proposal_v1.md), [specification index](docs/specs/README.md), [product specification](docs/specs/product_specification.md), and [technical specification](docs/specs/technical_specification.md).
 
+## Shared development context
+
+Read [CONTEXT.md](CONTEXT.md) for current status, decisions, validation evidence and the next team handoff. [AGENTS.md](AGENTS.md) supplies shared repository guidance; [CLAUDE.md](CLAUDE.md) imports that guidance for Claude Code.
+
+The [coding-agent workflow guide](docs/agent-workflows.md) describes all seven portable skills, their Codex/Claude invocation, and how to keep their copies in sync. Canonical skills live in `.agents/skills/`; Claude Code copies live in `.claude/skills/`.
+
 ## Repository map
 
 | Path | Responsibility |
