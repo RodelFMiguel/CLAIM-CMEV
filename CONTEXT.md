@@ -1,7 +1,7 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-09-10 (Asia/Singapore).
-Baseline inspected for this update: commit `121410b` on the local checkout. Confirm the current branch/HEAD and working tree when resuming; this is a dated snapshot.
+Last updated: 2026-09-11 (Asia/Singapore).
+Baseline inspected for this update: commit `e837b3e` on the local checkout. Confirm the current branch/HEAD and working tree when resuming; this is a dated snapshot.
 
 This file is the team's maintained handoff, not an automatically synchronised chat transcript. Share it with the skills and source changes through the team's normal version-control workflow.
 
@@ -21,9 +21,9 @@ Nine functional modules run across a workbench, backend, image worker and docume
 | Specifications | Product, technical, contracts, platform, evaluation and all nine module specifications exist with TODOs |
 | Architecture | Four runtime boundaries follow the proposal; framework/database choices in ADR 0001 are still proposed |
 | Application | No application entrypoints, dependency manifests, model pipelines, trained models or deployment manifests are implemented |
-| Data | No project datasets/checkpoints or synthetic price file are supplied by the scaffold |
-| Shared agent workflows | Seven portable skills and matching Claude copies are added in the current uncommitted work |
-| Developer tooling | Skill synchronisation utility is implemented; all nine isolated tests pass |
+| Data | Acquisition script and 13-entry source catalogue are prepared; full datasets, checkpoints and synthetic price file have not been acquired |
+| Shared agent workflows | Seven portable skills and matching Claude copies are present in baseline `e837b3e` |
+| Developer tooling | Skill-sync utility has 9 previously passing tests; dataset downloader has 23 passing offline tests and a small public HTTPS metadata smoke check |
 | Team allocation | Five lanes defined; named members/contract owners remain unassigned |
 | Evaluation | No module accuracy, price calibration, usability or financial benefit has been measured |
 
@@ -43,7 +43,7 @@ Nine functional modules run across a workbench, backend, image worker and docume
 2. Review and freeze the initial shared schema, supported part/side/operation vocabulary, cost basis and processing states.
 3. Implement the API/storage/job foundation and explicitly synthetic integration fixtures.
 4. Connect upload, branch outputs, comparison, review and persistence before replacing fixtures with model outputs.
-5. Register licensed data sources and leakage-resistant split manifests, then execute bounded model experiments.
+5. Follow [dataset acquisition setup](docs/dataset-downloads.md), resolve access/local inputs, acquire selected data and inspect annotations; then create leakage-resistant splits before bounded model experiments.
 
 These are project priorities, not claims that the next contributor has been assigned all of them. Take the scoped task agreed with the team.
 
@@ -107,3 +107,30 @@ Next concrete step and agreed owner (or unassigned):
 ```
 
 One workstation used PowerShell to access a WSL checkout and encountered a sandbox helper startup failure. That is local environment history, not a project runtime requirement or authority to bypass another contributor's permission settings.
+
+
+## Dataset downloader handoff (2026-09-11)
+
+Date/time and timezone: 2026-09-11, Asia/Singapore (time not recorded).
+Contributor / coding agent: Codex, at the user's request.
+Task and relevant module: Prepare acquisition tooling for all proposal section 12 datasets and local data gaps; M01-M07 and workbench fixtures.
+Branch / baseline commit / resulting commit or PR: project-structure / e837b3e (Add agent skills) / no new commit or PR.
+Changed paths and completed behaviour:
+- scripts/download_datasets.py: catalogue selection, optional reserve/DocILE extras, HTTPS retries and validator-based resumption, local imports, official provider adapters, hashes/ZIP checks, per-dataset locks and explicit incomplete reports.
+- data/manifests/dataset_sources.json and dataset_sources.local.example.json: 13 source/input entries, source evidence, pinned DSMLR/CORD/CrashCar revisions and private configuration example.
+- docs/dataset-downloads.md, scripts/README.md, data/README.md and tests/README.md: setup, access, storage, commands and limitations.
+- tests/unit/test_download_datasets.py: 23 offline tests.
+Decisions and references:
+- Preserve original assets without extraction, conversion or new split generation. Local reports/configuration remain in existing ignored data/raw and runtime locations; .gitignore unchanged.
+- Gated/manual sources need actual publisher access or local inputs; unresolved original terms need recorded evidence. No forms were submitted and no terms were accepted on the user's behalf.
+- CORD publisher README/card says CC BY 4.0, differing from proposal CC BY-SA 4.0; catalogue records the discrepancy without silently editing the governing proposal.
+Checks actually run, results and artifact locations:
+- python3 -m unittest discover -s tests/unit -p test_download_datasets.py -v: 23 passed on WSL Python 3.12.3.
+- --dry-run --include-reserve: all 13 entries listed with prerequisites; no acquisition writes.
+- Public HTTPS smoke: temporary CORD README download, 27 bytes, SHA-256 835f3f7d88a86e05a882c6a6b6333da6ab874776385f85473798769d767c2fca. Temporary asset removed by the test context.
+- Python 3.9 syntax parse, new/edited documentation links, Git whitespace and ignored download/private-configuration paths checked.
+Uncommitted work, limitations and missing prerequisites:
+- These downloader changes are uncommitted. Full archives and actual gated/provider-client integrations were not run; adapter tests use mocks. No model or data-quality evaluation was performed.
+- HITL/CarDD/SROIE require supplied access/files; DocILE needs its token, CrashCar needs approved HF access, optional provider clients are not installed by the script, and several original licence terms remain unresolved.
+- Synthetic prices/reports and authorized real grouped photos are local data gaps. Acquired-file counts are not usable-sample counts. Acquisition does not complete module dataset-validation TODOs.
+Next concrete step and agreed owner: Unassigned data owners should configure authorized sources using docs/dataset-downloads.md, acquire selected datasets, inspect counts/labels and record mapping/grouped-split manifests.
