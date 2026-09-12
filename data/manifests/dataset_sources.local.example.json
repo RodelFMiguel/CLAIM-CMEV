@@ -1,0 +1,81 @@
+{
+  "hitl": {
+    "files": [
+      {
+        "name": "parts.zip",
+        "path": "/absolute/path/to/authorized-parts.zip"
+      },
+      {
+        "name": "damages.zip",
+        "path": "/absolute/path/to/authorized-damages.zip"
+      }
+    ]
+  },
+  "dsmlr": {
+    "permission_evidence": ""
+  },
+  "vehide": {
+    "permission_evidence": ""
+  },
+  "cardd": {
+    "permission_evidence": "",
+    "files": [
+      {
+        "name": "cardd.zip",
+        "path": "/absolute/path/to/authorized-cardd.zip"
+      }
+    ]
+  },
+  "sroie": {
+    "permission_evidence": "",
+    "files": [
+      {
+        "name": "train-images.zip",
+        "path": "/absolute/path/to/train-images.zip"
+      },
+      {
+        "name": "train-annotations.zip",
+        "path": "/absolute/path/to/train-annotations.zip"
+      },
+      {
+        "name": "test-images.zip",
+        "path": "/absolute/path/to/test-images.zip"
+      },
+      {
+        "name": "test-annotations.zip",
+        "path": "/absolute/path/to/test-annotations.zip"
+      }
+    ]
+  },
+  "funsd": {
+    "permission_evidence": ""
+  },
+  "carparts-seg": {
+    "permission_evidence": ""
+  },
+  "prices": {
+    "files": [
+      {
+        "name": "prices_dataset.csv",
+        "path": "/absolute/path/to/prices_dataset.csv"
+      }
+    ]
+  },
+  "survey-reports": {
+    "files": [
+      {
+        "name": "synthetic-survey-reports.zip",
+        "path": "/absolute/path/to/synthetic-survey-reports.zip"
+      }
+    ]
+  },
+  "vehicle-groups": {
+    "permission_evidence": "",
+    "files": [
+      {
+        "name": "authorized-vehicle-groups.zip",
+        "path": "/absolute/path/to/authorized-vehicle-groups.zip"
+      }
+    ]
+  }
+}

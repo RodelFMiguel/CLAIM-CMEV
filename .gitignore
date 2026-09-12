@@ -60,3 +60,7 @@ Thumbs.db
 /runtime/
 *.sqlite
 *.sqlite3
+
+# Personal agent settings; shared skills remain tracked
+/.claude/settings.local.json
+/CLAUDE.local.md

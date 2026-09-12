@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "checked_on": "2026-09-11",
+  "datasets": [
+    {
+      "id": "hitl",
+      "name": "HITL Car Parts and Car Damages",
+      "role": "primary",
+      "modules": [
+        "M01",
+        "M02"
+      ],
+      "provenance": "real",
+      "provider": "manual",
+      "source": "https://humansintheloop.org/resources/datasets/car-parts-and-car-damages-dataset/",
+      "license": "CC0-1.0 (publisher page)",
+      "needs_evidence": false,
+      "access": "Complete the publisher access form, then configure all supplied part and damage archives in local sources."
+    },
+    {
+      "id": "dsmlr",
+      "name": "DSMLR Car-Parts-Segmentation",
+      "role": "supplementary",
+      "modules": [
+        "M01"
+      ],
+      "provenance": "real",
+      "provider": "http",
+      "source": "https://github.com/dsmlr/Car-Parts-Segmentation",
+      "license": "No explicit dataset licence found in the inspected README; verify with owner.",
+      "needs_evidence": true,
+      "revision": "e970560da9785216dafb77f5749456d70864bfeb",
+      "files": [
+        {
+          "name": "dsmlr.zip",
+          "url": "https://codeload.github.com/dsmlr/Car-Parts-Segmentation/zip/e970560da9785216dafb77f5749456d70864bfeb"
+        }
+      ],
+      "access": "Record original permission evidence in local sources; pinned repository archive contains the dataset."
+    },
+    {
+      "id": "vehide",
+      "name": "VehiDE",
+      "role": "primary",
+      "modules": [
+        "M02"
+      ],
+      "provenance": "real",
+      "provider": "kaggle",
+      "source": "https://www.kaggle.com/datasets/hendrichscullen/vehide-dataset-automatic-vehicle-damage-detection",
+      "license": "Mirror advertises Apache-2.0; original release terms remain unverified.",
+      "needs_evidence": true,
+      "repo": "hendrichscullen/vehide-dataset-automatic-vehicle-damage-detection",
+      "access": "Verify original terms and record permission evidence; install/authenticate the official Kaggle CLI. Optionally configure local archives."
+    },
+    {
+      "id": "cardd",
+      "name": "CarDD",
+      "role": "supplementary",
+      "modules": [
+        "M02"
+      ],
+      "provenance": "real",
+      "provider": "manual",
+      "source": "https://cardd-ustc.github.io/",
+      "license": "Publisher licensing form and granted access required.",
+      "needs_evidence": true,
+      "access": "Obtain access through the publisher licensing process, then configure supplied archives or authorized direct URLs."
+    },
+    {
+      "id": "crashcar101",
+      "name": "CrashCar101",
+      "role": "primary",
+      "modules": [
+        "M02",
+        "M03"
+      ],
+      "provenance": "synthetic",
+      "provider": "huggingface",
+      "source": "https://huggingface.co/datasets/JensParslov/CrashCar",
+      "license": "Publisher gate requires non-commercial use and access approval.",
+      "needs_evidence": false,
+      "repo": "JensParslov/CrashCar",
+      "revision": "07c3d0100ec91f4965ffdb89054248ce0758d892",
+      "token_required": true,
+      "access": "Request access on Hugging Face and set HF_TOKEN for an approved account; install huggingface_hub."
+    },
+    {
+      "id": "docile",
+      "name": "DocILE annotated train/validation and test",
+      "role": "primary",
+      "modules": [
+        "M04",
+        "M05"
+      ],
+      "provenance": "real",
+      "provider": "docile",
+      "source": "https://docile.rossum.ai/",
+      "license": "Obtain publisher access token and follow accompanying dataset terms; repository code is MIT.",
+      "needs_evidence": false,
+      "access": "Obtain publisher token and set DOCILE_TOKEN. Default downloads annotated-trainval and test; --docile-extras adds synthetic and all unlabeled chunks."
+    },
+    {
+      "id": "cord",
+      "name": "CORD v2",
+      "role": "supplementary",
+      "modules": [
+        "M04",
+        "M05"
+      ],
+      "provenance": "real",
+      "provider": "huggingface",
+      "source": "https://github.com/clovaai/cord",
+      "license": "CC-BY-4.0 (publisher README and Hugging Face card; differs from proposal)",
+      "needs_evidence": false,
+      "repo": "naver-clova-ix/cord-v2",
+      "revision": "7f0115a4b758a71d6473b8d085751692da2fef98",
+      "access": "Install huggingface_hub; public publisher-linked v2 snapshot includes all splits as Parquet."
+    },
+    {
+      "id": "sroie",
+      "name": "SROIE",
+      "role": "supplementary",
+      "modules": [
+        "M04",
+        "M05"
+      ],
+      "provenance": "real",
+      "provider": "manual",
+      "source": "https://rrc.cvc.uab.es/?ch=13&com=downloads",
+      "license": "Verify dataset terms at the official competition portal; proposal MIT claim not independently established.",
+      "needs_evidence": true,
+      "access": "Register/sign in at the official portal and configure downloaded training/test images and annotations; portal unavailable during source check."
+    },
+    {
+      "id": "funsd",
+      "name": "FUNSD",
+      "role": "supplementary",
+      "modules": [
+        "M04",
+        "M05"
+      ],
+      "provenance": "real",
+      "provider": "http",
+      "source": "https://guillaumejaume.github.io/FUNSD/download/",
+      "license": "Publisher asks users to read licence before download; proposal records non-commercial academic use. Confirm original terms.",
+      "needs_evidence": true,
+      "files": [
+        {
+          "name": "funsd.zip",
+          "url": "https://guillaumejaume.github.io/FUNSD/dataset.zip"
+        }
+      ],
+      "access": "Record licence/access evidence in local sources before downloading the publisher ZIP."
+    },
+    {
+      "id": "carparts-seg",
+      "name": "Ultralytics Carparts-Seg",
+      "role": "reserve",
+      "modules": [
+        "M01"
+      ],
+      "provenance": "real",
+      "provider": "http",
+      "source": "https://docs.ultralytics.com/datasets/segment/carparts-seg/",
+      "license": "Publisher YAML is marked AGPL-3.0; review dataset/original-source terms for intended use.",
+      "needs_evidence": true,
+      "files": [
+        {
+          "name": "carparts-seg.zip",
+          "url": "https://github.com/ultralytics/assets/releases/download/v0.0.0/carparts-seg.zip"
+        }
+      ],
+      "access": "Reserve source: select explicitly or use --include-reserve; record licence review evidence."
+    },
+    {
+      "id": "prices",
+      "name": "Project synthetic prices_dataset.csv",
+      "role": "local",
+      "modules": [
+        "M06",
+        "M07"
+      ],
+      "provenance": "synthetic",
+      "provider": "manual",
+      "source": "docs/CLAIM-CMEV_project_proposal_v1.md#124-repair-cost-data-and-the-initial-reference-table",
+      "license": "Project-owned synthetic input; no public source supplied.",
+      "needs_evidence": false,
+      "access": "Supply the actual synthetic CSV in local sources. This script does not invent the proposed 630 rows or infer operation/damage/currency fields."
+    },
+    {
+      "id": "survey-reports",
+      "name": "Project synthetic survey reports",
+      "role": "local",
+      "modules": [
+        "M04",
+        "M05",
+        "M09"
+      ],
+      "provenance": "synthetic",
+      "provider": "manual",
+      "source": "docs/CLAIM-CMEV_project_proposal_v1.md#125-document-datasets",
+      "license": "Project-owned synthetic layouts; no public source supplied.",
+      "needs_evidence": false,
+      "access": "Supply a synthetic survey-report archive. Generation, template grouping and label conversion are separate work."
+    },
+    {
+      "id": "vehicle-groups",
+      "name": "Real vehicle-grouped evaluation photos",
+      "role": "local",
+      "modules": [
+        "M03"
+      ],
+      "provenance": "real",
+      "provider": "manual",
+      "source": "docs/CLAIM-CMEV_project_proposal_v1.md#123-photographs-grouped-by-vehicle",
+      "license": "No suitable public source identified; authorized and anonymised project collection required.",
+      "needs_evidence": true,
+      "access": "Supply an authorized archive and permission evidence, preserving vehicle grouping. CrashCar101 is only the synthetic comparator."
+    }
+  ]
+}

@@ -9,8 +9,10 @@
 | `evaluation/` | Reproducible metric/ablation runners; distinct from ordinary pass/fail tests |
 | `fixtures/synthetic/` | Tiny generated safe examples with expected outcomes and explicit fixture provenance |
 
-Follow the [evaluation plan](../docs/specs/evaluation_plan.md). No test runners/dependencies are implemented yet.
+Follow the [evaluation plan](../docs/specs/evaluation_plan.md). Application/model test runners and dependencies remain unimplemented. The skill-sync utility has standard-library tests: run `python3 -m unittest discover -s tests/unit -p test_sync_skills.py -v`. See [agent workflows](../docs/agent-workflows.md).
 
 Initial fixtures should cover: supported in-range repair; adequate coverage with no damage; unphotographed or blurred part; unresolved side/amount; absent/sparse/incompatible range; cost below/at/above bounds; possible missing repair; partial report; repeated image observations; worker crash/retry; and agreed versus duplicate/superseded final approvals.
 
 Fixtures prove contracts and logic, not model accuracy. Keep real claim files, public dataset copies and large model outputs out of tracked fixtures.
+
+Dataset acquisition utility checks: `python3 -m unittest discover -s tests/unit -p test_download_datasets.py -v`. These use synthetic archives and mocked HTTP/provider responses; they do not establish real dataset completeness or model quality.
