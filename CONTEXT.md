@@ -81,6 +81,7 @@ No project-wide external blocker has been demonstrated: contract and fixture wor
 | `be6b703` | Proposal corrections |
 | `121410b` (2026-09-10) | Initial repository structure and implementation specifications committed |
 | Current work, uncommitted (2026-09-10) | Added all seven portable skills, Claude copies, shared AGENTS/CLAUDE guidance, CONTEXT.md, sync utility/tests and workflow documentation; validation passed |
+| Current work, uncommitted (2026-09-21) | Drafted simplified project proposal v2 (docs/CLAIM-CMEV_project_proposal_v2.md); proposed, not accepted |
 
 Commit subjects above come from the inspected Git history. Do not treat the “current work” row as a commit; replace or append its commit/PR reference when the team records one.
 
@@ -134,3 +135,21 @@ Uncommitted work, limitations and missing prerequisites:
 - HITL/CarDD/SROIE require supplied access/files; DocILE needs its token, CrashCar needs approved HF access, optional provider clients are not installed by the script, and several original licence terms remain unresolved.
 - Synthetic prices/reports and authorized real grouped photos are local data gaps. Acquired-file counts are not usable-sample counts. Acquisition does not complete module dataset-validation TODOs.
 Next concrete step and agreed owner: Unassigned data owners should configure authorized sources using docs/dataset-downloads.md, acquire selected datasets, inspect counts/labels and record mapping/grouped-split manifests.
+
+
+## Proposal v2 draft handoff (2026-09-21)
+
+Date/time and timezone: 2026-09-21, Asia/Singapore (time not recorded).
+Contributor / coding agent: Claude Code, at the user's request.
+Task and relevant module: Draft a simplified project proposal (v2) for the revised workflow; affects all modules.
+Branch / baseline commit / resulting commit or PR: project-structure / c985d90 / no new commit or PR.
+Changed paths and completed behaviour:
+- docs/CLAIM-CMEV_project_proposal_v2.md: new document. Revised input (photographed workshop estimate marked by the surveyor with exclusion marks and price changes), one working review overview page with upload and print-to-PDF, nine modules with a v1 mapping table, per-model training/evaluation datasets, a per-model serving table, a 50 person-day lane budget and a contingency ladder.
+Decisions (accepted/proposed) and references:
+- Proposed only. v1 remains the governing proposal until the team accepts v2. Module specifications and ADR 0001 still follow v1; if v2 is accepted, record it in an ADR and update the specs using the v1-to-v2 module mapping in v2 section 10.
+- Key proposed changes: HITL-only committed vision data; rule-based multi-view merge; PaddleOCR + LayoutLMv3 + Faster R-CNN pen-mark detector + TrOCR document branch; generated price table replacing the unsupplied 630-row file; cost key without side and damage type; two-process deployment (API + worker) on SQLite.
+Checks actually run, results and artifact locations:
+- Markdown structure checks only: 5 mermaid blocks balanced, local links resolve, sentence-length pass for the simple-English brief. No code, tests, models or data were run.
+Uncommitted work, limitations and missing prerequisites:
+- The v2 document is uncommitted. Dataset licence statements in v2 restate the catalogue and public model cards; they are not independently re-verified here. Effort estimates are planning figures.
+Next concrete step and agreed owner (or unassigned): Team reviews v2; if accepted, write ADR 0002 (scope reduction) and update module specs. Unassigned.

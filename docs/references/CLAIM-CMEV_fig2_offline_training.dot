@@ -1,0 +1,45 @@
+digraph offline {
+  rankdir=TB; bgcolor="white"; splines=polyline;
+  nodesep=0.35; ranksep=0.5;
+  node [shape=box, style="filled,rounded", fillcolor="#FFFFFF", color="#333333",
+        fontname="Helvetica", fontsize=11, margin="0.16,0.10", penwidth=1.2];
+  edge [color="#444444", arrowsize=0.7, penwidth=1.1, fontname="Helvetica", fontsize=9];
+
+  subgraph cluster_seg {
+    label="SEGMENTATION TRAINING"; fontname="Helvetica-Bold"; fontsize=11;
+    color="#2E6DA4"; style="rounded"; penwidth=1.5; bgcolor="#F7FAFD";
+    partdata [label="PART masks\n998 images · 21 classes\n(polygon, HITL · CC0)", fillcolor="#EAF2FB"];
+    dmgdata  [label="DAMAGE masks\n814 images · 8 classes\n(polygon, HITL · CC0)", fillcolor="#EAF2FB"];
+    synth    [label="CrashCar101\nsynthetic renders\njoint part × damage", fillcolor="#EAF2FB", style="filled,rounded,dashed"];
+    harness  [label="Shared segmentation harness\nSupervisely → COCO → SegFormer\n(two heads, one codebase)"];
+    segw     [label="Part + damage weights", fillcolor="#DCE9F7", style="filled", color="#2E6DA4", penwidth=1.5];
+    partdata -> harness; dmgdata -> harness; synth -> harness [style=dashed];
+    harness -> segw;
+  }
+
+  subgraph cluster_vdu {
+    label="DOCUMENT TRAINING"; fontname="Helvetica-Bold"; fontsize=11;
+    color="#8A6D3B"; style="rounded"; penwidth=1.5; bgcolor="#FDFAF4";
+    docile [label="DocILE / CORD\n6.7k docs · LIR track\n(line-item annotated)", fillcolor="#F9F0DC"];
+    vdu    [label="VDU fine-tune\nLayoutLMv3 / Donut"];
+    synrep [label="Synthetic surveyor reports\nlayout transfer target ONLY\nnever used for accuracy claims", fillcolor="#F9F0DC", style="filled,rounded,dashed"];
+    lirw   [label="Line-item weights", fillcolor="#F5E9D0", style="filled", color="#8A6D3B", penwidth=1.5];
+    docile -> vdu; vdu -> lirw; synrep -> vdu [style=dashed, label=" transfer\l eval\l"];
+  }
+
+  subgraph cluster_cost {
+    label="COST BAND TRAINING"; fontname="Helvetica-Bold"; fontsize=11;
+    color="#3C763D"; style="rounded"; penwidth=1.5; bgcolor="#F5FAF6";
+    prices [label="prices_dataset.csv\n630 rows · 18 parts × 5 models\n× 7 years × 3 competing shops\n(3 quotes per part = observed\nlegitimate price dispersion)", fillcolor="#E8F3EA"];
+    gbm    [label="Cost band model\nGBM on (part, damage, vehicle)\n+ quantile / conformal interval\n→ [lo, hi]"];
+    prices -> gbm;
+  }
+
+  b1 [label="① VISION BRANCH", shape=box, style="filled", fillcolor="#DCE9F7", color="#2E6DA4", penwidth=1.5];
+  b2 [label="② DOCUMENT BRANCH", shape=box, style="filled", fillcolor="#F5E9D0", color="#8A6D3B", penwidth=1.5];
+  b3 [label="REFERENCE COST TABLE\nseeded offline,\ngrown online by write-back", shape=box, style="filled", fillcolor="#E8F3EA", color="#3C763D", penwidth=1.5];
+  b4 [label="③ RECONCILIATION ENGINE", shape=box, style="filled", fillcolor="#EFEAF6", color="#5B4B8A", penwidth=1.5];
+
+  segw -> b1; lirw -> b2; gbm -> b3; b3 -> b4;
+  b1 -> prices [style=invis];
+}

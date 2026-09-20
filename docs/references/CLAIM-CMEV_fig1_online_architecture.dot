@@ -1,0 +1,67 @@
+digraph online {
+  rankdir=TB;
+  bgcolor="white";
+  splines=polyline;
+  nodesep=0.35; ranksep=0.45;
+  node [shape=box, style="filled,rounded", fillcolor="#FFFFFF", color="#333333",
+        fontname="Helvetica", fontsize=11, margin="0.16,0.10", penwidth=1.2];
+  edge [color="#444444", arrowsize=0.7, penwidth=1.1, fontname="Helvetica", fontsize=9];
+
+  // inputs
+  subgraph cluster_in {
+    label="INPUTS"; fontname="Helvetica-Bold"; fontsize=11; color="#999999"; style="dashed";
+    photos [label="N damage photographs\n(tens to hundreds)", fillcolor="#EAF2FB"];
+    report [label="Surveyor report\nscan / PDF", fillcolor="#EAF2FB"];
+    attrs  [label="Vehicle attributes\nmake / model / year", fillcolor="#EAF2FB"];
+  
+}
+
+  // vision branch
+  subgraph cluster_vision {
+    label="①  VISION BRANCH"; fontname="Helvetica-Bold"; fontsize=11;
+    color="#2E6DA4"; style="rounded"; penwidth=1.6; bgcolor="#F7FAFD";
+    m1 [label="Module 1\nPart segmentation\nSegFormer · 21 classes"];
+    m2 [label="Module 2\nDamage segmentation\nSegFormer · 8 classes"];
+    mi [label="Mask intersection\npart × damage"];
+    m3 [label="Module 3\nMulti-view aggregation\n(sense-making)"];
+    m1 -> m2 -> mi -> m3;
+  
+}
+
+  // document branch
+  subgraph cluster_doc {
+    label="②  DOCUMENT BRANCH"; fontname="Helvetica-Bold"; fontsize=11;
+    color="#8A6D3B"; style="rounded"; penwidth=1.6; bgcolor="#FDFAF4";
+    m4 [label="Module 4\nText + layout detection\n(OCR)"];
+    m5 [label="Module 5\nLine-item recognition\nLayoutLMv3 / Donut"];
+    m4 -> m5;
+  
+}
+
+  ods [label="OBSERVED DAMAGE STATE\n[(part, damage type, confidence,\nphoto_ids), …]",
+       shape=box, style="filled", fillcolor="#DCE9F7", color="#2E6DA4", penwidth=1.5];
+  ds  [label="DECLARED SCOPE\n[(part, operation, cost,\nline_no, page), …]",
+       shape=box, style="filled", fillcolor="#F5E9D0", color="#8A6D3B", penwidth=1.5];
+
+  recon [label="③  RECONCILIATION ENGINE\l\la) evidence sufficiency\l    part visible at all?\l    no → request view, do NOT flag\l\lb) coverage\l    declared ⊆ observed?\l    no → phantom part, spillover\l\lc) cost band\l    declared cost vs [lo, hi]?\l    outside → labour inflation,\l    grade substitution\l",
+         shape=box, style="filled", fillcolor="#EFEAF6", color="#5B4B8A", penwidth=1.6, margin="0.22,0.14"];
+
+  table [label="REFERENCE COST TABLE\l\lkey:  part × damage × vehicle class\lval:  [lo, hi] band + support count\l         + as-of date\l",
+         shape=box, style="filled", fillcolor="#E8F3EA", color="#3C763D", penwidth=1.5, margin="0.20,0.12"];
+
+  bench [label="④  SURVEYOR WORKBENCH\l\l· pre-filled parts list\l· flags with stated reasons\l· mask overlay on photograph\l· confirm / edit / dismiss with reason\l· enter agreed amount\l",
+         shape=box, style="filled", fillcolor="#FDECEA", color="#A94442", penwidth=1.6, margin="0.20,0.12"];
+
+  photos -> m1;
+  report -> m4;
+  m3 -> ods;
+  m5 -> ds;
+  ods -> recon;
+  ds  -> recon;
+  attrs -> recon [style=dashed];
+  table -> recon [label="  read  ", constraint=false];
+  { rank=same; recon; table; }
+  recon -> bench;
+  bench -> table [label="  WRITE-BACK\l  confirmed (part, damage,\l  agreed cost)\l", color="#3C763D", penwidth=1.6, constraint=false];
+
+}
