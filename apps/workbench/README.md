@@ -1,6 +1,6 @@
 # Surveyor workbench
 
-Owner: Lane 5. Implements [M09](../../docs/specs/module-09-surveyor-workbench.md).
+Owner: Lane 5. Implements [M9](../../docs/specs/module-09-review-report.md).
 
 Reserved `src/screens/`, `src/components/`, and `src/api/` directories hold the working Screens 2-4, shared evidence/review controls, and typed backend client. Use the proposed React/TypeScript stack only after the [stack decision](../../docs/adr/0001-prototype-runtime.md).
 
