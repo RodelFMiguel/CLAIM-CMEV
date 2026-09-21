@@ -10,7 +10,15 @@ description: >-
 
 Produce a documented dataset manifest, conversion output and reproducible split membership appropriate to the requested dataset.
 
-Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), the [data workspace policy](../../../data/README.md), and the data lifecycle in the [technical specification](../../../docs/specs/technical_specification.md). Read [contracts](../../../docs/specs/data_contracts.md) and only the relevant module/data sections of the [proposal](../../../docs/CLAIM-CMEV_project_proposal_v1.md).
+Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), the [data workspace policy](../../../data/README.md), and the data lifecycle in the [technical specification](../../../docs/specs/technical_specification.md). Read [contracts](../../../docs/specs/data_contracts.md) and only the relevant module/data sections of the [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) (sections 11 and 12.3-12.4).
+
+Use [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) for current scope and the [workflow guide](../../../docs/agent-workflows.md#scope-and-specification-transition) for module mapping and specification-transition limits. Read only the v2 sections relevant to this task; unmigrated v1 content does not override v2. Check newer explicitly recorded user decisions and their affected specifications before applying runtime assumptions.
+
+## Select the scoped data
+
+Core data are HITL parts, CarDD damage subject to consent/files, generated estimates/marks, team-marked physical pages, independently labelled damage-to-part/vehicle-group samples and generated prices. The existing [acquisition catalogue](../../../docs/dataset-downloads.md) covers older scope: choose explicit eligible sources instead of treating its default set as v2 requirements. Check the current tool's selectors before executing it.
+
+CORD preparation and OCR/training-label alignment belong only to stretch S1; TrOCR crop evaluation is S2. DocILE, CrashCar101, VehiDE, DSMLR, SROIE, FUNSD and IAM are not core commitments. HITL damage is the documented access contingency, with a distinct taxonomy, split and revised targets, not an additional dataset beside CarDD. A submitted CarDD request is not consent or acquired files.
 
 ## Inspect before transforming
 
@@ -22,15 +30,15 @@ Inspect representative examples and source grouping identifiers. Preserve raw or
 
 ## Normalise by data type
 
-- **Images:** map part/damage labels to versioned canonical codes; retain unmapped classes and unknown sides. Validate dimensions, orientation, mask alignment and overlapping labels. Do not invent left/right labels from an unsided class.
-- **Documents:** preserve original text, page IDs, boxes, rotations and row grouping. Separate survey reports from public business-document benchmarks. Group related synthetic templates together.
-- **Costs:** inspect actual row and quote structure, operations, damage labels, money basis, currency, quantities and source status. Do not assume the planned price file exists or that all combinations occur. Preserve declared, agreed, approved and explicit synthetic-seed provenance; missing amounts/labels stay missing.
+- **Images:** preserve the 21 HITL part categories and unresolved side. Convert CarDD instance annotations to semantic masks for dent, scratch, crack, glass shatter, lamp broken and tire flat, recording overlap/background handling; unannotated or unsupported damage is not a confident negative. Validate orientation, dimensions and mask alignment. Keep assignment labels and physical-part/coverage labels for the team pilot separate from segmentation targets; separate mask datasets do not establish matching accuracy.
+- **Documents:** retain printed text/amounts, page/row/mark IDs, boxes, transforms, mark-to-row associations and intended decisions/amounts independent of predictions. Preserve uncertain/unlinked/conflicting examples. Develop the parser for 2-3 documented layout families; reserve held-out variants and report unseen families separately. Record the actual OCR box granularity. For S1 only, follow v2 section 12.3: preserve CORD splits, map available fields without inventing repair-operation labels, and mask/flag ambiguous OCR token alignment before two-stage training.
+- **Costs:** use the v2 section 11.6 reproducible generator; the unsupplied v1 price file is no longer a dependency. Record seed/version, eligible part/operation/class/currency keys, fixed single-part SGD basis, base-case/workshop/quote IDs and synthetic dates. Year, side and damage type are not price-generation features. Separate ordinary prices from injected deviations with independent labels; repeated quotes do not add independent support. Preserve declared/agreed/approved/synthetic provenance and missing values.
 
 Use existing converters where available. Introduce deterministic scripts when the requested transformation benefits from reuse, and run them on representative inputs.
 
 ## Split without leakage
 
-Identify exact/near duplicates and vehicle, scene, template, claim or synthetic base-case groups before fitting. Keep related samples in one partition. Correlated workshop quotes are not independent base cases.
+Reserve final-test membership before tuning models, parser rules or thresholds. Identify exact/near duplicates and vehicle, source, writer, physical page, generated base page, related template, claim or synthetic base-case groups before fitting. All photographs/augmentations of a page or vehicle stay together; assignment/vehicle evaluation samples stay out of both segmentation training sets. Report missing grouping metadata and limited writer/vehicle diversity. Keep related samples in one partition. Correlated workshop quotes are not independent base cases.
 
 Create train/validation/calibration where needed/test membership with opaque IDs, grouping policy, seeds and hashes. Honour official benchmark partitions where required; document conflicts or unknown grouping rather than silently claiming guaranteed separation. Fit preprocessing parameters only on eligible training data.
 

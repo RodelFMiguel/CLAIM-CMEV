@@ -12,11 +12,13 @@ Produce a reproducible run record and an evidence-based interpretation of the re
 
 Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), the [evaluation plan](../../../docs/specs/evaluation_plan.md), the relevant module specification from the [index](../../../docs/specs/README.md), and [pipeline guidance](../../../pipelines/README.md). Use the current implementation and accepted configuration, not a guessed command.
 
+Use [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) for current scope and the [workflow guide](../../../docs/agent-workflows.md#scope-and-specification-transition) for module mapping and specification-transition limits. Read only the v2 sections relevant to this task; unmigrated v1 content does not override v2. Check newer explicitly recorded user decisions and their affected specifications before applying runtime assumptions.
+
 ## Establish a bounded experiment
 
 Identify the hypothesis/RQ, task, baseline/comparator, dataset/split manifests, checkpoint, configuration, intended metric and available hardware. Use the requested run budget or a documented bounded configuration. An experiment request is not an instruction to run an indefinite parameter search.
 
-Check input availability, split/group separation and required dependencies. If execution is unavailable, produce the experiment definition and exact missing prerequisite; label it unrun. Do not silently substitute fixtures for model output, synthetic data for real data, or a different benchmark.
+Use v2 sections 3.4 and 13 for RQs and evaluation, and section 12 for the bounded budget and contingencies. S1 LayoutLMv3/CORD/alignment, S2 TrOCR and S3 approval refresh start only under the section 12.3 stretch gate; protect contingency/reporting allocations and keep the parser baseline available. Check input availability, split/group separation and required dependencies. If execution is unavailable, produce the experiment definition and exact missing prerequisite; label it unrun. Do not silently substitute fixtures for model output, synthetic data for real data, or a different benchmark.
 
 ## Execute and preserve provenance
 
@@ -30,12 +32,20 @@ Write generated outputs under the appropriate ignored artifact directories. Capt
 
 Use proposal targets as initial targets, not guarantees. Do not retune thresholds on the final test set or lower a target silently to label a run successful.
 
-- RQ1: show part/damage quality and coverage effects, including per-class failures.
-- RQ2: compare joint-label synthetic augmentation with a controlled baseline and separate real-image transfer.
-- RQ3: report duplicate reduction together with false merges, lost damage and summary F1.
-- RQ4: vary comparable record support and report interval coverage/width and flag precision.
+- RQ1: report HITL part and CarDD semantic damage metrics separately, then damage-to-part assignment on independently labelled held-out examples. Include usable versus degraded/cropped views, grouping variants with originals.
+- RQ2: measure exclusion/price-change detection and row-linking on held-out team-marked physical pages, before human correction; report correction effort separately. Exact amount reading applies only to S2.
+- RQ3: compare conservative part summaries with per-image observations on labelled vehicle groups. Report incorrect identity groupings, lost observations, summary precision/recall and decision/withholding rates as an exploratory pilot, with automatic and assisted results separate. Do not promise physical-damage deduplication.
+- RQ4: reduce independent training base cases per eligible cost key; compare empirical percentiles with bounded LightGBM. Report interval coverage/width, ordinary-price exceedances, injected-anomaly precision/recall at stated prevalence and range availability/withholding. Freeze support thresholds on validation.
 
-For document evaluation, retain the defined DocILE benchmark and report survey-domain results separately. For fusion, separate known-structured-input tests from full-pipeline results. Cost experiments on synthetic prices cannot support claims about real repair-price accuracy, savings or fraud.
+For M4/M5, report printed-text/amount accuracy and complete-entry F1 with row/box matching tolerances frozen on validation. Separate supported-family variants, unseen layouts and photographed pages; DocILE is not a v2 benchmark requirement. For S1, compare the candidate and parser on the same frozen project tests, select serving on validation, and do not attribute gains to CORD without a controlled comparator.
+
+Keep the three v2 section 13.2 experiments distinct:
+
+- Structured rule tests establish deterministic behaviour, including zero discrepancy flags for supported, compatible in-range clean inputs; they are not model results.
+- Controlled full-pipeline cases use real models/parser and independent expected outcomes. Report unsupported and cost flags, possible additions, substantive-decision rates and reason-specific withholding separately. Legitimate exclusions/repricing are workflow events, not automatic anomalies.
+- Ordinary synthetic-price calibration measures coverage and tails; separately injected deviations measure anomaly detection. A nominal 90% interval permits about 10% ordinary exceedances. The controlled clean-case target does not apply to that ordinary population, and interval exceedance is not itself an anomaly label.
+
+Cost experiments cannot establish real repair-price accuracy, savings or fraud. For usability, follow v2 section 13.5: report assisted time/edits and pilot limits; an effort-reduction claim needs comparable manual cases and alternated order.
 
 ## Deliver
 

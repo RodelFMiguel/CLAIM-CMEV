@@ -1,8 +1,8 @@
 ---
 name: cmev-verify-workbench
 description: >-
-  Verify CLAIM-CMEV Screens 2-4, evidence navigation, review persistence and
-  reconnect/conflict behaviour against the workbench specification. Use for
+  Verify the CLAIM-CMEV upload, review overview, mark confirmation, evidence panel
+  and browser PDF workflow, including persistence and stale revisions. Use for
   targeted UI acceptance or regression checks, not general visual redesign.
 ---
 
@@ -10,7 +10,9 @@ description: >-
 
 Produce evidence that the requested workbench behaviours work, fail, or remain untested.
 
-Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), [M09](../../../docs/specs/module-09-surveyor-workbench.md), the [platform API](../../../docs/specs/application_platform.md) and relevant [product requirements](../../../docs/specs/product_specification.md).
+Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), v2 sections 7, 8.4 and 13.3-13.5, plus the relevant [platform API](../../../docs/specs/application_platform.md) and [product requirements](../../../docs/specs/product_specification.md), checking their transition status.
+
+Use [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) for current scope and the [workflow guide](../../../docs/agent-workflows.md#scope-and-specification-transition) for module mapping and specification-transition limits. Read only the v2 sections relevant to this task; unmigrated v1 content does not override v2. Check newer explicitly recorded user decisions and their affected specifications before applying runtime assumptions.
 
 ## Prepare an appropriate test session
 
@@ -22,15 +24,17 @@ Verify the environment is a local/disposable test environment before creating re
 
 Select checks proportional to the change; a focused display fix does not require rerunning every system scenario.
 
-- **Vehicle overview:** damaged parts, adequate coverage without detected damage, unseen/poor/unresolved coverage, and photo-only awaiting-declaration state are distinct.
-- **Repair list:** show original declaration, edited/agreed values, individual checks and four overall outcomes with reasons. Display range criteria/count/date/version/currency and synthetic status. Proposed additions have no invented declared price.
-- **Evidence:** navigate covering views, toggle part/damage overlays, open the original photo in one tap, and verify report page/highlight alignment.
-- **Review:** confirm/edit/add/remove, dismiss by reason without an extra confirmation, save agreed amounts, reload and verify persisted state.
-- **Recovery:** simulate offline connection or a timeout after server commit; pending edits survive and replay once. A stale/concurrent review produces a visible conflict retaining local work.
-- **Revisions/export:** corrected declarations/new evidence create a distinguishable assessment; same-assessment dismissals stay saved. Export identifies the exact input/assessment/review and cost/model versions.
-- **Failure/accessibility:** processing failure differs from a clean assessment; evidence-load errors preserve context/original access. Check tablet controls, keyboard focus and non-colour status cues.
+- **Upload/overview:** upload photos and estimate pages; distinguish queued/failed/incomplete jobs, photo-only waiting for estimate, declaration gaps and completed checks. Show supported damage, confirmed adequate views without damage and unresolved/inadequate coverage separately.
+- **Repair list:** show printed and effective/agreed amounts, four outcomes and reasons, individual photo/cost checks, pinned range/basis/support and synthetic status. Only confirmed exclusions are struck through and not checked; exclusion is not a pass.
+- **Marks:** pending/confirmed/rejected, conflicting/unlinked proposals and candidate rows remain visible. Confirm/reject, correct row association, add a missed mark and enter a revised amount. Pending repricing cannot use the printed price; optional TrOCR suggestions remain separate from human-confirmed values.
+- **Evidence:** navigate covering views and part/damage overlays, open originals in one tap, and verify row/mark highlights after coordinate transforms. Confirm physical identity/coverage with recorded provenance without altering predictions.
+- **Possible additions:** incomplete/ambiguous declarations withhold suggestions; same-part confirmed exclusions suppress additions with an informational note, opposite-side exclusions do not. Added items need human-supplied operation/amount.
+- **Review/recovery:** save and reload corrections; retry a timeout after server commit without duplicate actions. Reject stale conflicting writes visibly without silently overwriting newer decisions; inspect what local work is retained. Do not assume a full offline queue is implemented.
+- **Reassessment:** changed part/side/operation/amount, mark decision, completeness or coverage creates new input/assessment revisions and recomputes affected findings. Explicitly reused artifacts retain lineage. Notes/dismissals stay attached to their findings and do not silently transfer.
+- **Finalize/print:** reject pending/unlinked marks, unfinished/failed required processing and stale findings. Freeze the matching review and print from the browser. Inspect printed/effective amounts, exclusions, reasons, synthetic label/fixed basis, absent final approval and input/assessment/review/model/parser/config/cost versions. Remaining insufficient evidence stays visible; a later cost table cannot change a historical report.
+- **Failure/accessibility:** evidence-load errors preserve context/original access. Check readable tablet controls, keyboard focus and non-colour status cues.
 
-Queue, standalone cost detail, operations and audit screens are static design deliverables. Do not count static mockups as working Screens 2-4. Full offline file synchronisation, settlement recommendations and live insurer approval are outside the prototype scope.
+Claim list, cost-range detail, operations and audit views are described in the report, not additional working-screen commitments. Scripted approval import/refresh is S3 only. Full offline file synchronisation, settlement recommendations and live insurer approval are outside the prototype scope. For usability work, follow v2 section 13.5 and distinguish assisted effort from a measured manual-versus-assisted comparison.
 
 ## Report and hand off
 
