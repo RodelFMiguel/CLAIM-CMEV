@@ -2,6 +2,8 @@
 
 Status: proposed implementation stack. Date: 2026-09-09. Owner: Lane 5 with all lanes.
 
+**Superseded by [ADR 0002](0002-containerised-event-runtime.md) on 2026-09-22.** The runtime below is historical. It is retained unchanged as a record of the earlier proposal v1 boundaries and is not the current implementation baseline.
+
 ## Context
 
 The [proposal](../CLAIM-CMEV_project_proposal_v1.md), section 10.1, requires a workbench, backend, image worker and document worker. Offline training and cost refresh sit outside request processing. A five-member team needs shared contracts and manageable deployment.
