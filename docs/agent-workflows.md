@@ -1,6 +1,6 @@
 # Shared coding-agent workflows
 
-The seven project skills contain portable Markdown instructions and standard name/description frontmatter. They use proposal v2 for scope and reconcile the relevant implementation specifications, and do not require a particular agent API, model, plugin, shell or permission setting.
+The seven project skills contain portable Markdown instructions and standard name/description frontmatter. They use the current specifications for implementation and acceptance, proposal v2 for scope and ADR 0002 for the later runtime decision, and do not require a particular agent API, model, plugin, shell or permission setting.
 
 ## Skill catalogue
 
@@ -16,25 +16,24 @@ The seven project skills contain portable Markdown instructions and standard nam
 
 ## Scope and specification transition
 
-[Proposal v2](CLAIM-CMEV_project_proposal_v2.md) replaces v1 for planning. Use its sections 10 and 12 for module/lane mapping, section 13 for evaluation and section 16 for the implementation-document transition. [CONTEXT.md](../CONTEXT.md) records progress; inspect current files before relying on its snapshot. Align affected contracts/specifications within the requested task; this does not require migrating the entire repository for a small change or requesting approval again for the agreed scope.
+The [specification index](specs/README.md) now identifies the v2 implementation baseline and links all nine module specifications. Start there, open the selected module file, then read relevant shared sections in the index's order. Do not stop at the proposal or at the index itself.
 
-At the start of the 2026-09-22 skill review, seven module files had been renamed while retaining v1 contents; the file named for M6 pen marks contained old M07 cost-anomaly rules. Concurrent M1 and technical-specification edits then began arriving. The table locates current files and the intended mapping, not a certification of completed migration. Re-read the affected files and distinguish newer explicitly recorded user decisions from unmigrated v1 requirements. Never infer semantic migration from a filename.
+| Specification | Use for |
+| --- | --- |
+| [Product](specs/product_specification.md) | Required behaviour, FR/NFR IDs and scope boundaries |
+| [Technical](specs/technical_specification.md) | Architecture, containers, storage and deployment |
+| [Application platform](specs/application_platform.md) | HTTP API, orchestration, review persistence and revisions |
+| [Integration contracts](specs/integration_contracts.md) | Topics, messages, adapters, retries and idempotency |
+| [Data contracts](specs/data_contracts.md) | Shared records, versions, uncertainty and money semantics |
+| [Model training](specs/model_training_specification.md) | Sources, splits, label conversion, recipes and registry handover |
+| [UI](specs/ui_specification.md) | Screens, fields, states and interactions |
+| [Evaluation](specs/evaluation_plan.md) | Metrics, rule/pipeline/calibration experiments and acceptance checks |
 
-| V2 module / owner lane | Existing specification location | Mapping / transition needed |
-| --- | --- | --- |
-| M1 parts / Lane 1 | [Parts](specs/module-01-vehicle-part-segmentation.md) | Old M01; HITL parts, unresolved side |
-| M2 damage and assignment / Lane 1 | [Damage](specs/module-02-damage-segmentation.md) | Old M02; CarDD six-category semantic damage and separate assignment evaluation |
-| M3 summary and coverage / Lane 1 | [Summary](specs/module-03-part-summary-coverage.md) | Old M03; conservative physical identity, retained observations and confirmed coverage |
-| M4 page reading / Lane 2 | [Page reading](specs/module-04-page-reading.md) | Old M04; photographed pages and pretrained OCR |
-| M5 line items / Lane 2 | [Line items](specs/module-05-line-item-extraction.md) | Old M05; parser for 2-3 families; LayoutLMv3 is S1 |
-| M6 pen marks / Lane 3 | [Renamed M6 file](specs/module-06-pen-mark-recognition.md) | New module; replace legacy cost-check content only during the scoped specification migration |
-| M7 reference ranges / Lane 4 | [Ranges](specs/module-07-reference-cost-ranges.md) | Old M06; generated prices and fixed cost basis |
-| M8 consolidation / Lane 4 | [Checks](specs/module-08-consolidation-checks.md) | Old M07 + M08; move retained cost-check rules here and add confirmed-input gates |
-| M9 overview/report / Lane 5 | [Review](specs/module-09-review-report.md) | Old M09; upload, one overview/evidence panel and browser PDF |
+[Proposal v2](CLAIM-CMEV_project_proposal_v2.md) governs scope and explains the rationale. [ADR 0002](adr/0002-containerised-event-runtime.md) records the later container/Kafka runtime decision; it supersedes the original v2 runtime and ADR 0001. Detailed implementation follows current specifications under those authorities. Proposed fields, dependency versions and training values remain proposed until resolved in the scoped task; a document is not evidence of working code.
 
-Check transition progress in the [shared contracts](specs/data_contracts.md), [platform](specs/application_platform.md), [technical specification](specs/technical_specification.md), [evaluation plan](specs/evaluation_plan.md) and [ADR index](adr/README.md); do not assume old [ADR 0001](adr/0001-prototype-runtime.md) remains current merely because it exists. Preserve old fixture/artifact meaning with versioned conversion or rejection where needed; this skill update does not claim an implemented migration.
+Earlier skill-review notes described files mid-migration. They are historical snapshots, not a reason to bypass the now-migrated specifications. Check [CONTEXT.md](../CONTEXT.md) against current files. Handle any actual discrepancy explicitly, preserving old fixture/artifact meaning through versioned conversion or rejection where needed.
 
-V2 section 9.1 originally plans a browser, API and one sequential worker with SQLite and local files. [ADR 0002](adr/0002-containerised-event-runtime.md), accepted 2026-09-22 at the direction of the user, supersedes that with a containerised event-driven runtime: one container per module communicating over Kafka topics, with PostgreSQL and object storage. The v2 shape is retained as the lean Compose profile and the named fallback. V2 domain rules are unchanged by that decision. Neither runtime has been implemented or smoke-tested, so confirm the current state from the checkout rather than from the decision record. Cost builds remain offline. Core data/methods are HITL parts, CarDD damage subject to access, pretrained OCR, the bounded parser, mark detection with human confirmation/manual amounts and synthetic cost ranges. Dataset tooling may still catalogue v1 sources; select the requested v2 inputs explicitly.
+The current runtime uses module containers and Kafka, PostgreSQL and object storage. The lean profile combines workers while retaining the documented transport contracts and infrastructure; it is not the original SQLite/no-broker runtime. Neither profile is established as implemented by this guide. Cost builds remain offline. Core data/methods are HITL parts, CarDD damage subject to access, pretrained OCR, the bounded parser, mark detection with human confirmation/manual amounts and synthetic cost ranges. Dataset tooling may still catalogue v1 sources; select requested v2 inputs explicitly.
 
 Keep the v2 section 12 budget: 25 implementation/data + 10 integration/evaluation + 5 contingency + 10 report/presentation person-days. Stretch S1 retains CORD preparation, OCR/training-label alignment and two-stage LayoutLMv3 training; S2 offers TrOCR suggestions; S3 demonstrates synthetic final-approval refresh. Start stretch work only after core workflow/service checks, validation results and frozen tests exist, with an owner-recorded allowance in unused implementation capacity. Disabled stretch work must not block core startup or success.
 

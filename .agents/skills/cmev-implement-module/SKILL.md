@@ -10,15 +10,27 @@ description: >-
 
 Deliver the requested behaviour with evidence of what works and what remains. This skill is portable across coding agents; use the available file, shell and test tools, without depending on a particular agent API.
 
-Use [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) for current scope and the [workflow guide](../../../docs/agent-workflows.md#scope-and-specification-transition) for module mapping and specification-transition limits. Read only the v2 sections relevant to this task; unmigrated v1 content does not override v2. Check newer explicitly recorded user decisions and their affected specifications before applying runtime assumptions.
+Use the current specifications below for implementation details and acceptance criteria. [Proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) governs project scope; [ADR 0002](../../../docs/adr/0002-containerised-event-runtime.md) records the later runtime change. Read the sections relevant to the task, preserve proposed versus accepted status, and reconcile concrete conflicts with current user decisions. A specification is not evidence that its behaviour is implemented.
 
 ## Establish the task
 
-Read [AGENTS.md](../../../AGENTS.md), the current [handoff context](../../../CONTEXT.md), and the relevant row in the [specification index](../../../docs/specs/README.md). Resolve paths against the repository root, including when invoked from a subdirectory.
+Read [AGENTS.md](../../../AGENTS.md) and [CONTEXT.md](../../../CONTEXT.md), then use the [specification index](../../../docs/specs/README.md) to locate the selected module, owner and implementation path. Open that module specification; the index and proposal alone are not sufficient. Resolve links against the skill location even when invoked from a subdirectory.
 
-Identify the module by v2 number and name, requested requirement/TODO, existing implementation and acceptance criteria. Check v2 sections 10 and 12 for module/lane mapping; an old TODO or renamed file is not proof that the requirement is still in scope. Read that module's specification, relevant [contracts](../../../docs/specs/data_contracts.md), and affected accepted [ADRs](../../../docs/adr/README.md). Load other specifications only when a dependency needs them.
+Before coding, identify the applicable requirement IDs, input/output contracts, owning runtime, acceptance criteria and existing implementation. Read the relevant sections of these specifications, following the index's shared-document order where several apply:
 
-V2 section 9 originally plans a browser, API and one worker with SQLite/local files. Check the current technical specification and ADR status for later runtime decisions before implementing those boundaries; concurrent specification work records a container/Kafka direction. Keep M7 training/builds offline and preserve v2 domain rules under any transport. Record the affected scope/runtime transition, distinguish directed choices from proposed dependencies, and never infer deployment from documentation. Use existing manifests and current user decisions when available. A routine implementation choice does not need a new approval ceremony; record consequential new decisions and unresolved assumptions accurately.
+| Source | What to use it for |
+| --- | --- |
+| [Product specification](../../../docs/specs/product_specification.md) | Required behaviour, FR/NFR IDs, invariants and scope boundaries |
+| [Technical specification](../../../docs/specs/technical_specification.md) | Containers, architecture, storage, deployment and model-serving boundaries |
+| [Application platform](../../../docs/specs/application_platform.md) | Intake, HTTP API, orchestration, revisions, review persistence and finalization |
+| [Integration contracts](../../../docs/specs/integration_contracts.md) | Kafka topics, envelopes, producers/consumers, idempotency, retries and dead letters |
+| [Data contracts](../../../docs/specs/data_contracts.md) | Shared record fields, schema/taxonomy versions, evidence references and money semantics |
+| [Model training specification](../../../docs/specs/model_training_specification.md) | Dataset preparation, training, thresholds, checkpoints and registry handover when model work is involved |
+| [UI specification](../../../docs/specs/ui_specification.md) | Screens, states, interactions and user stories when user-facing behaviour is involved |
+| [Evaluation plan](../../../docs/specs/evaluation_plan.md) | Applicable module, integration, safety and service checks and how completion is demonstrated |
+| Selected [module specification](../../../docs/specs/README.md#functional-modules) | Module algorithm, dependencies, TODOs and acceptance criteria; open the actual linked file |
+
+Use [ADR 0002](../../../docs/adr/0002-containerised-event-runtime.md) and the technical/integration specifications for the container/Kafka runtime, rather than recreating v2's earlier SQLite/jobs-table design. Keep M7 builds offline. Inspect other [ADRs](../../../docs/adr/README.md) only when they affect the task. Follow actual manifests and current user decisions; proposed dependencies and recipes are not installed or validated merely because they are specified. Record consequential decisions without adding an approval gate to already authorised work.
 
 ## Implement
 

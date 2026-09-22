@@ -10,13 +10,13 @@ description: >-
 
 Deliver a coherent contract change and its compatibility evidence. Use the available agent's normal tools; no vendor-specific commands or integrations are required.
 
-Use [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) for current scope and the [workflow guide](../../../docs/agent-workflows.md#scope-and-specification-transition) for module mapping and specification-transition limits. Read only the v2 sections relevant to this task; unmigrated v1 content does not override v2. Check newer explicitly recorded user decisions and their affected specifications before applying runtime assumptions.
+Use the current specifications below for implementation details and acceptance criteria. [Proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) governs project scope; [ADR 0002](../../../docs/adr/0002-containerised-event-runtime.md) records the later runtime change. Read the sections relevant to the task, preserve proposed versus accepted status, and reconcile concrete conflicts with current user decisions. A specification is not evidence that its behaviour is implemented.
 
 ## Scope and sources
 
-Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), [data contracts](../../../docs/specs/data_contracts.md), and affected module specifications from the [index](../../../docs/specs/README.md). Read the [platform specification](../../../docs/specs/application_platform.md) when APIs, revisions or persistence are affected.
+Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), [data contracts](../../../docs/specs/data_contracts.md), and the actual affected module specifications linked from the [index](../../../docs/specs/README.md). Use [integration contracts](../../../docs/specs/integration_contracts.md) for messages/topics and adapter compatibility, the [platform specification](../../../docs/specs/application_platform.md) for API/revision/persistence changes, and the [technical specification](../../../docs/specs/technical_specification.md) for runtime ownership. Include the [UI specification](../../../docs/specs/ui_specification.md) when changed fields or states are displayed or edited.
 
-Use v2 sections 8, 9.3 and 16 to identify changed record meanings before following the legacy contracts. In particular, v2 M6 is pen marks, M7 is reference ranges and M8 combines the old cost/evidence checks. Inspect the actual schema/code before planning a migration. At scaffold stage, a contract may exist only as documentation; do not claim a database migration or compatibility test exists unless implemented.
+Use the current data/integration contracts to identify record meaning and the proposal for scope rationale; consult v2 section 16 only when handling older fixtures or schemas. In particular, v2 M6 is pen marks, M7 is reference ranges and M8 combines the old cost/evidence checks. Inspect the actual schema/code before planning a migration. At scaffold stage, a contract may exist only as documentation; do not claim a database migration or compatibility test exists unless implemented.
 
 ## Trace the change
 
