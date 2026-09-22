@@ -1,7 +1,7 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-09-22 (Asia/Singapore).
-Baseline inspected for this update: commit `0c5ed2e` on branch `project-structure`. Confirm the current branch/HEAD and working tree when resuming; this is a dated snapshot.
+Last updated: 2026-09-23 (Asia/Singapore).
+Baseline inspected for this update: commit `ed5431a` on branch `code-skeleton`. Confirm the current branch/HEAD and working tree when resuming; this is a dated snapshot.
 
 This file is the team's maintained handoff, not an automatically synchronised chat transcript. Share it with the skills and source changes through the team's normal version-control workflow.
 
@@ -9,24 +9,23 @@ This file is the team's maintained handoff, not an automatically synchronised ch
 
 CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked workshop estimate, with photographic damage evidence and synthetic reference cost ranges. The surveyor confirms marks, enters revised amounts and reviews findings; final claim approval remains separate.
 
-The user requested the agreed scope recommendations be incorporated into [proposal v2](docs/CLAIM-CMEV_project_proposal_v2.md), now the revised planning document. The seven project skills and [workflow guidance](docs/agent-workflows.md) now follow v2. The [specification index](docs/specs/README.md), [product specification](docs/specs/product_specification.md), [technical specification](docs/specs/technical_specification.md), [contracts](docs/specs/data_contracts.md), [evaluation plan](docs/specs/evaluation_plan.md) and module files are undergoing alignment from [v1](docs/CLAIM-CMEV_project_proposal_v1.md). Concurrent M1/technical-specification edits record a later container/Kafka runtime direction; inspect their current decision records. Use v2 sections 10/16 for domain/module mapping, distinguish newer recorded decisions from stale v1 content, and do not infer migration from filenames.
+[Proposal v2](docs/CLAIM-CMEV_project_proposal_v2.md) governs project scope. The [specification index](docs/specs/README.md) now identifies the v2 implementation baseline, with product, technical, platform, integration, data, training, UI, evaluation and nine module specifications. Start implementation from those documents, not the proposal alone. The project skills directly route to the relevant specifications; earlier migration warnings below are historical snapshots.
 
-V2 plans nine modules in a browser, API and single worker, with SQLite/local files. The core uses HITL parts, CarDD damage (requested access pending confirmation), pretrained OCR, a parser for 2–3 layout families, a pen-mark detector and synthetic cost ranges. Upload, one review overview/evidence panel and browser PDF printing are working deliverables. LayoutLMv3 with CORD preparation/label alignment, TrOCR and a scripted approval-refresh demonstration are optional stretch goals. The budget is 25 implementation/data + 10 integration/evaluation + 5 contingency + 10 report/presentation person-days.
+[ADR 0002](docs/adr/0002-containerised-event-runtime.md) records the later container/Kafka runtime decision, superseding the original v2 API-plus-one-worker/SQLite plan. Use current technical and integration specifications for runtime boundaries; proposed dependencies and recipes are not validated by being documented. Core scope remains HITL parts, CarDD damage subject to consent/files, pretrained OCR, a parser for 2-3 layout families, pen-mark detection with human confirmation/manual amounts, synthetic costs, upload, review overview/evidence and browser PDF. LayoutLMv3/CORD/alignment, TrOCR and scripted approval refresh remain stretch goals. The original 50-person-day budget and the runtime decision's added effort must be accounted for explicitly.
+
 
 ## Current state
 
 | Area | Verified state at this handoff |
 | --- | --- |
-| Repository | Application, worker, domain, pipeline, configuration, data, artifact, test and infrastructure directories are scaffolded |
-| Specifications | Alignment is in progress, including staged module renames and concurrent M1/technical-specification changes; re-read affected contents before implementation |
-| Architecture | V2 originally plans API + one worker and SQLite/local files; concurrent technical-specification work records a later container/Kafka direction. This skill review neither implements nor validates that runtime |
-| Application | No application entrypoints, dependency manifests, model pipelines, trained models or deployment manifests are implemented |
-| Data | Acquisition script/catalogue exist. No new acquisition was performed in this revision; the team reports its CarDD request sent, but consent and files are not confirmed |
-| Shared agent workflows | All seven canonical skills updated for v2 and regenerated into identical Claude copies; stable invocation names retained |
-| Developer tooling | Skill-sync utility has 9 previously passing tests; dataset downloader has 23 passing offline tests and a small public HTTPS metadata smoke check |
-| Team allocation | Five lanes defined; named members/contract owners remain unassigned |
-| Evaluation | No module accuracy, price calibration, usability or financial benefit has been measured |
-| Proposal v2 review | Proposal revised across methods, data, rules, serving, evaluation, budget and stretch goals; implementation specifications/ADR alignment remains pending |
+| Repository | The earlier scaffold now has a baseline React workbench and FastAPI/worker code under `src`; specification routing and application changes are committed on `code-skeleton` |
+| Specifications | The v2 index and shared/module specifications define the full target; the implemented fixture baseline is a limited slice recorded in ADR 0003 |
+| Architecture | ADR 0002 governs container/Kafka boundaries. The default lean Compose profile built and started six healthy services on Docker Desktop 4.92.0; fixture containers omit unused host model/cost mounts |
+| Application | Public information page, login, searchable queue, claim intake, review, evidence originals, mark decision, notes, finalization and frozen print view; FastAPI persistence and asynchronous fixture worker |
+| Data and models | Existing acquisition tooling/catalogue remain. No trained model is loaded or evaluated by the baseline; uploaded originals are preserved and fixture results are explicitly labelled |
+| Shared agent workflows | Seven canonical skills reference the specifications directly and match their generated Claude copies; stable invocation names retained |
+| Validation | 17 backend tests pass; frontend TypeScript/production build passes; local and container browser walkthroughs pass login through PDF and 390px mobile queue; API and storage readiness are healthy |
+| Evaluation | No model accuracy, price calibration, real claim outcome, usability comparison or financial benefit has been measured |
 
 ## Decisions and rules that affect implementation
 
@@ -35,7 +34,7 @@ V2 plans nine modules in a browser, API and single worker, with SQLite/local fil
 - Every assessment retains its input and model/taxonomy/config/cost-table versions. New inputs or explicit reassessment produce new revisions.
 - Shared schemas and vocabulary connect the lanes. Unknown sides/parts and absent ranges must remain explicit.
 - The older [architecture sketch](docs/solution_architecture.md) is historical; its direct agreed-cost feedback loop is superseded by the proposal.
-- [ADR 0001](docs/adr/0001-prototype-runtime.md) describes the earlier runtime proposal. V2 specifies a simplified runtime, while concurrent technical-specification work records a later container/Kafka direction. Read current ADR status and dependencies before implementation; this handoff does not establish a deployed or smoke-tested runtime.
+- [ADR 0002](docs/adr/0002-containerised-event-runtime.md) supersedes ADR 0001 and the original v2 runtime. Follow technical/integration specifications while preserving proposed dependency status; this handoff does not establish a deployed or smoke-tested runtime.
 - V2 uses pending/confirmed/rejected mark states. Pending price changes do not fall back to printed prices. Decision-changing human actions create new assessments; original machine results remain immutable.
 - HITL predictions do not resolve side. V2 preserves unknown identity, uses recorded human identity/coverage confirmation where needed, and treats grouped-view evaluation as exploratory.
 - V2 cost references use part/operation/vehicle class/currency under a fixed single-part SGD basis. Model year is metadata only; independent base cases determine support. Rule tests, ordinary interval coverage and injected-anomaly experiments are reported separately.
@@ -43,11 +42,10 @@ V2 plans nine modules in a browser, API and single worker, with SQLite/local fil
 
 ## Immediate next work
 
-1. Assign named lane/adapter owners and complete specification/contract alignment with v2 and the latest recorded runtime direction. Skills/workflow guidance are aligned; inspect concurrent document changes before continuing.
-2. Confirm CarDD consent/files, HITL parts access and the course rubric mapping. Inspect selected annotations and reserve grouped test data before tuning.
-3. Freeze supported layouts, marking rules, part/side and CarDD damage vocabulary, fixed cost basis, versions and processing/review states.
-4. Smoke-test dependencies/hardware and connect the core workflow with clearly marked fixtures, then actual bounded model/parser outputs by the day-4 checkpoint.
-5. Follow the 50-person-day budget and validation/test separation. LayoutLMv3/CORD/label-alignment work starts only under the stretch gate, with contingency and reporting allocations protected.
+1. Use the now-running lean fixture stack for scoped module integration. Keep fixture and real outputs visibly separate; add read-only model/cost mounts and version checks when real consumers arrive.
+2. Keep the baseline fixture label visible and preserve revision/approval gates while expanding toward M9 and the other module specifications. Current UI lacks full additions/corrections/dismissals, overlays and a durable offline action queue.
+3. Confirm CarDD consent/files, HITL parts access, supported layouts and marking rules; reserve grouped evaluation cases before model fitting. Do not count fixture outputs as model evidence.
+4. Assign named lane/adapter owners and reconcile the full runtime effort with the 50-person-day proposal. LayoutLMv3/CORD/label-alignment, TrOCR and approval refresh remain stretch work.
 
 These are project priorities, not claims that the next contributor has been assigned all of them. Take the scoped task agreed with the team.
 
@@ -74,7 +72,7 @@ No project-wide external blocker has been demonstrated: contract and fixture wor
 - `python3 scripts/sync_skills.py --write` generated 7 copies; `python3 scripts/sync_skills.py --check` passed. Existing personal Claude settings retained their original hash.
 - Final repository check: 24 managed files, 21 Markdown documents, 135 valid local links and 7 identical skill pairs. Shared files are trackable; personal settings are ignored. Git whitespace checks passed and proposal/specification/ADR files are unchanged.
 - Automatic discovery/invocation has not been exercised inside an installed Claude Code or fresh Codex client. Packaging follows their documented repository skill locations; manual invocation is documented.
-- No application, model, data or live workbench evaluation has run.
+- At that earlier skill-only handoff no application, model, data or live workbench evaluation had run; see the 2026-09-23 baseline handoff below for current checks.
 
 ## Development history
 
@@ -87,13 +85,21 @@ No project-wide external blocker has been demonstrated: contract and fixture wor
 | Current work, uncommitted (2026-09-10) | Added all seven portable skills, Claude copies, shared AGENTS/CLAUDE guidance, CONTEXT.md, sync utility/tests and workflow documentation; validation passed |
 | `f587b32` | Initial simplified project proposal v2 committed |
 | `0c5ed2e` | Revised v2 following the accepted review recommendations; preserved LayoutLMv3/CORD/label alignment as stretch S1 and refreshed the handoff |
-| Current work, uncommitted (2026-09-22) | Reviewed and aligned all seven shared skills with v2; regenerated Claude copies and documented the ongoing specification/runtime transition |
+| `013e2a8` (2026-09-23) | Routed all seven shared skills through current specifications, regenerated Claude copies and updated shared agent guidance |
+| `1ac0ea8` (2026-09-23) | Added and verified the containerized fixture review baseline, including UI, API, worker, infrastructure and tests |
 
 Commit subjects above come from the inspected Git history. Do not treat the “current work” row as a commit; replace or append its commit/PR reference when the team records one.
 
 ## Active work and ownership
 
-No named contributor currently has a recorded implementation assignment in this file. Before concurrent work, record the agreed task/owner and affected paths here or in the team's task tracker; do not claim ownership merely by opening a file. Preserve other contributors' entries during handoff merges.
+Completed user-authorised baseline: public information page, login, claim dashboard and FastAPI APIs with explicitly mocked processing under `src`, using the containerised architecture. Initial frontend/backend/container coding-agent lanes are complete; the parent Codex completed Docker integration, browser checks and this handoff. Earlier parallel ownership:
+
+- Frontend agent: `src/workbench/`.
+- Backend agent: Python implementation under `src/claim_cmev/`, backend packaging and API tests.
+- Containers agent: `infra/`, root `.dockerignore` and `.env.example`.
+- Parent Codex: reference/visual asset, local build and end-to-end validation, shared documentation and integration fixes.
+
+Preserve existing skill/guidance changes. The user explicitly requested the dashboard/login extension beyond the earlier described-only claim list; fixture processing does not count as model implementation.
 
 ## Handoff procedure
 
@@ -275,3 +281,47 @@ Uncommitted work, limitations and missing prerequisites:
 - Claim authorisation has no identity model and no owner. The 441 shared HITL images must be held out of M1 training or explicitly accepted as leakage before any fitting.
 
 Next concrete step and agreed owner (or unassigned): Unassigned. The team should choose the response to the eleven-day runtime overrun, confirm or reject the M8 container placement against proposal v2 section 9.4, decide whether the 441 jointly labelled HITL images replace part of the section 11.5 annotation plan, and assign named lane and adapter owners before day 1 work starts.
+
+
+## Explicit specification routing correction (2026-09-22)
+
+Date/time and timezone: 2026-09-22 08:32, Asia/Singapore.
+Contributor / coding agent: Codex, following the user's correction to the previous skill update.
+Task and relevant module: Make implementation specifications explicit working sources across all seven skills.
+Branch / baseline commit / resulting commit or PR: `code-skeleton` / `ed5431a` / `013e2a8`.
+Changed paths and completed behaviour:
+- .agents/skills/*/SKILL.md and generated .claude/skills/*/SKILL.md: implementation skill now requires opening the selected module document and routes directly to product, technical, platform, integration, data, training, UI and evaluation specifications. Other skills link their relevant specifications directly.
+- AGENTS.md and docs/agent-workflows.md: removed stale mid-migration routing; distinguish specification implementation detail, proposal scope and ADR 0002 runtime authority. Clarified that the lean profile still uses the documented transport/infrastructure.
+- CONTEXT.md: refreshed current source guidance and retained dated earlier handoffs.
+Decisions (accepted/proposed) and references: No new project decision. The specification index now declares v2 alignment; detailed work uses those specifications, with proposed values kept distinct from accepted decisions and actual implementation.
+Checks actually run, results and artifact locations:
+- Bundled quick_validate.py passed for all 7 skills; sync --write regenerated 7 Claude copies and sync --check passed; all 7 SHA-256 pairs match.
+- 210 local links and their anchors across skills/shared guidance resolve. Git whitespace check passed.
+Uncommitted work, limitations and missing prerequisites: Documentation-only changes, uncommitted. No fresh-client invocation, application test or model experiment; the unchanged sync test suite was not rerun for this link/routing correction.
+Next concrete step and agreed owner (or unassigned): Unassigned implementation owner should select a module requirement, open its specification and relevant shared sections, then implement and verify that slice.
+
+
+## Fixture UI/API baseline handoff (2026-09-23)
+
+Date/time and timezone: 2026-09-23, Asia/Singapore.
+Contributor / coding agent: Codex with separate frontend, backend, container and review agents, at the user's request.
+Task and relevant module: Baseline public information, login, dashboard, upload, fixture review and FastAPI flow; M9/workbench and application platform slice.
+Branch / baseline commit / resulting commit or PR: `code-skeleton` / `ed5431a` / skills `013e2a8`, application baseline `1ac0ea8`; no PR.
+Changed paths and completed behaviour:
+- `src/workbench/`: React/TypeScript public landing and login with generated decorative damaged-car image, sample-style claim queue, intake, processing/review, preserved originals, mark confirm/reject, notes, finalization and browser print/PDF. Responsive mobile table containment was fixed after the first browser failure.
+- `src/claim_cmev/`, `pyproject.toml`, `tests/backend/`: real authenticated FastAPI, file storage, claim/revision/review endpoints, deterministic fixture assessments, transactional outbox and a separate Kafka/local fixture worker. Mock results are identified as fixtures and do not assert real photographic or cost findings.
+- `infra/`, `.dockerignore`: lean Compose packaging for web/nginx, API, combined fixture worker, Redpanda, PostgreSQL and MinIO, with private infrastructure networking. See `infra/README.md` for boundaries.
+- `tests/e2e/baseline.mjs`, `README.md`, `docs/adr/0003-fixture-ui-api-baseline.md` and targeted spec notes: browser walkthrough, run commands and accepted user scope extension under `src`.
+Decisions (accepted/proposed) and references: User-requested public information/login/dashboard extension and `src` layout recorded in ADR 0003. ADR 0002 remains the runtime decision. Fixture processing is an integration aid, not module or model completion.
+Checks actually run, results and artifact locations:
+- Backend: 17 pytest tests passed, covering auth/CSRF, ownership, uploads, exact amounts, idempotency, mark/reassessment revisions, frozen reports and worker replay/offset safety. Tests used local SQLite/storage and simulated Kafka batches.
+- Frontend: TypeScript and production Vite build passed; `npm audit` reported zero vulnerabilities after dependency updates.
+- Local browser: `npm run test:e2e` passed on a local Vite/FastAPI/local-fixture-worker stack. It covers invalid/correct login, queue search, synthetic upload, fixture assessment, note, mark confirmation, reassessment, saved note reload, original evidence, finalization, frozen print PDF, mobile queue and logout. Screenshots/PDF are ignored under `artifacts/evaluation/ui-baseline/`. Earlier mobile overflow failure was fixed by CSS paint containment and rerun passed.
+- Docker Desktop 4.92.0/Linux Engine and Compose v5.5.1: default lean `config --quiet`, all image builds (including source-built MinIO), and `up --build -d` passed. Six services were healthy. Nginx `/`, API `/healthz`, `/readyz` and `/docs` returned 200 on localhost:8080. The full browser walkthrough passed on the default Compose stack through PostgreSQL, MinIO and the Kafka fixture worker. The first container browser claim remained visible after API/worker image rebuild; worker logs show successful Kafka group join. The initial WSL bind-mount socket error was resolved by omitting empty model/cost host mounts from the fixture profile, with the real-module requirement recorded in ADR 0003 and `infra/README.md`.
+Uncommitted work, limitations and missing prerequisites:
+- No trained evidence/document model or real cost calibration is integrated. Seeded photo counts are illustrative, not actual seed originals; new uploads preserve their originals but the worker returns fixture results.
+- Full M9 additions/corrections/dismissals, overlays, durable IndexedDB offline actions and full production authentication/schema migrations are not implemented. PDF pages are preserved and validated but not rasterized by this fixture backend.
+- Local browser tests use SQLite/files/local transport; the separate container browser pass exercises Kafka/PostgreSQL/MinIO. Broker outage recovery, full per-module profile, production authentication, migration lifecycle and real model evaluation remain untested or unimplemented.
+- The skill/specification routing is committed as `013e2a8`; the application, containers, tests and related documentation are committed as `1ac0ea8`. This handoff is committed separately. No PR was created and nothing was pushed.
+- Workstation detail: Docker Desktop Linux Engine is running, but Ubuntu WSL integration was not enabled during this check. The successful Compose run used the Windows Docker Desktop CLI from PowerShell at `C:\Users\Rodel\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe`; its `resources\bin` directory was added to `PATH` for the credential helper. For `docker` inside Ubuntu/Claude Code, enable Ubuntu in Docker Desktop Settings > Resources > WSL Integration. The ignored `infra/compose/.env` has already been created with local generated infrastructure credentials; never commit it.
+Next concrete step and agreed owner: The baseline is running in Docker Desktop on localhost:8080. Claude Code can inspect `docker compose --env-file infra/compose/.env -f infra/compose/docker-compose.yml --profile lean ps` and `infra/README.md`, then select a real module requirement from `docs/specs/README.md`. Build and evaluate real module output separately from fixtures, add read-only registry mounts and version checks when that module consumes model/cost files, and update this handoff with actual results. No named module owner has been assigned.
