@@ -1,6 +1,8 @@
 # M9 - Review overview and report
 
-Owner: Lane 5. Runtime containers: `cmev-web` (React, TypeScript, Vite, served by nginx) and `cmev-api` (FastAPI, **no neural weights**). Code: `apps/workbench/` for the front end, `apps/api/` for the service, with the review domain rules in `src/claim_cmev/review/`. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 6, 7.1 to 7.6, 8.4, 9.2, 9.3, 9.6, 10 (M9), 13.3 and 13.5. Status: specified for v2; no code and no measurements exist.
+> Baseline implementation update (2026-09-22): the user requested a public information page, login and working claim dashboard, plus real FastAPI endpoints with explicitly mocked processing. New code lives in `src/workbench/` and `src/claim_cmev/api/`, superseding the earlier `apps/` locations for this implementation. See [ADR 0003](../adr/0003-fixture-ui-api-baseline.md) for the scoped extension; the specifications below remain the full target, not a claim that every requirement is implemented.
+
+Owner: Lane 5. Runtime containers: `cmev-web` (React, TypeScript, Vite, served by nginx) and `cmev-api` (FastAPI, **no neural weights**). Current baseline code is under `src/workbench/` and `src/claim_cmev/` as recorded in ADR 0003. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 6, 7.1 to 7.6, 8.4, 9.2, 9.3, 9.6, 10 (M9), 13.3 and 13.5. Status: the fixture-backed slice is implemented and verified; the remaining acceptance criteria describe the full target and are not implied complete.
 
 ## Purpose and scope
 

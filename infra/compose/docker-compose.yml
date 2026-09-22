@@ -1,0 +1,155 @@
+name: claim-cmev
+
+x-app-environment: &app-environment
+  CMEV_PROFILE: lean
+  CMEV_FIXTURE_MODE: "true"
+  CMEV_DATABASE_URL: postgresql+psycopg://cmev:${CMEV_DB_PASSWORD:?Set CMEV_DB_PASSWORD in infra/compose/.env}@cmev-db:5432/cmev
+  CMEV_KAFKA_BOOTSTRAP: cmev-kafka:9092
+  STORAGE_BACKEND: s3
+  CMEV_OBJECT_STORE_ENDPOINT: http://cmev-objectstore:9000
+  CMEV_OBJECT_STORE_ACCESS_KEY: ${CMEV_OBJECT_STORE_ACCESS_KEY:?Set object-store access key}
+  CMEV_OBJECT_STORE_SECRET_KEY: ${CMEV_OBJECT_STORE_SECRET_KEY:?Set object-store secret key}
+  CMEV_OBJECT_STORE_BUCKET: cmev-evidence
+  CMEV_MODEL_REGISTRY_PATH: /srv/artifacts/models
+  CMEV_COST_TABLE_PATH: /srv/artifacts/cost_tables
+  DEMO_EMAIL: ${CMEV_DEMO_EMAIL:-surveyor@claim-cmev.demo}
+  DEMO_PASSWORD: ${CMEV_DEMO_PASSWORD:?Set local demonstration password}
+  COOKIE_SECURE: "false"
+  ALLOWED_ORIGINS: http://localhost:${CMEV_WEB_PORT:-8080},http://127.0.0.1:${CMEV_WEB_PORT:-8080}
+
+services:
+  cmev-web:
+    profiles: [lean]
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile.web
+    ports:
+      - "127.0.0.1:${CMEV_WEB_PORT:-8080}:80"
+    depends_on:
+      cmev-api:
+        condition: service_healthy
+    networks: [edge, backend]
+    restart: unless-stopped
+
+  cmev-api:
+    profiles: [lean]
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile.api
+    image: claim-cmev-api:baseline
+    environment: *app-environment
+    depends_on:
+      cmev-db:
+        condition: service_healthy
+      cmev-objectstore:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/readyz', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    networks: [backend]
+    restart: unless-stopped
+
+  cmev-worker-combined:
+    profiles: [lean]
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile.api
+    image: claim-cmev-api:baseline
+    command: [python, -m, claim_cmev.worker]
+    environment: *app-environment
+    depends_on:
+      cmev-api:
+        condition: service_healthy
+      cmev-kafka:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -m, claim_cmev.worker, healthcheck]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 4
+    networks: [backend]
+    restart: unless-stopped
+
+  cmev-kafka:
+    profiles: [lean]
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.2
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --kafka-addr
+      - 0.0.0.0:9092
+      - --advertise-kafka-addr
+      - cmev-kafka:9092
+      - --set
+      - redpanda.auto_create_topics_enabled=true
+    healthcheck:
+      test: [CMD, rpk, cluster, health, --exit-when-healthy, -X, brokers=localhost:9092]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+    volumes:
+      - kafka-data:/var/lib/redpanda/data
+    networks: [backend]
+    restart: unless-stopped
+
+  cmev-db:
+    profiles: [lean]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: cmev
+      POSTGRES_USER: cmev
+      POSTGRES_PASSWORD: ${CMEV_DB_PASSWORD:?Set CMEV_DB_PASSWORD}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U cmev -d cmev"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [backend]
+    restart: unless-stopped
+
+  cmev-objectstore:
+    profiles: [lean]
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile.objectstore
+    image: claim-cmev-minio:2025-10-15
+    environment:
+      MINIO_ROOT_USER: ${CMEV_OBJECT_STORE_ACCESS_KEY:?Set object-store access key}
+      MINIO_ROOT_PASSWORD: ${CMEV_OBJECT_STORE_SECRET_KEY:?Set object-store secret key}
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --max-time, "3", http://127.0.0.1:9000/minio/health/ready]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 12
+    volumes:
+      - objectstore-data:/data
+    networks: [backend]
+    restart: unless-stopped
+
+networks:
+  edge:
+  backend:
+    internal: true
+
+volumes:
+  postgres-data:
+  kafka-data:
+  objectstore-data:

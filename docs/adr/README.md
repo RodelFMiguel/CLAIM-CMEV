@@ -8,6 +8,7 @@ Record decisions that affect contracts, dependencies, deployment, model methods 
 | --- | --- | --- | --- |
 | [0001](0001-prototype-runtime.md) | Prototype runtime and proposed stack | 2026-09-09 | **Superseded** by 0002; retained as history |
 | [0002](0002-containerised-event-runtime.md) | Containerised event-driven runtime with Kafka, PostgreSQL and MinIO | 2026-09-22 | **Accepted**; supersedes 0001 |
+| [0003](0003-fixture-ui-api-baseline.md) | Public entry, login, dashboard and fixture API baseline under src | 2026-09-22 | **Accepted** user-directed baseline; runtime validation reported separately |
 
 Use numbered Markdown files with: status, date, owner, context, decision, alternatives, consequences, validation evidence and affected specifications. Distinguish accepted decisions from hypotheses. Record a superseding decision rather than silently rewriting a previously accepted architecture.
 
