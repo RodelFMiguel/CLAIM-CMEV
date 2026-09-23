@@ -10,9 +10,9 @@ description: >-
 
 Return actionable review findings supported by code/specification evidence. This is a focused domain review, not a general style or security audit.
 
-Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), v2 sections 8 and 13.2, and the relevant [data contracts](../../../docs/specs/data_contracts.md). Use v2 M3 for identity/coverage, M5 for completeness, M6 for marks, M7 for ranges and M8 for combined checks; inspect current specification contents through the workflow guide before using legacy rules.
+Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), [M8 consolidation and checks](../../../docs/specs/module-08-consolidation-checks.md), and the relevant [data contracts](../../../docs/specs/data_contracts.md). For the suspected defect, read [M3 coverage](../../../docs/specs/module-03-part-summary-coverage.md), [M5 extraction](../../../docs/specs/module-05-line-item-extraction.md), [M6 marks](../../../docs/specs/module-06-pen-mark-recognition.md), or [M7 ranges](../../../docs/specs/module-07-reference-cost-ranges.md). Use the [evaluation plan](../../../docs/specs/evaluation_plan.md) for regression cases and the [product specification](../../../docs/specs/product_specification.md) for requirement IDs; proposal section 8 supplies the scope-level rule rationale.
 
-Use [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) for current scope and the [workflow guide](../../../docs/agent-workflows.md#scope-and-specification-transition) for module mapping and specification-transition limits. Read only the v2 sections relevant to this task; unmigrated v1 content does not override v2. Check newer explicitly recorded user decisions and their affected specifications before applying runtime assumptions.
+Use the current specifications below for implementation details and acceptance criteria. [Proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) governs project scope; [ADR 0002](../../../docs/adr/0002-containerised-event-runtime.md) records the later runtime change. Read the sections relevant to the task, preserve proposed versus accepted status, and reconcile concrete conflicts with current user decisions. A specification is not evidence that its behaviour is implemented.
 
 ## Review the requested scope
 

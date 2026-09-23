@@ -10,9 +10,9 @@ description: >-
 
 Produce evidence that the requested workbench behaviours work, fail, or remain untested.
 
-Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), v2 sections 7, 8.4 and 13.3-13.5, plus the relevant [platform API](../../../docs/specs/application_platform.md) and [product requirements](../../../docs/specs/product_specification.md), checking their transition status.
+Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), the [UI specification](../../../docs/specs/ui_specification.md) for screens/states/interactions, [M9 review and report](../../../docs/specs/module-09-review-report.md) for module acceptance, and the relevant [platform API](../../../docs/specs/application_platform.md), [product requirements](../../../docs/specs/product_specification.md) and [evaluation plan](../../../docs/specs/evaluation_plan.md). For payload or asynchronous-state checks, use [data contracts](../../../docs/specs/data_contracts.md) and [integration contracts](../../../docs/specs/integration_contracts.md). Derive expected UI behaviour from these specifications; use proposal section 7 for scope context.
 
-Use [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) for current scope and the [workflow guide](../../../docs/agent-workflows.md#scope-and-specification-transition) for module mapping and specification-transition limits. Read only the v2 sections relevant to this task; unmigrated v1 content does not override v2. Check newer explicitly recorded user decisions and their affected specifications before applying runtime assumptions.
+Use the current specifications below for implementation details and acceptance criteria. [Proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) governs project scope; [ADR 0002](../../../docs/adr/0002-containerised-event-runtime.md) records the later runtime change. Read the sections relevant to the task, preserve proposed versus accepted status, and reconcile concrete conflicts with current user decisions. A specification is not evidence that its behaviour is implemented.
 
 ## Prepare an appropriate test session
 

@@ -34,7 +34,7 @@ Version 2 keeps the purpose, the checks and the main safety rules of version 1. 
 | Assessment export | Structured export | The surveyor prints the finalized overview to PDF | Requested output |
 | Cost data | A 630-row synthetic file (never supplied) | A generated price table with documented rules | Gives known ranges and controlled sparsity |
 | Cost key | Part, side, operation, damage type, vehicle class, currency | Part, operation, vehicle class, currency under one fixed cost basis; no model-year feature | Keeps generation, training and lookup consistent |
-| Deployment | Workbench, backend, image worker, document worker, PostgreSQL | Two processes from one code base (API and worker), SQLite, local files | Less plumbing |
+| Deployment | Workbench, backend, image worker, document worker, PostgreSQL | Containerised, one container per module, Kafka between them, PostgreSQL, MinIO (§9.1, [ADR 0002](adr/0002-containerised-event-runtime.md)) | User-directed on 2026-09-22 for independent module ownership and restart; more plumbing than the two-process design this row originally proposed |
 | Extra comparators | Joint image-text model; image-text alignment | Not included | No time |
 | RQ2 | Do synthetic joint labels improve part matching? | Can marks be detected and linked reliably enough to support human confirmation? | Does not require automatic handwriting recognition |
 | Approval import and cost refresh | Demonstrated | Described only in the core scope; a script is a stretch goal | Preserves the separation of amounts without adding core integration work |
@@ -355,50 +355,71 @@ Dismissals and notes reference their original findings and create review revisio
 
 ### 9.1 Processes and storage
 
-The system runs as two processes built from one Python code base, plus a browser front end.
+The system runs as containerised services built from one Python code base, plus a browser front end. One container per module exchanges work over Kafka; there is no shared jobs table and no single worker process. This section is the high-level view; [ADR 0002](adr/0002-containerised-event-runtime.md) records the decision and the [technical specification](specs/technical_specification.md) is the maintained, detailed source.
 
 ```mermaid
 flowchart TD
-    UI["Browser: upload, review overview, evidence panel, print view"] <--> API["API process (FastAPI)<br/>intake, jobs, consolidation (M8), review API, cost-table lookup"]
-    API --> JOBS[("Jobs table")]
-    JOBS --> WK["Worker process<br/>loads configured core models<br/>image job: M1–M3<br/>document job: M4–M6"]
-    API <--> DB[("SQLite database<br/>claims, revisions, results, findings, reviews")]
-    WK <--> DB
-    API <--> FS[("Local files<br/>photos, pages, masks, overlays, model registry, cost tables")]
-    WK <--> FS
-    OFF["Offline jobs (notebooks/scripts)<br/>train M1, M2, M6; build M7 cost table<br/>optional: M5 LayoutLMv3 experiment"] --> FS
+    UI["Browser: upload, review overview, evidence panel, print view"] <--> WEB["cmev-web<br/>nginx, React + TypeScript + Vite"]
+    UI <--> API["cmev-api (M9)<br/>intake, evidence, review API, cost-table lookup, finalize, print<br/>loads no neural models"]
+    API <--> K(("cmev-kafka<br/>Redpanda broker"))
+    K <--> ORCH["cmev-orchestrator<br/>branch join, retries, dead letters"]
+    ORCH <--> WI["Image workers<br/>cmev-worker-parts (M1)<br/>cmev-worker-damage (M2)<br/>cmev-worker-summary (M3)"]
+    ORCH <--> WD["Document workers<br/>cmev-worker-ocr (M4)<br/>cmev-worker-lineitems (M5)<br/>cmev-worker-penmarks (M6)"]
+    WI --> CON["cmev-consolidator (M8)<br/>deterministic findings, pinned cost table"]
+    WD --> CON
+    CON --> K
+    API <--> DB[("cmev-db<br/>PostgreSQL 16<br/>claims, revisions, results, findings, reviews")]
+    WI --> DB
+    WD --> DB
+    CON --> DB
+    API <--> OS[("cmev-objectstore<br/>MinIO, S3 API<br/>photos, pages, masks, overlays")]
+    WI --> OS
+    WD --> OS
+    OFF["Offline training and builds<br/>train M1, M2, M6; build M7 cost table<br/>stretch: M5 LayoutLMv3"] --> REG[("Read-only registry<br/>model weights, cost tables")]
+    REG -.-> WI
+    REG -.-> WD
+    REG -.-> CON
 ```
 
 | Component | Responsibility | Notes |
 |---|---|---|
-| Browser front end | Upload, overview, evidence panel, print | React + TypeScript + Vite. Overlays and highlighted pages are images rendered by the server, so the browser does no drawing |
-| API process | Validate uploads, create revisions/jobs, run consolidation and reassessment, serve evidence and review endpoints | FastAPI. Reads the table version pinned to each assessment; retains access to earlier tables. Loads no neural models |
-| Worker process | Poll jobs, run the image and document tasks, write results | One process. Loads M1, M2, M4 and the M6 detector. M5 uses versioned parser code. Optional model dependencies are enabled only for an accepted stretch candidate |
-| Jobs table | Persistent queue | Job key (claim, input revision, task, model/parser/configuration versions), state, attempts and error text. No message broker |
-| SQLite database | All structured records | Write-ahead-log mode so the API and the worker can share it |
-| Local files | Originals, derived images, model registry, cost tables | Model registry and cost tables are read-only for the API and worker |
+| Browser front end | Upload, overview, evidence panel, print | React + TypeScript + Vite, served by `cmev-web`. Overlays and highlighted pages are images rendered by the server, so the browser does no drawing |
+| `cmev-api` (M9) | Validate uploads, create input revisions, publish Kafka commands, serve evidence and review endpoints, finalize, print | FastAPI. Reads the cost-table version pinned to each assessment; retains access to earlier tables. Loads no neural models |
+| `cmev-orchestrator` | Track per-input-revision branch completion, emit the consolidate command, retry, route to the dead-letter queue | No neural models |
+| Image workers (M1–M3) | `cmev-worker-parts`, `cmev-worker-damage`, `cmev-worker-summary` | One container each in the `full` profile. M1/M2 load SegFormer-B0 weights; M3 is rules only |
+| Document workers (M4–M6) | `cmev-worker-ocr`, `cmev-worker-lineitems`, `cmev-worker-penmarks` | One container each in the `full` profile. M4/M6 load pretrained/fine-tuned weights; M5 is the rule-based parser, with LayoutLMv3 behind a flag as a stretch goal |
+| `cmev-consolidator` (M8) | Deterministic findings from observations, coverage, line items and pen marks against the pinned cost table | No neural models |
+| `cmev-kafka` | Transport between every module | Redpanda, Kafka-API compatible, topics named `cmev.<kind>.<name>.v1`, keyed by claim ID |
+| `cmev-db` | All structured records | PostgreSQL 16, replacing SQLite so that several containers can write concurrently |
+| `cmev-objectstore` | Originals, derived images | MinIO behind the existing storage adapter, replacing local files |
+| Read-only registry | Model registry and cost tables | Mounted read-only into every worker, the consolidator and the API; never written to inside a claim request |
 | Offline jobs | Training, evaluation, cost-table builds | Colab/Kaggle GPU or a team GPU. Never run inside a surveyor request |
 
-Docker Compose is optional. On days 1–2, install the pinned dependencies and run a small inference batch on the demonstration machine. Record peak memory, startup time and per-stage CPU/GPU latency. Use these results to choose CPU or an available GPU; no laptop latency target is assumed. A single worker processes jobs sequentially in the core scope.
+Two Compose profiles run this same graph. `lean` registers every worker, the orchestrator and the consolidator handler in one combined process, alongside `cmev-kafka`, `cmev-db` and `cmev-objectstore`, for a laptop demonstration. `full` runs one container per row above, for independent restart and resource limits. Both profiles use the same code, topic contracts and records; a result must not differ between them. On days 1–2, install the pinned dependencies and run a small inference batch against the target profile. Record peak memory, startup time and per-stage CPU/GPU latency, and use these results to choose CPU or an available GPU; no laptop latency target is assumed.
 
 ### 9.2 Processing sequence
 
 ```mermaid
 sequenceDiagram
     actor S as Surveyor
-    participant A as API process
-    participant W as Worker process
+    participant A as cmev-api
+    participant O as cmev-orchestrator
+    participant IW as Image workers (M1-M3)
+    participant DW as Document workers (M4-M6)
+    participant C as cmev-consolidator (M8)
     S->>A: Upload photos, estimate pages, vehicle details
-    A->>A: Validate; store input revision; create image job and document job
+    A->>A: Validate; store input revision
+    A->>O: evt.input-revision-created (Kafka)
     A-->>S: Claim ID, revision, state = queued
-    W->>A: (polls jobs table) take image job
-    W->>W: M1 parts, M2 damage, M3 summary and coverage
-    W-->>A: Observations and coverage saved; job done
-    W->>W: M4 OCR, M5 rule-based rows, M6 proposed marks
-    W-->>A: Line items and pen marks saved; job done
-    A->>A: Both jobs done → M8 provisional assessment with pinned cost table
+    O->>IW: cmd.parts-segment, cmd.damage-segment, cmd.part-summary
+    IW-->>O: Observations and coverage saved; image branch complete
+    O->>DW: cmd.page-read, cmd.line-items-extract, cmd.pen-marks-detect
+    DW-->>O: Line items and pen marks saved; document branch complete
+    O->>C: cmd.consolidate (both branches joined)
+    C-->>A: evt.assessment-ready; provisional assessment with pinned cost table
     S->>A: Confirm marks, enter amounts, correct identity/coverage
-    A->>A: Save action; new input/assessment revision; recompute affected checks
+    A->>C: cmd.consolidate (reassessment)
+    C-->>A: New input/assessment revision; recompute affected checks
     A-->>S: Updated findings and matching review revision
     S->>A: Dismiss finding with reason or add review note
     A-->>S: Review-only action saved against its finding
@@ -406,7 +427,7 @@ sequenceDiagram
     A-->>S: Print view
 ```
 
-If one job fails, the other job's result is kept and the assessment is shown as incomplete. If photographs are uploaded without an estimate, the damage summary is shown and the line-item section says "waiting for the estimate". New photographs or pages create a new input revision and a new assessment; earlier results stay stored.
+If one branch fails, the other branch's result is kept and the assessment is shown as incomplete; `cmev-orchestrator` owns retries and the dead-letter queue. If photographs are uploaded without an estimate, the damage summary is shown and the line-item section says "waiting for the estimate". New photographs or pages create a new input revision and a new assessment; earlier results stay stored.
 
 ### 9.3 Records exchanged between modules
 
@@ -428,7 +449,7 @@ These are proposal-level records to align with the shared contracts (§16). Abse
 
 ### 9.4 How each model is served
 
-"Served" means how a trained model is loaded and run when a claim is processed. All neural models run inside the worker process. Nothing retrains at request time.
+"Served" means how a trained model is loaded and run when a claim is processed. Each neural model runs in its own module worker container, loaded once at container start from the read-only registry. Nothing retrains at request time.
 
 | Model | Runs in | Loaded from | Input → output | How the result is stored |
 |---|---|---|---|---|
@@ -441,7 +462,7 @@ These are proposal-level records to align with the shared contracts (§16). Abse
 | M5 LayoutLMv3 — stretch only | Worker only if explicitly enabled | Candidate/approved `lineitems/<version>` registry entry | Page + aligned OCR tokens/boxes → field labels → same row contract as parser | Alternative extraction with its own method/version |
 | M6 TrOCR — stretch only | Worker only if explicitly enabled | Pinned pretrained `trocr-base-handwritten` weights | Price-change crop → suggested amount or unreadable | Suggestion remains separate from the human-confirmed amount |
 | M7 reference cost model (LightGBM) | **Not served.** Offline only | Offline script | Synthetic records → ranges and independent support counts | Versioned table; API looks up the assessment's pinned version |
-| M8 consolidation and checks | API process | Code and the pinned cost table | Observations, coverage, line items, pen marks → findings | Finding rows; assessment revision |
+| M8 consolidation and checks | `cmev-consolidator` container | Code and the pinned cost table | Observations, coverage, line items, pen marks → findings | Finding rows; assessment revision |
 
 Serving rules:
 
@@ -846,7 +867,7 @@ External photographs cannot show hidden structural damage, and an unusual amount
 
 ## 16. Implementation-document transition
 
-This revision records the agreed planning direction and preserves [v1](CLAIM-CMEV_project_proposal_v1.md) as historical context. The [specification index](specs/README.md), module specifications, shared contracts and [ADR 0001](adr/0001-prototype-runtime.md) still describe the earlier design at the time of this edit. Updating the proposal does not mean that code, schemas, models or those specifications have been migrated.
+This revision recorded the agreed planning direction and preserves [v1](CLAIM-CMEV_project_proposal_v1.md) as historical context. The [specification index](specs/README.md), module specifications and shared contracts have since been rewritten to this direction, and the runtime target changed again after this table was first written: [ADR 0002](adr/0002-containerised-event-runtime.md), directed by the user on 2026-09-22, supersedes [ADR 0001](adr/0001-prototype-runtime.md) and the "API plus one worker" target this table originally named; see §9.1 for the current architecture. Updating this proposal does not by itself mean every specification, schema, model or piece of code has been migrated or measured; check the current files and [CONTEXT.md](../CONTEXT.md) for verified state.
 
 The initial alignment work belongs in days 1–2 of the existing budget. Record the scope/runtime change in an ADR and update the affected specifications using the module mapping in §10; this is a documentation/implementation task, not another approval gate for the agreed scope.
 
@@ -856,7 +877,7 @@ The initial alignment work belongs in days 1–2 of the existing budget. Record 
 | M01–M03 and image contracts | HITL parts, CarDD six-category damage, conservative part/side identity, retained observations and confirmed coverage; exploratory RQ3 |
 | M04–M05 and new v2 M6 | OCR/parser baseline, completeness and uncertainty, detector/linking/confirmation states; LayoutLMv3/CORD and TrOCR explicitly optional |
 | Old M06–M08 and cost contracts | v2 M7 reference model and v2 M8 combined checks; fixed price basis, no year feature, independent support, separate calibration and confirmed-input gates |
-| Technical specification / ADR | API plus one worker, SQLite/local storage, configured core model loading, pinned historic artifacts and module-owned adapters |
+| Technical specification / ADR | Containerised, event-driven runtime superseding this row's original "API plus one worker, SQLite/local storage" target: one container per module, Kafka transport, PostgreSQL, MinIO ([ADR 0002](adr/0002-containerised-event-runtime.md)); configured core model loading, pinned historic artifacts and module-owned adapters carried over unchanged |
 | Evaluation plan and workflow guidance | Reserved splits, automatic versus assisted results, three consolidation experiments, 50-person-day allocation and stretch gates |
 
 Preserve old record/artifact meaning during implementation. If any persisted fixtures or model bundles use v1 labels or amount semantics, give v2 a distinct schema/taxonomy version and an explicit conversion or rejection policy; do not silently reinterpret them. Application code remains scaffolded, so no migration or executable compatibility check is claimed by this proposal.

@@ -10,9 +10,9 @@ description: >-
 
 Produce a documented dataset manifest, conversion output and reproducible split membership appropriate to the requested dataset.
 
-Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), the [data workspace policy](../../../data/README.md), and the data lifecycle in the [technical specification](../../../docs/specs/technical_specification.md). Read [contracts](../../../docs/specs/data_contracts.md) and only the relevant module/data sections of the [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) (sections 11 and 12.3-12.4).
+Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), the [model training specification](../../../docs/specs/model_training_specification.md) for source roles, conversions, labels and splits, and the [data workspace policy](../../../data/README.md). Open the selected module specification from the [index](../../../docs/specs/README.md). Use the [data contracts](../../../docs/specs/data_contracts.md) for output records, the [technical specification](../../../docs/specs/technical_specification.md) for data lifecycle/storage and the [evaluation plan](../../../docs/specs/evaluation_plan.md) for reserved evaluation cohorts. Consult proposal sections 11 and 12.3-12.4 for scope and contingency rationale.
 
-Use [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) for current scope and the [workflow guide](../../../docs/agent-workflows.md#scope-and-specification-transition) for module mapping and specification-transition limits. Read only the v2 sections relevant to this task; unmigrated v1 content does not override v2. Check newer explicitly recorded user decisions and their affected specifications before applying runtime assumptions.
+Use the current specifications below for implementation details and acceptance criteria. [Proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) governs project scope; [ADR 0002](../../../docs/adr/0002-containerised-event-runtime.md) records the later runtime change. Read the sections relevant to the task, preserve proposed versus accepted status, and reconcile concrete conflicts with current user decisions. A specification is not evidence that its behaviour is implemented.
 
 ## Select the scoped data
 

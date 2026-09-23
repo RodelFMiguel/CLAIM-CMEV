@@ -10,9 +10,9 @@ description: >-
 
 Produce an evaluated candidate reference build with traceable membership. Keep candidate creation and changing the serving default as distinct outcomes.
 
-Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), v2 M7 and sections 8.3, 11.6 and 13.4, plus the affected [cost/approval contracts](../../../docs/specs/data_contracts.md). For approval refresh, also read stretch S3 in v2 section 12.3. Legacy M06/M07 documents require reconciliation before their grouping or deployment rules are used.
+Read [AGENTS.md](../../../AGENTS.md), [CONTEXT.md](../../../CONTEXT.md), [M7 reference cost ranges](../../../docs/specs/module-07-reference-cost-ranges.md), the cost sections of the [model training specification](../../../docs/specs/model_training_specification.md), [data contracts](../../../docs/specs/data_contracts.md), and [evaluation plan](../../../docs/specs/evaluation_plan.md). Use [M8 consolidation](../../../docs/specs/module-08-consolidation-checks.md) for consuming/pinning the table and the [technical specification](../../../docs/specs/technical_specification.md) for artifact publication. For approval refresh, also read the [platform specification](../../../docs/specs/application_platform.md) and stretch S3 in proposal section 12.3.
 
-Use [proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) for current scope and the [workflow guide](../../../docs/agent-workflows.md#scope-and-specification-transition) for module mapping and specification-transition limits. Read only the v2 sections relevant to this task; unmigrated v1 content does not override v2. Check newer explicitly recorded user decisions and their affected specifications before applying runtime assumptions.
+Use the current specifications below for implementation details and acceptance criteria. [Proposal v2](../../../docs/CLAIM-CMEV_project_proposal_v2.md) governs project scope; [ADR 0002](../../../docs/adr/0002-containerised-event-runtime.md) records the later runtime change. Read the sections relevant to the task, preserve proposed versus accepted status, and reconcile concrete conflicts with current user decisions. A specification is not evidence that its behaviour is implemented.
 
 ## Establish the requested operation
 

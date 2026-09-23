@@ -1,8 +1,10 @@
 # Specification index
 
+> Baseline implementation update (2026-09-22): the user requested a public information page, login and working claim dashboard, plus real FastAPI endpoints with explicitly mocked processing. New code lives in `src/workbench/` and `src/claim_cmev/api/`, superseding the earlier `apps/` locations for this implementation. See [ADR 0003](../adr/0003-fixture-ui-api-baseline.md) for the scoped extension; the specifications below remain the full target, not a claim that every requirement is implemented.
+
 Status: these specifications now derive from [proposal v2](../CLAIM-CMEV_project_proposal_v2.md). The v1 specifications are retired. The containerised, event-driven runtime is a change from v2 section 9.1 and is recorded in [ADR 0002](../adr/0002-containerised-event-runtime.md), which supersedes [ADR 0001](../adr/0001-prototype-runtime.md).
 
-The repository is a scaffold. There is no application code, no dependency manifest and no trained model. Nothing here is implemented or measured. Choices marked **proposed** need a recorded team decision before anything is pinned.
+The repository now includes the limited fixture-backed application recorded in ADR 0003. No trained model is integrated or measured. The specifications below remain the full implementation target; choices marked **proposed** still need a recorded team decision before they are pinned.
 
 **Where a large language model sits:** no large language model sits in the decision path. Part and damage integration is deterministic mask overlap in M2. Vision and document integration is the deterministic rule set of v2 section 8, applied in M8. An optional stretch service `cmev-explainer` may turn an already-computed finding into a readable sentence. It is off by default and never changes a result.
 

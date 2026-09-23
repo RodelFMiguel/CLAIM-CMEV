@@ -1,6 +1,8 @@
 # Application platform specification
 
-Status: implementation baseline for `cmev-api`, `cmev-orchestrator` and `cmev-consolidator`. Nothing here is implemented or measured. Library choices, limits and defaults are **proposed** until the day-2 smoke test records a result.
+> Baseline implementation update (2026-09-22): the user requested a public information page, login and working claim dashboard, plus real FastAPI endpoints with explicitly mocked processing. New code lives in `src/workbench/` and `src/claim_cmev/api/`, superseding the earlier `apps/` locations for this implementation. See [ADR 0003](../adr/0003-fixture-ui-api-baseline.md) for the scoped extension; the specifications below remain the full target, not a claim that every requirement is implemented.
+
+Status: target application-platform specification. ADR 0003 implements a limited fixture-backed API and combined worker; the full orchestrator/consolidator surface, real modules and production lifecycle remain unimplemented and unmeasured. Choices still marked **proposed** require a recorded decision.
 Owner: Lane 5 for intake, jobs, review and deployment. Lane 4 for consolidation rules, cost lookup and approvals.
 Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 7, 8, 9 and 16, plus the containerised event runtime in [ADR 0002](../adr/0002-containerised-event-runtime.md) and the [technical specification](technical_specification.md).
 

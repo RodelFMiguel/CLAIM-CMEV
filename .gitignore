@@ -25,6 +25,7 @@ coverage/
 .vite/
 playwright-report/
 test-results/
+*.tsbuildinfo
 
 # Editors, OS, and temporary Office files
 .vscode/
