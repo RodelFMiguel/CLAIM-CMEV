@@ -10,23 +10,23 @@ This document describes how CLAIM-CMEV runs online: which containers exist, what
 
 It does not change any domain rule. The decision rules in proposal v2 section 8, the records in section 9.3, the module scope in section 10, the datasets in section 11 and the evaluation plan in section 13 apply exactly as written. Only the runtime and the transport change.
 
-### 1.1 Declared change from proposal v2 section 9.1
+### 1.1 Declared change from the original proposal v2 section 9.1
 
-Proposal v2 section 9.1 specifies two processes built from one code base (one FastAPI API and one worker), a database jobs table, **no message broker**, SQLite in write-ahead-log mode, local files, and optional Docker Compose.
+Proposal v2 section 9.1 originally specified two processes built from one code base (one FastAPI API and one worker), a database jobs table, **no message broker**, SQLite in write-ahead-log mode, local files, and optional Docker Compose.
 
-The user has since directed a different runtime: **containerise each module, and use Kafka, or a proposed equivalent, as the main transport between modules.** This specification targets that runtime. The change is recorded openly:
+The user directed a different runtime on 2026-09-22: **containerise each module, and use Kafka, or a proposed equivalent, as the main transport between modules.** This specification targets that runtime, and proposal v2 section 9.1 has since been rewritten to describe it directly. The table below is the historical record of that change:
 
-| Item | Proposal v2 section 9.1 | This specification | Consequence |
+| Item | Original proposal v2 section 9.1 | This specification | Consequence |
 | --- | --- | --- | --- |
 | Process count | 2 (API, worker) plus browser | 12 containers in the `full` profile, 6 in the `lean` profile | More images, more health checks, more wiring |
 | Transport | Database jobs table, polled | Kafka topics, at-least-once, key `claim_id` | New contracts, new failure modes, new operational skills |
 | Database | SQLite with WAL | PostgreSQL 16 | Forced: see section 1.2 |
 | File storage | Local files | MinIO behind the same storage adapter, host paths for the read-only registry | Adapter keeps both options open |
 | Compose | Optional | Required, two profiles | Bootstrap must be scripted |
-| M8 consolidation | Runs inside the API process | Runs in `cmev-consolidator`, its own container | Contradiction with v2 section 9.4: see section 16.2 |
+| M8 consolidation | Originally ran inside the API process | Runs in `cmev-consolidator`, its own container | Now consistent: proposal v2 section 9.4 was updated to match. See section 16.2 |
 | Platform effort | Assumed small | Materially larger: see section 15 | Needs the `lean` fallback and shared ownership |
 
-Proposal v2 does not say any of this. It is a directed change on top of v2 and needs [ADR 0002](../adr/0002-containerised-event-runtime.md), which supersedes [ADR 0001](../adr/0001-prototype-runtime.md).
+The original proposal v2 did not say any of this. It was a directed change on top of v2 and needed [ADR 0002](../adr/0002-containerised-event-runtime.md), which supersedes [ADR 0001](../adr/0001-prototype-runtime.md); the proposal text itself has since caught up with that decision.
 
 ### 1.2 Why containerising modules forces PostgreSQL
 
@@ -787,7 +787,7 @@ A failed or skipped check is not a passed check, and a fixture run is not a mode
 
 ## 15. Effort: an honest note
 
-The containerised event runtime costs materially more platform time than proposal v2 section 9.1 assumed. Section 9.1 assumed two processes, one polled table and optional Compose. Stating the difference is not an argument against the directive; it is what the team needs in order to plan.
+The containerised event runtime costs materially more platform time than proposal v2 section 9.1 originally assumed, before it was rewritten to match: two processes, one polled table and optional Compose. Stating the difference is not an argument against the directive; it is what the team needs in order to plan.
 
 Rough additional effort against the v2 baseline. These are planning figures, not measurements:
 
@@ -815,7 +815,7 @@ Proposal v2 section 12.1 gives each member 5 implementation days, 2 integration 
 2. Collapse `cmev-orchestrator` into `cmev-api`. The join logic is table driven, so it moves without changing topics or records.
 3. Drop MinIO for a mounted volume behind the same storage adapter. The adapter interface does not change.
 4. Reduce every topic to one partition and one consumer. Ordering and idempotency are unaffected; only parallelism is lost.
-5. Last resort: fall back to the proposal v2 section 9.1 jobs table, keeping the same envelope shape in the job payload so the topics can return later. Record this as a reversal of ADR 0002 in a new ADR rather than a quiet change.
+5. Last resort: fall back to a database jobs table, the design originally in proposal v2 section 9.1 before it was rewritten to match ADR 0002, keeping the same envelope shape in the job payload so the topics can return later. Record this as a reversal of ADR 0002 in a new ADR rather than a quiet change.
 
 **Never cut, whatever the runtime:** the invariants in proposal v2 section 12.4. Real model output in the demonstrated core branches, explicit failed and incomplete states, M8 uncertainty and opposite-side tests, mark confirmation and reassessment, version pinning, source evidence, review persistence, print to PDF, and the separation of printed, effective and approved amounts.
 
@@ -836,16 +836,16 @@ Proposal v2 section 12.1 gives each member 5 implementation days, 2 integration 
 
 ### 16.2 Contradictions with proposal v2 that the team must record
 
-These are real conflicts between the user's directive and v2 as written. They need a decision, not a silent resolution.
+Proposal v2 sections 9.1 and 9.4 were rewritten on 2026-09-23 to describe the containerised/Kafka runtime directly, so the first five rows below are now resolved: the proposal text matches this specification. They are kept here as a record of what changed and why. Only the platform-effort row remains a live, unresolved conflict.
 
-| Conflict | v2 text | This specification | Proposed resolution |
+| Conflict | Original v2 text | This specification | Status |
 | --- | --- | --- | --- |
-| Where M8 runs | Section 9.4 states M8 consolidation runs in the API process | M8 runs in `cmev-consolidator`, its own container, triggered by `cmd.consolidate.v1` | Follow the directive. The API consumes `evt.assessment-ready.v1` and moves the pointer. The M8 module specification must be updated to match |
-| Number of workers | Section 9.1 states one worker process handling an image job and a document job, sequentially | Six module workers with a dependency graph, running in parallel across branches | Follow the directive. The `lean` profile preserves the v2 shape as a fallback |
-| Transport | Section 9.1 states a jobs table and explicitly "no message broker" | Kafka topics | Follow the directive. Record as superseded in ADR 0002 |
-| Database | Section 9.1 states SQLite in WAL mode | PostgreSQL 16 | Forced by the directive, see section 1.2. Not an independent scope increase |
-| Compose | Section 9.1 states Compose is optional | Compose is required, with two profiles | Follow the directive |
-| Platform effort | Section 12.1 gives Lane 5 five implementation days | About 11 extra days, or about 5 for `lean` | Unresolved. The team must either move work to module owners, accept `lean`, or accept an overrun and report it under section 13.6 criterion 8 |
+| Where M8 runs | Section 9.4 stated M8 consolidation runs in the API process | M8 runs in `cmev-consolidator`, its own container, triggered by `cmd.consolidate.v1` | **Resolved.** Section 9.4 now names `cmev-consolidator`. The API consumes `evt.assessment-ready.v1` and moves the pointer |
+| Number of workers | Section 9.1 stated one worker process handling an image job and a document job, sequentially | Six module workers with a dependency graph, running in parallel across branches | **Resolved.** Section 9.1 now describes the six-worker graph; the `lean` profile preserves the sequential shape as a fallback |
+| Transport | Section 9.1 stated a jobs table and explicitly "no message broker" | Kafka topics | **Resolved.** Section 9.1 now names Kafka directly; recorded as superseded in ADR 0002 |
+| Database | Section 9.1 stated SQLite in WAL mode | PostgreSQL 16 | **Resolved.** Section 9.1 now names PostgreSQL 16, forced by the directive, see section 1.2. Not an independent scope increase |
+| Compose | Section 9.1 stated Compose is optional | Compose is required, with two profiles | **Resolved.** Section 9.1 now describes the `lean`/`full` profiles as required |
+| Platform effort | Section 12.1 gives Lane 5 five implementation days | About 11 extra days, or about 5 for `lean` | **Unresolved.** The proposal's effort budget (§12.1, §41 changes-table) has not been revised to account for the containerised runtime. The team must either move work to module owners, accept `lean`, or accept an overrun and report it under section 13.6 criterion 8 |
 
 Nothing above changes a domain rule. The decision rules in section 8, the records in section 9.3, the module scope in section 10, the datasets in section 11 and the evaluation plan in section 13 of proposal v2 are unchanged.
 

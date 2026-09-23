@@ -32,7 +32,7 @@ No large language model sits in the decision path, so nothing in this plan measu
 
 ### 0.3 The runtime change and what it adds here
 
-Proposal v2 section 9.1 planned one API process and one worker with a polled jobs table and no message broker. The team has directed a containerised, event-driven runtime instead, with Kafka on `cmev-kafka` as the transport. That is a change from v2 section 9.1.
+Proposal v2 section 9.1 originally planned one API process and one worker with a polled jobs table and no message broker. The team directed a containerised, event-driven runtime instead, with Kafka on `cmev-kafka` as the transport. Proposal v2 section 9.1 has since been rewritten to describe this same runtime directly.
 
 It adds no domain metric. It adds the service checks SVC-09 to SVC-17 in [section 7.2](#72-transport-and-container-checks), and it moves that measurement effort into Lane 5's reserved integration and evaluation days.
 

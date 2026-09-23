@@ -8,11 +8,11 @@ This document says **what** CLAIM-CMEV does and **why**. The [technical specific
 
 ## 0. Two standing answers
 
-### 0.1 Where the runtime differs from proposal v2
+### 0.1 Where the runtime differs from the original proposal v2
 
-Proposal v2 section 9.1 planned two processes, one FastAPI API and one worker, with a database jobs table, no message broker, SQLite and local files. The team has since directed a different runtime. Each module now runs in its own container, and Kafka carries work between modules. This is a change from v2 section 9.1, not something v2 already said.
+Proposal v2 section 9.1 originally planned two processes, one FastAPI API and one worker, with a database jobs table, no message broker, SQLite and local files. The team directed a different runtime on 2026-09-22. Each module now runs in its own container, and Kafka carries work between modules. Proposal v2 section 9.1 has since been rewritten to describe this same runtime directly; the table below is the historical record of the change.
 
-| Item | Proposal v2 section 9.1 | This specification |
+| Item | Original proposal v2 section 9.1 | This specification |
 | --- | --- | --- |
 | Processes | One API process plus one worker process | One container per module, names fixed in [ADR 0002](../adr/0002-containerised-event-runtime.md) |
 | Transport | Jobs table, polled, no message broker | Kafka topics on `cmev-kafka` (Redpanda) |

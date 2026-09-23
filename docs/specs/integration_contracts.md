@@ -2,11 +2,11 @@
 
 Status: **proposed** integration baseline for v2, target schema version `0.2.0`. Nothing here is implemented or measured. Owner: Lane 5 coordinates; each module owner owns its own adapter and topic payloads; Lane 4 owns taxonomy, cost and finding semantics. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 8 (decision rules), 9.2 to 9.6 (sequence, records, serving, registry, failure handling), 10 (modules), 11 (datasets) and 16 (transition). Shared records: [data contracts](data_contracts.md). Behavioural detail for the HTTP surface: [application platform](application_platform.md). Training recipes: [model training specification](model_training_specification.md). Screens: [UI specification](ui_specification.md).
 
-## Runtime change from proposal v2 section 9.1
+## Runtime change from the original proposal v2 section 9.1
 
-Proposal v2 section 9.1 specifies two processes built from one code base, a database jobs table, "no message broker", SQLite and local files. **The team has since directed a different runtime: one container per module, with Kafka as the main transport between modules.** This document targets that containerised, event-driven runtime. Proposal v2 has not been rewritten, so the two documents differ on this point, and only on this point.
+Proposal v2 section 9.1 originally specified two processes built from one code base, a database jobs table, "no message broker", SQLite and local files. **The team directed a different runtime on 2026-09-22: one container per module, with Kafka as the main transport between modules.** This document targets that containerised, event-driven runtime. Proposal v2 section 9.1 has since been rewritten to describe this same runtime directly, so the table below is a historical record of the change, not a live discrepancy between the two documents.
 
-| Item | Proposal v2 section 9.1 | This specification | Consequence |
+| Item | Original proposal v2 section 9.1 | This specification | Consequence |
 |---|---|---|---|
 | Processes | API process plus one worker | One container per module plus infrastructure containers | More build, configuration and startup work |
 | Transport | Database jobs table, no broker | Kafka topics, Redpanda in development, plus direct HTTP for the browser only | New topic contracts, consumer groups, retry and dead-letter design |
