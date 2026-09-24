@@ -1,0 +1,67 @@
+# M4 page reading configuration. See docs/specs/module-04-page-reading.md.
+#
+# Status: every value is PROPOSED. Spec defaults are copied from the module
+# specification; values marked "addition" or "fixture-derived" were chosen by the
+# M4 implementation against deterministic synthetic fixtures only. None has been
+# selected on development/validation pages yet. Freeze at the day 6 checkpoint;
+# never tune against final test pages. Bump config_version on any change.
+config_version: "m4-page-reading/0.1.0"
+
+ocr:
+  engine: paddleocr
+  # Pinned by the 2026-09-24 synthetic smoke test (artifacts/evaluation/m4-ocr-smoke/).
+  # The day-2 decision on real photographed pages is still open.
+  engine_version: "2.10.0"
+  lang: en
+  use_angle_cls: true
+  min_box_confidence: 0.50
+  max_low_confidence_fraction: 0.15
+  max_attempts: 3
+  skip_superseded_revisions: true
+  # Addition: a region contained this much inside another region is a nested
+  # (mixed-granularity) output and fails the page with granularity_mismatch.
+  nested_box_containment: 0.9
+  fallback_engine:
+    name: tesseract
+    enabled: false
+
+page:
+  render_dpi: 300
+  rectified_width_px: 2480
+  min_page_area_fraction: 0.35
+  max_corner_angle_deviation_deg: 20
+  # Addition: the boundary must be a real luminance step (page against background).
+  # Rejects a ruled table border inside a flat scan as a false "page".
+  min_boundary_contrast: 20
+  boundary_strip_px: 6
+  boundary_detect_max_side_px: 1000
+  canny_low: 50
+  canny_high: 150
+  min_deskew_angle_deg: 0.5
+  max_deskew_angle_deg: 15
+  # Addition: skew is searched over a wider range so a clearly skewed page beyond
+  # max_deskew_angle_deg is detected (and marked partial) instead of clamped.
+  skew_search_range_deg: 45
+  skew_min_foreground_px: 500
+  skew_min_peak_ratio: 1.5
+  expected_text_box_granularity: line
+  row_band_tolerance_px: 18
+  max_pages_per_job: 10
+  write_debug: false
+
+quality:
+  # All thresholds fixture-derived additions; screening signals, not proof.
+  eval_width_px: 1000
+  # 1 - no-reference blur effect: synthetic sharp scans ~0.94, sigma-4 blur ~0.35.
+  min_sharpness: 0.5
+  clip_level: 250
+  glare_margin: 20
+  max_glare_fraction: 0.01
+  min_illumination_ratio: 0.6
+  min_contrast_range: 60
+  min_source_page_width_px: 1000
+  # Quality flags that downgrade an otherwise complete page to partial.
+  partial_on_flags: [blur, glare, uneven_illumination, low_contrast, low_resolution]
+
+transforms:
+  round_trip_tolerance_px: 1.0

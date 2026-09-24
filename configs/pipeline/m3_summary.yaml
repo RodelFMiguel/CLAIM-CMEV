@@ -1,0 +1,40 @@
+# M3 part summary and coverage configuration.
+# See docs/specs/module-03-part-summary-coverage.md ("Configuration and thresholds").
+#
+# Status: every threshold below is PROPOSED (the specification defaults). None has been
+# selected on validation vehicle groups: the 5-10 team vehicle groups do not exist yet.
+# Select on the validation groups and freeze at the day 6 checkpoint; never tune against
+# final test groups. Any change bumps config_version, which changes the job key.
+#
+# File name follows this directory's m<N>_<name>.yaml convention; the specification
+# calls the same file configs/pipeline/part_summary.yaml.
+config_version: "m3-summary/0.1.0"
+status: proposed
+
+summary:
+  # Report the largest single member area. Summing member areas is forbidden.
+  area_policy: max_member
+  # Screening signals: stored as signals, never proof of whole-panel visibility.
+  # Part pixels divided by model-frame pixels.
+  min_part_area_fraction: 0.02
+  # Variance of the Laplacian inside the part bounding box, higher is sharper.
+  # UNCALIBRATED: the scale depends on crop size and has not been measured on real team
+  # photographs. Calibrate before relying on it (M3 open decision, day 4).
+  min_blur_score: 100.0
+  # Mean luminance inside the part mask, 0-255 scale.
+  min_mean_luma: 40
+  max_mean_luma: 220
+  # Fraction of part-mask pixels at 0 or 255.
+  max_clipped_fraction: 0.10
+  # Fraction of the part-mask perimeter touching the photo border (crop screen).
+  max_border_touch_fraction: 0.25
+  # adequate needs a recorded coverage confirmation. The loader rejects false: the
+  # shared PartCoverage contract forbids adequate without a confirmation anyway.
+  require_coverage_confirmation: true
+  # "taxonomy" reads supported_panel_list from configs/taxonomy/parts.yaml (currently
+  # "all": the full 21 classes, a PROPOSED default pending the team decision).
+  supported_panel_list: taxonomy
+  # Consumer-shell keys (the Kafka shell is not implemented yet).
+  max_attempts: 3
+  skip_superseded_revisions: true
+  write_debug_crops: false

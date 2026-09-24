@@ -1,0 +1,47 @@
+# M8 consolidation rules. See docs/specs/module-08-consolidation-checks.md
+# "Configuration and thresholds".
+#
+# Status: every threshold below is PROPOSED (the module specification's defaults).
+# None has been selected on validation data; they must be selected on validation
+# claims and frozen before the final test, and never tuned against it. Bump
+# rules_config_version on any change: it is pinned on every assessment and is part of
+# the consolidate job key. The safety constants (coverage.required_state,
+# identity.require_resolved_side, cost.quantity_must_equal, cost.rounding) are fixed
+# by the specification and the loader refuses any other value.
+#
+# Note: the module specification names this file configs/pipeline/consolidation.yaml;
+# the implementation task assigned configs/pipeline/m8_rules.yaml.
+rules_config_version: "m8-rules/0.1.0"
+
+damage:
+  # Proposed. Below this, R7 withholds with damage_evidence_uncertain.
+  min_observation_confidence: 0.50
+  # Frozen with Lane 1: the six CarDD categories.
+  supported_types: [dent, scratch, crack, glass-shatter, lamp-broken, tire-flat]
+
+coverage:
+  # Fixed: R6 accepts nothing weaker than adequate.
+  required_state: adequate
+  # Proposed (open decision): an unsupported result needs the recorded coverage
+  # confirmation record itself, not only an adequate state.
+  require_human_confirmation_for_negative: true
+
+identity:
+  # Fixed: R5 and A7 both need a resolved side.
+  require_resolved_side: true
+
+cost:
+  quantity_must_equal: 1        # fixed by the single-part basis
+  money_places: 2               # ROUND_HALF_UP, applied once
+  rounding: ROUND_HALF_UP
+  normalised_score_places: 4    # display only
+
+additions:
+  # Proposed. Stricter than R7 because an addition asserts a new item (open decision).
+  min_observation_confidence: 0.60
+  # A1: complete, or explicitly_empty confirmed by the surveyor.
+  require_completeness: [complete, explicitly_empty]
+
+explainer:
+  # The optional cmev-explainer stretch service is not implemented; it can only be off.
+  enabled: false

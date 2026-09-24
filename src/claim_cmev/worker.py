@@ -1,152 +1,132 @@
-"""Lean Kafka consumer + outbox relay; all processing is explicitly mocked.
+"""Worker entry point: ``python -m claim_cmev.worker [run|healthcheck] [--role ROLE] [--local]``.
 
-`--local` is an opt-in development/test transport, never used by Compose.
+Roles (same image, same handlers, same topics):
+
+- ``combined``: the lean profile's ``cmev-worker-combined``: outbox relay, orchestrator,
+  the six fixture stage producers and the consolidator in one process;
+- ``orchestrator``, ``producers``, ``consolidator``: the full profile's separate containers.
+
+Every role runs the outbox relay; a PostgreSQL advisory lock lets only one publish at a
+time. Start-up refuses (exit 1) when the database is not at the expected Alembic head or,
+for roles that consolidate, when the rule configuration or the active cost table does not
+load. ``--local`` swaps Kafka for the in-memory transport: a development aid, never
+evidence that Kafka integration passed.
 """
+from __future__ import annotations
+
 import argparse
-from copy import deepcopy
-import json
 import logging
+import os
 from pathlib import Path
+import socket
+import sys
 import time
-from sqlalchemy import select
-from .runtime import Database, Record, Outbox, setting, get, put, now, digest
-from .fixtures import assessment_for
+from typing import Any
+
+from .contracts.events import TOPICS
+from .messaging.consumer import consume_batch
+from .messaging.outbox import relay_once
+from .messaging.transport import TransportUnavailable
+from .orchestration.consolidation import Consolidator
+from .orchestration.plan import VersionBundle
+from .orchestration.services import ROLES, RuntimeSettings, build_runtimes, local_pipeline
+from .persistence.migrations import check_head
+from .runtime import Database, setting, utcnow
 
 log = logging.getLogger("cmev.worker")
-HEARTBEAT = Path("/tmp/cmev-worker-heartbeat")
+HEARTBEAT = Path(os.getenv("CMEV_HEARTBEAT_PATH", "/tmp/cmev-worker-heartbeat"))
+READY_MARKER = HEARTBEAT.with_name(HEARTBEAT.name + ".ready")
+HEARTBEAT_MAX_AGE = 30
 
 
-def process_event(database, event):
-    if not isinstance(event, dict) or event.get("schema_version") != "0.2.0" or not all(isinstance(event.get(k), str) and event[k] for k in ("claim_id", "dedup_key", "job_key")) or type(event.get("input_revision")) is not int or event["input_revision"] < 1:
-        raise ValueError("schema_unsupported_or_envelope_invalid")
-    cid, ir = event["claim_id"], event["input_revision"]
-    with database.session.begin() as db:
-        # Claim lock serializes reviews and assessments, also across worker replicas.
-        row = db.scalar(select(Record).where(Record.key == "claim:" + cid).with_for_update())
-        if row is None:
-            raise ValueError("unknown_claim")
-        if get(db, "consumed:" + event["dedup_key"]):
-            return False
-        job_row = db.get(Record, "job:" + event["job_key"])
-        if job_row is None or job_row.claim_id != cid or job_row.data["input_revision"] != ir:
-            raise ValueError("unknown_or_mismatched_job")
-        if job_row.data["state"] == "succeeded":
-            return False
-        inp = get(db, f"input:{cid}:{ir}")
-        if inp is None:
-            raise ValueError("unknown_input_revision")
-        claim = deepcopy(row.data)
-        existing = list(db.scalars(select(Record).where(Record.kind == "assessment", Record.claim_id == cid)))
-        revision = 1 + max((x.data["assessment_revision"] for x in existing), default=0)
-        previous = get(db, f"assessment:{cid}:{inp['base_assessment_revision']}") if inp.get("base_assessment_revision") else None
-        result = assessment_for(claim, revision, inp, previous)
-        put(db, f"assessment:{cid}:{revision}", "assessment", result, cid)
-        prior_review = get(db, f"review:{cid}:{inp['base_assessment_revision']}") if previous else None
-        put(db, f"review:{cid}:{revision}", "review", {"review_revision": claim["review_revision"], "assessment_revision": revision,
-            "base_assessment_revision": inp.get("base_assessment_revision"),
-            "actions": deepcopy(prior_review["actions"]) if prior_review else [], "finalized": False}, cid)
-        job = deepcopy(get(db, "job:" + event["job_key"], {}))
-        job.update(state="succeeded", attempts=job.get("attempts", 0) + 1, reason_code="fixture_completed", completed_at=now())
-        put(db, "job:" + event["job_key"], "job", job, cid)
-        if ir == claim["input_revision"]:
-            claim.update(assessment_revision=revision, status="in_review", finding_count=len(result["findings"]))
-            claim["estimate_row_count"] = len(result["line_items"])
-            from decimal import Decimal
-            claim["declared_total"] = format(sum((Decimal(r["printed_amount"]) for r in result["line_items"]), Decimal(0)), ".2f") if result["line_items"] else None
-            row.data = claim
-        put(db, "consumed:" + event["dedup_key"], "consumed", {"processed_at": now()}, cid)
-    return True
+def startup_checks(database: Database, settings: RuntimeSettings, role: str,
+                   consolidator: Consolidator | None) -> dict[str, Any]:
+    """Refuse to start on a schema-head mismatch or an unloadable rule config / cost table."""
+    info: dict[str, Any] = {"role": role, "profile": settings.profile, "schema_head": check_head(database.engine)}
+    if not settings.fixture_mode:
+        raise RuntimeError("CMEV_FIXTURE_MODE=false: only fixture stage producers exist; real inference is unavailable")
+    if consolidator is None:
+        raise RuntimeError("M8 rule configuration missing")
+    info["rules_config_version"] = consolidator.config.rules_config_version  # the orchestrator signs jobs with it
+    if role in ("combined", "consolidator"):
+        info.update(consolidator.readiness(settings.configured_table_version))
+    return info
 
 
-
-def record_failure(database, event, reason):
-    envelope = event if isinstance(event, dict) else {}
-    identity = digest(json.dumps(event, sort_keys=True, default=str))
-    with database.session.begin() as db:
-        if get(db, "deadletter:" + identity):
-            return
-        cid = envelope.get("claim_id")
-        cid = cid if isinstance(cid, str) else None
-        if cid:
-            db.scalar(select(Record).where(Record.key == "claim:" + cid).with_for_update())
-        job_key = envelope.get("job_key")
-        job_row = db.get(Record, "job:" + job_key) if isinstance(job_key, str) else None
-        put(db, "deadletter:" + identity, "dead_letter", {"reason_code": reason, "envelope": event, "created_at": now()}, cid)
-        if job_row and job_row.claim_id == cid and job_row.data.get("input_revision") == envelope.get("input_revision") and job_row.data["state"] != "succeeded":
-            job = job_row.data
-            job_row.data = {**job, "state": "dead_lettered", "reason_code": reason, "attempts": job.get("attempts", 0) + 1}
-            claim = get(db, "claim:" + cid)
-            if claim and claim["input_revision"] == envelope.get("input_revision"):
-                put(db, "claim:" + cid, "claim", {**claim, "status": "failed"}, cid)
+def local_tick(database: Database) -> int:
+    """Drain every unpublished outbox row through the in-process pipeline (tests, development)."""
+    return local_pipeline(database, sleep=lambda _s: None).drain()
 
 
-def local_tick(database):
-    with database.session() as db:
-        pending = [(row.id, row.payload) for row in db.scalars(select(Outbox).where(Outbox.published == 0).order_by(Outbox.id))]
-    for oid, payload in pending:
-        try:
-            process_event(database, payload)
-        except ValueError as exc:
-            record_failure(database, payload, str(exc))
-        with database.session.begin() as db:
-            db.get(Outbox, oid).published = 1
-    return len(pending)
+def _beat() -> None:
+    HEARTBEAT.write_text(str(time.time()))
 
 
-def consume_poll(database, producer, consumer):
-    # poll advances positions for every partition. Commit only after the complete
-    # batch is durably processed, so a failure cannot acknowledge untouched work.
-    for messages in consumer.poll(timeout_ms=1000, max_records=10).values():
-        for message in messages:
-            try:
-                process_event(database, message.value)
-            except ValueError as exc:
-                record_failure(database, message.value, str(exc))
-                producer.send("cmev.dlq.v1", value={"reason_code": str(exc), "envelope": message.value}).get(timeout=10)
-                log.error("Rejected invalid fixture job: %s", exc)
-    consumer.commit()
-
-
-def run(local=False):
-    if setting("FIXTURE_MODE", "true").lower() != "true":
-        raise RuntimeError("Only fixture mode is implemented")
+def run(role: str = "combined", local: bool = False) -> None:
+    settings = RuntimeSettings.from_env()
     database = Database()
+    consolidator = Consolidator(cost_table_root=settings.cost_table_root)
+    try:
+        info = startup_checks(database, settings, role, consolidator)
+    except Exception as exc:  # noqa: BLE001 - refuse to start, never run degraded
+        log.error("refusing to start %s: %s", role, exc)
+        READY_MARKER.unlink(missing_ok=True)
+        raise SystemExit(1) from exc
+    log.info("worker ready: %s", info)
+    versions = VersionBundle.fixture()
     if local:
         log.warning("Explicit local development transport selected; Kafka is not exercised")
+        pipeline = local_pipeline(database, settings=settings, role=role, versions=versions, consolidator=consolidator)
+        READY_MARKER.write_text(str(info))
         while True:
-            local_tick(database)
-            HEARTBEAT.write_text(str(time.time()))
+            pipeline.tick()
+            _beat()
             time.sleep(1)
-    from kafka import KafkaConsumer, KafkaProducer
-    topic = "cmev.evt.input-revision-created.v1"
+    from .messaging.kafka import KafkaConsumerTransport, KafkaProducerTransport, ensure_topics
+
     servers = setting("KAFKA_BOOTSTRAP", "localhost:9092", "KAFKA_BOOTSTRAP_SERVERS")
+    client = f"{role}-{socket.gethostname()}"
     while True:
+        consumers = []
         try:
-            producer = KafkaProducer(bootstrap_servers=servers, acks="all", value_serializer=lambda v: json.dumps(v).encode())
-            consumer = KafkaConsumer(topic, bootstrap_servers=servers, group_id="cmev-fixture-combined-v1", enable_auto_commit=False,
-                auto_offset_reset="earliest", value_deserializer=lambda v: json.loads(v.decode()))
+            created = ensure_topics(servers, TOPICS)
+            if created:
+                log.info("created topics %s", created)
+            producer = KafkaProducerTransport(servers, client)
+            runtimes = build_runtimes(database.session, role, versions=versions, consolidator=consolidator,
+                                      profile=settings.profile, source_kind=settings.source_kind)
+            consumers = [(rt, KafkaConsumerTransport(servers, rt.group, rt.topics, client)) for rt in runtimes]
+            READY_MARKER.write_text(str(info))
             while True:
-                with database.session.begin() as db:
-                    rows = db.scalars(select(Outbox).where(Outbox.published == 0).order_by(Outbox.id).with_for_update(skip_locked=True).limit(20))
-                    for row in rows:
-                        producer.send(topic, key=row.payload["claim_id"].encode(), value=row.payload).get(timeout=10)
-                        row.published = 1
-                consume_poll(database, producer, consumer)
-                HEARTBEAT.write_text(str(time.time()))
-        except Exception:
-            log.exception("Worker transport unavailable; pending work retained")
+                relay_once(database.session, producer, clock=utcnow)
+                for runtime, consumer in consumers:
+                    consume_batch(runtime, consumer)
+                _beat()
+        except (TransportUnavailable, OSError, RuntimeError, Exception):  # noqa: BLE001
+            log.exception("worker transport or database unavailable; uncommitted offsets will be redelivered")
+            for _runtime, consumer in consumers:
+                try:
+                    consumer.close()
+                except Exception:  # noqa: BLE001
+                    pass
             time.sleep(3)
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def healthy() -> bool:
+    """Ready marker written after start-up checks, and a fresh heartbeat from the poll loop."""
+    return READY_MARKER.exists() and HEARTBEAT.exists() and time.time() - float(HEARTBEAT.read_text()) < HEARTBEAT_MAX_AGE
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("command", nargs="?", default="run", choices=["run", "healthcheck"])
+    parser.add_argument("--role", default=os.getenv("CMEV_WORKER_ROLE", "combined"), choices=ROLES)
     parser.add_argument("--local", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.command == "healthcheck":
-        raise SystemExit(0 if HEARTBEAT.exists() and time.time() - float(HEARTBEAT.read_text()) < 30 else 1)
-    logging.basicConfig(level=logging.INFO)
-    run(args.local)
+        raise SystemExit(0 if healthy() else 1)
+    logging.basicConfig(level=os.getenv("CMEV_LOG_LEVEL", "INFO"), stream=sys.stdout)
+    run(args.role, args.local)
 
 
 if __name__ == "__main__":

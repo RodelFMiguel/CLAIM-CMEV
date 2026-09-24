@@ -1,0 +1,111 @@
+# M5 estimate vocabulary: printed part, operation and side text to canonical codes.
+# See docs/specs/module-05-line-item-extraction.md step 4 and data contracts section 3.
+#
+# Status: PROPOSED. Agreeing the initial vocabulary with Lane 4 is a day-1 team task that
+# has not happened. Every alias below is a proposal awaiting that review
+# (review.state = proposed); none has been reviewed by the team yet. Only aliases listed
+# here resolve: there is no silent fuzzy guessing. Text matching an `ambiguous` entry
+# maps to mapping_status = ambiguous with its candidates and reason; anything else is
+# `unmapped`. Fuzzy matching is off and, when enabled, only ever yields `ambiguous`
+# suggestions.
+#
+# File naming: the spec names configs/taxonomy/estimate_vocabulary.yaml; this lives in
+# configs/pipeline/ with the m5_ prefix. Bump vocabulary_version on any change: it is
+# recorded on every line item as versions.vocabulary.
+#
+# Matching is on normalised text (see m5_layout_families.yaml): upper case, dots deleted
+# (so L.H. == LH), dashes and , ; : become spaces, parentheses split into their own token.
+# Aliases must stay unique after normalisation across every section; the loader refuses
+# duplicates. Quote every string.
+schema_version: "0.1.0"
+vocabulary_version: "m5-estimate-vocabulary/0.1.0"
+status: proposed
+review:
+  state: proposed
+  reviewed_by: null
+  note: "Initial proposal by the M5 implementation; awaiting the Lane 2 and Lane 4 day-1 review."
+taxonomy_version: parts-1.0.0          # must equal configs/taxonomy/parts.yaml
+operations_taxonomy_version: operations-1.0.0
+
+matching:
+  fuzzy_enabled: false                 # vocab.fuzzy_enabled
+  fuzzy_min_ratio: 0.90                # vocab.fuzzy_min_ratio, suggestions only
+
+# Resolved part aliases, one list per part code (the 21 HITL codes).
+parts:
+  windshield: ["WINDSHIELD", "WINDSCREEN", "FRONT WINDSCREEN", "FRT WINDSCREEN", "FRONT WINDSHIELD", "FRT WINDSHIELD", "W/SCREEN", "WINDSCREEN GLASS", "FRONT SCREEN"]
+  back-windshield: ["REAR WINDSCREEN", "RR WINDSCREEN", "REAR WINDSHIELD", "RR WINDSHIELD", "BACK WINDSHIELD", "BACK WINDSCREEN", "REAR SCREEN", "BACK GLASS"]
+  front-window: ["FRONT DOOR GLASS", "FRT DOOR GLASS", "FRONT DOOR WINDOW", "FRT DOOR WINDOW"]
+  back-window: ["REAR DOOR GLASS", "RR DOOR GLASS", "REAR DOOR WINDOW", "RR DOOR WINDOW"]
+  front-door: ["FRONT DOOR", "FRT DOOR", "FR DOOR", "FRONT DOOR SHELL", "FRT DOOR SHELL", "FRONT DOOR SKIN", "FRT DOOR SKIN", "DOOR FRONT", "DOOR FRT"]
+  back-door: ["REAR DOOR", "RR DOOR", "REAR DOOR SHELL", "RR DOOR SHELL", "REAR DOOR SKIN", "RR DOOR SKIN", "DOOR REAR", "DOOR RR"]
+  front-wheel: ["FRONT WHEEL", "FRT WHEEL", "FRONT RIM", "FRT RIM", "FRONT ALLOY WHEEL", "FRT ALLOY WHEEL"]
+  back-wheel: ["REAR WHEEL", "RR WHEEL", "REAR RIM", "RR RIM", "REAR ALLOY WHEEL", "RR ALLOY WHEEL"]
+  # "BUMPER BAR" is the Australian/Singapore trade term for the bumper cover.
+  front-bumper: ["FRONT BUMPER", "FRT BUMPER", "FR BUMPER", "FRONT BUMPER COVER", "FRT BUMPER COVER", "FRONT BUMPER BAR", "FRT BUMPER BAR", "BUMPER FRONT", "BUMPER FRT"]
+  back-bumper: ["REAR BUMPER", "RR BUMPER", "BACK BUMPER", "REAR BUMPER COVER", "RR BUMPER COVER", "REAR BUMPER BAR", "RR BUMPER BAR", "BUMPER REAR", "BUMPER RR"]
+  headlight: ["HEADLIGHT", "HEAD LIGHT", "HEADLAMP", "HEAD LAMP", "HD LAMP", "H/LAMP", "H/LIGHT"]
+  tail-light: ["TAIL LIGHT", "TAILLIGHT", "TAIL LAMP", "TAILLAMP", "T/LAMP", "REAR COMBINATION LAMP", "RR COMBINATION LAMP", "REAR COMB LAMP", "RR COMB LAMP"]
+  hood: ["HOOD", "BONNET", "ENGINE HOOD", "BONNET PANEL", "HOOD PANEL"]
+  # PROPOSED mapping to review: HITL "Trunk" is taken to cover the boot lid and tailgate.
+  trunk: ["TRUNK", "TRUNK LID", "BOOT", "BOOT LID", "BOOTLID", "DECK LID", "TAILGATE", "TAIL GATE"]
+  licence-plate: ["LICENCE PLATE", "LICENSE PLATE", "NUMBER PLATE", "REGISTRATION PLATE", "FRONT NUMBER PLATE", "FRT NUMBER PLATE", "REAR NUMBER PLATE", "RR NUMBER PLATE"]
+  mirror: ["MIRROR", "SIDE MIRROR", "WING MIRROR", "DOOR MIRROR", "OUTSIDE MIRROR", "OUTER MIRROR"]
+  roof: ["ROOF", "ROOF PANEL", "ROOF SKIN"]
+  grille: ["GRILLE", "GRILL", "RADIATOR GRILLE", "RADIATOR GRILL", "FRONT GRILLE", "FRT GRILLE", "FRONT GRILL", "FRT GRILL"]
+  rocker-panel: ["ROCKER PANEL", "ROCKER", "SILL", "SILL PANEL", "SIDE SILL", "SIDE SILL PANEL"]
+  quarter-panel: ["QUARTER PANEL", "QTR PANEL", "REAR QUARTER PANEL", "RR QUARTER PANEL", "REAR QTR PANEL", "RR QTR PANEL", "REAR WING"]
+  fender: ["FENDER", "FRONT FENDER", "FRT FENDER", "FRONT WING", "FRT WING", "FENDER PANEL"]
+
+# Text that names more than one possible part code. Never resolved by the parser.
+ambiguous_parts:
+  - {aliases: ["BUMPER", "BUMPER COVER", "BUMPER BAR"], candidates: [front-bumper, back-bumper], reason: part_position_unstated}
+  - {aliases: ["DOOR", "DOOR SHELL", "DOOR SKIN"], candidates: [front-door, back-door], reason: part_position_unstated}
+  - {aliases: ["WHEEL", "RIM", "ALLOY WHEEL"], candidates: [front-wheel, back-wheel], reason: part_position_unstated}
+  - {aliases: ["WINDOW", "DOOR GLASS", "WINDOW GLASS", "DOOR WINDOW"], candidates: [front-window, back-window], reason: part_position_unstated}
+  - {aliases: ["LAMP", "LIGHT"], candidates: [headlight, tail-light], reason: part_position_unstated}
+  - {aliases: ["SCREEN"], candidates: [windshield, back-windshield], reason: part_position_unstated}
+  - {aliases: ["GLASS"], candidates: [windshield, back-windshield, front-window, back-window], reason: part_position_unstated}
+  - {aliases: ["WING"], candidates: [fender, quarter-panel], reason: part_position_unstated}
+  # "front window" can mean the door glass or the windscreen; "rear window" can mean the
+  # rear door glass or the rear windscreen.
+  - {aliases: ["FRONT WINDOW", "FRT WINDOW"], candidates: [front-window, windshield], reason: part_term_ambiguous}
+  - {aliases: ["REAR WINDOW", "RR WINDOW", "BACK WINDOW"], candidates: [back-window, back-windshield], reason: part_term_ambiguous}
+  # Several makers call a hatchback or SUV tailgate the "back door".
+  - {aliases: ["BACK DOOR"], candidates: [back-door, trunk], reason: part_term_ambiguous}
+  # US usage: the rear fender is the quarter panel.
+  - {aliases: ["REAR FENDER", "RR FENDER"], candidates: [quarter-panel, fender], reason: part_term_ambiguous}
+
+# Tokens dropped before matching because they do not change which part is meant.
+qualifiers: ["ASSY", "ASSEMBLY", "COMPLETE", "COMPL", "UNIT", "OEM", "GENUINE"]
+
+# Tokens naming a component of a part rather than the part itself ("HD LAMP BRKT").
+# A part alias plus only these tokens maps to `ambiguous` (part_component_only), never
+# to the part.
+component_terms: ["BRKT", "BRACKET", "BRACKETS", "CLIP", "CLIPS", "MOULDING", "MOULDINGS", "MOLDING", "MLDG", "EMBLEM", "BADGE", "SENSOR", "SENSORS", "BULB", "HINGE", "HINGES", "GARNISH", "SEAL", "WEATHERSTRIP", "RETAINER", "BOLT", "BOLTS", "SCREW", "SCREWS", "NUT", "NUTS", "LINER", "ABSORBER", "REINFORCEMENT", "REINF", "BEAM", "SUPPORT", "HOLDER", "COVER", "CAP", "LENS", "HANDLE", "LOCK", "MOTOR", "REGULATOR", "WASHER", "NOZZLE", "TRIM", "GUARD", "SPOILER", "LIP", "MESH", "GASKET", "CAMERA", "HARNESS"]
+
+# Resolved operation aliases (operations taxonomy: repair, replace, paint, other,
+# unknown). The parser never assigns `unknown` itself; no text is an alias for it.
+operations:
+  replace: ["REPLACE", "REPLACEMENT", "REPL", "RPL", "RPLC", "NEW PART", "SUPPLY"]
+  repair: ["REPAIR", "REPAIRS", "RPR", "STRAIGHTEN", "PANEL BEAT", "PANELBEAT", "DENT REPAIR", "BODY REPAIR"]
+  paint: ["PAINT", "PAINTING", "RESPRAY", "RE SPRAY", "SPRAY", "SPRAY PAINT", "REFINISH", "REFIN", "PNT"]
+  other: ["R&I", "R/I", "REMOVE & INSTALL", "REMOVE AND INSTALL", "REMOVE & REFIT", "REMOVE AND REFIT", "REFIT", "ALIGN", "ALIGNMENT", "SUBLET", "POLISH", "CALIBRATE", "CALIBRATION"]
+
+ambiguous_operations:
+  # R/R is "remove and replace" in some shops and "remove and refit" in others.
+  - {aliases: ["R/R", "R&R"], candidates: [replace, other], reason: operation_abbreviation_ambiguous}
+  - {aliases: ["REP"], candidates: [repair, replace], reason: operation_abbreviation_ambiguous}
+  - {aliases: ["BLEND"], candidates: [paint], reason: operation_scope_unclear}
+
+# Side words, read from the printed description only (side_source = document_text).
+# Left and right are from the occupant facing forward, as printed by the workshop.
+sides:
+  left: ["LH", "L/H", "LEFT", "LHS", "(L)", "(LH)", "LEFT HAND", "LEFT SIDE"]
+  right: ["RH", "R/H", "RIGHT", "RHS", "(R)", "(RH)", "RIGHT HAND", "RIGHT SIDE"]
+  centre: ["CENTRE", "CENTER"]
+
+# Side-like text that does not state one side. A bare L or R may mean "rear"; nearside
+# and offside depend on the driving side. These leave side = unknown with reason
+# side_text_ambiguous and are kept in the text, so the part cannot resolve exactly.
+ambiguous_sides: ["L", "R", "NS", "OS", "N/S", "O/S", "NEARSIDE", "OFFSIDE", "LH/RH", "L/R", "L&R", "LH&RH", "BOTH", "BOTH SIDES", "PAIR"]

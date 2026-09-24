@@ -15,7 +15,31 @@
       "source": "https://humansintheloop.org/resources/datasets/car-parts-and-car-damages-dataset/",
       "license": "CC0-1.0 (publisher page)",
       "needs_evidence": false,
-      "access": "Complete the publisher access form, then configure all supplied part and damage archives in local sources."
+      "access": "Complete the publisher access form, then configure all supplied part and damage archives in local sources.",
+      "subset_mapping": {
+        "verified_on": "2026-09-22",
+        "rule": "The published folder names are swapped relative to their contents. Map each export by the class titles in its meta.json, never by folder name, and do not rename the folders on disk.",
+        "loader": "claim_cmev.taxonomy.hitl.classify_supervisely_meta",
+        "folders": [
+          {
+            "folder": "Car damages dataset",
+            "actual_subset": "parts",
+            "taxonomy_version": "parts-1.0.0",
+            "class_count": 21,
+            "image_count": 998
+          },
+          {
+            "folder": "Car parts dataset",
+            "actual_subset": "damage",
+            "taxonomy_version": "damage-hitl-1.0.0",
+            "class_count": 8,
+            "image_count": 814
+          }
+        ],
+        "layout": "Supervisely polygon JSON under File1/ann, images under File1/img, plus masks_human and masks_machine.",
+        "shared_images": "441 image filenames appear in both exports, are byte-identical and carry both part and damage polygons; hold them out of M1 training or record the leakage decision before fitting.",
+        "damage_role": "The eight HITL damage classes are the access contingency taxonomy only, never merged with the six CarDD classes."
+      }
     },
     {
       "id": "dsmlr",

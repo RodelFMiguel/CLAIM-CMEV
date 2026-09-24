@@ -7,7 +7,7 @@ name = "claim-cmev"
 version = "0.1.0"
 description = "CLAIM-CMEV fixture-backed surveyor platform"
 requires-python = ">=3.12"
-dependencies = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "sqlalchemy>=2.0,<3", "psycopg[binary]>=3.2,<4", "python-multipart>=0.0.20,<1", "pillow>=11,<13", "pypdf>=5,<7", "boto3>=1.36,<2", "kafka-python>=2.2,<3"]
+dependencies = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "sqlalchemy>=2.0,<3", "psycopg[binary]>=3.2,<4", "python-multipart>=0.0.20,<1", "pillow>=11,<13", "pypdf>=5,<7", "boto3>=1.36,<2", "kafka-python>=2.2,<3", "numpy>=2.1,<3", "alembic>=1.14,<2", "pypdfium2>=4.30,<5", "opencv-python-headless>=4.10,<5", "jsonschema>=4.23,<5", "pyyaml>=6,<7"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
@@ -17,4 +17,7 @@ where = ["src"]
 include = ["claim_cmev*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/backend"]
+testpaths = ["tests/backend", "tests/contracts", "tests/unit", "tests/integration"]
+
+[tool.setuptools.package-data]
+claim_cmev = ["**/*.json", "**/*.yaml"]

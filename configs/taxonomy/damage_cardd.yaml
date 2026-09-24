@@ -1,0 +1,15 @@
+# The six CarDD damage categories: the only damage vocabulary v2 records accept
+# (data contracts section 3.2). Never merged with the HITL contingency taxonomy.
+# Background is a distinct label, not "unsupported" or "unannotated" damage.
+taxonomy_version: damage-cardd-1.0.0
+family: cardd
+status: frozen
+active: true
+background_label: background
+codes:
+  - {code: dent, source_category: dent}
+  - {code: scratch, source_category: scratch}
+  - {code: crack, source_category: crack}
+  - {code: glass-shatter, source_category: glass shatter}
+  - {code: lamp-broken, source_category: lamp broken}
+  - {code: tire-flat, source_category: tire flat}

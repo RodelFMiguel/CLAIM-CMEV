@@ -2499,7 +2499,7 @@ h3 {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 14mm 12mm 22mm;
+    margin: 14mm 12mm 46mm;
   }
   body {
     background: white;
@@ -2553,17 +2553,7 @@ h3 {
     background: white;
     font-size: 9pt;
   }
-  .report-versions {
-    position: fixed;
-    bottom: -15mm;
-    left: 0;
-    right: 0;
-    font-size: 6.5pt;
-    border-top: 1px solid #aaa;
-    padding-top: 3mm;
-    margin: 0;
-    color: #555;
-  }
+  .report-versions { display: none; }
   .report-basis {
     font-size: 8pt !important;
   }
@@ -2584,4 +2574,76 @@ h3 {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Review controls share the existing workbench palette and remain keyboard usable. */
+.review-controls {
+  margin: 14px 0;
+}
+.review-controls summary,
+details > summary {
+  cursor: pointer;
+  padding: 10px 0;
+  font-weight: 600;
+}
+.review-controls fieldset,
+.line-item fieldset {
+  border: 1px solid #d9dee4;
+  border-radius: 8px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.review-controls label,
+.line-item fieldset label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.review-controls input,
+.review-controls select,
+.review-controls textarea,
+.line-item fieldset input,
+.line-item fieldset select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #bec7ce;
+  border-radius: 5px;
+  background: white;
+  color: #24343c;
+}
+.coordinate-fields {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.review-controls p,
+.review-history p {
+  overflow-wrap: anywhere;
+}
+.panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+button:disabled,
+fieldset:disabled {
+  opacity: 0.6;
+}
+@media print {
+  .report-paper p,
+  .report-paper tr {
+    break-inside: avoid;
+  }
+}
+
+@media print {
+  .report-versions p { font-size: inherit; line-height: inherit; margin: 0 0 1mm; }
+  .report-paper h2 { break-after: avoid; }
+}
+
+@media print {
+  html, body, #root, .app-shell, .workspace, .print-report { background: white !important; }
 }

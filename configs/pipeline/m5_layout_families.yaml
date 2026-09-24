@@ -1,0 +1,134 @@
+# M5 supported layout families plus parser keys.
+# See docs/specs/module-05-line-item-extraction.md, "Supported layout families" and
+# "Configuration and thresholds".
+#
+# Status: PROPOSED. Freezing 2 to 3 supported families with Lane 3 is a day-1 team task
+# that has not happened; the three families below are the M5 implementation's proposal.
+# Parser thresholds are the spec defaults and have NOT been selected on development or
+# validation pages. Freeze at the day-6 checkpoint; never tune on final test pages.
+# Bump config_version on any change: it is recorded on every line item as
+# versions.layout_families.
+#
+# File naming: the spec names configs/pipeline/layout_families.yaml and keeps the parser
+# keys in configs/pipeline/line_items.yaml. Here both live in this one file (parser keys
+# under `parser:`), prefixed m5_ like the M4 configuration.
+#
+# Every alias, pattern and marker is matched after normalisation: NFKC, upper case, dots
+# deleted, parentheses split off, , ; : * # " ' _ = and dashes turned into spaces,
+# whitespace collapsed. Quote every string: unquoted NO, ON, Y... are YAML booleans.
+schema_version: "0.1.0"
+config_version: "m5-layout-families/0.1.0"
+status: proposed
+
+parser:
+  method: parser                  # lineitems.method; layoutlmv3 (stretch S1) is refused here
+  min_matched_columns: 4          # default; a family may override it
+  band_tolerance_frac: 0.006      # of rectified page height (box_norm y units)
+  max_wrap_gap_frac: 0.010        # wrapped-description attachment gap, of page height
+  x_tolerance_frac: 0.030         # column widening and spanning tolerance, of page width
+  max_decimal_places: 2
+  amount_tolerance: "0.01"        # exact decimal, quantity x unit price vs line amount
+  min_box_confidence: 0.50        # below this a parsed value is uncertain (null + reason)
+  # Addition (not in the spec table): adjacent WORD boxes closer than this (of page
+  # width) may be joined to match a multi-word header alias such as "UNIT PRICE". Line
+  # boxes are never split; this only joins what the engine returned.
+  header_word_gap_frac: 0.015
+  max_attempts: 3                 # consumer shell (not implemented here)
+  skip_superseded_revisions: true # consumer shell (not implemented here)
+
+families:
+  # Matches the M4 SYNTHETIC estimate page (description, operation, qty, amount) and the
+  # contract fixture page (plus unit price). Five columns, amount right aligned.
+  - family_id: family-a-ruled-grid
+    status: proposed
+    description: "Ruled table: description, operation, qty, optional unit price, amount (right aligned)"
+    header:
+      min_matched_columns: 4
+      required_columns: [description, amount]
+      aliases:
+        description: ["DESCRIPTION", "DESCRIPTION OF WORK", "ITEM DESCRIPTION", "ITEM"]
+        operation: ["OPERATION", "OPER", "OPERATION TYPE"]
+        qty: ["QTY", "QUANTITY"]
+        unit_price: ["UNIT PRICE", "U/PRICE", "UNIT COST"]
+        amount: ["AMOUNT", "LINE TOTAL", "LINE AMOUNT"]
+    # gutter (proposed addition): contiguous columns; each boundary sits x_tolerance_frac
+    # left of the next header's left edge (gap midpoint if headers are closer), the
+    # outer columns reach the page edges. header_anchored (the spec default: header
+    # extent +/- x_tolerance_frac) is implemented too, but cannot bind a left-aligned
+    # description much wider than its header word.
+    column_binding:
+      mode: gutter
+    numbers:
+      decimal_separator: "."
+      thousands_separator: ","
+      quantity_units: ["PCS", "PC", "NOS", "EA", "SET", "SETS", "UNIT", "UNITS"]
+    currency_markers:
+      "S$": "SGD"
+      "SGD": "SGD"
+      "$": null                   # a bare dollar sign names no currency; not a conflict
+    row_patterns:
+      total: ["SUB TOTAL", "SUBTOTAL", "TOTAL", "GRAND TOTAL", "NETT TOTAL", "NET TOTAL", "DISCOUNT", "LESS DISCOUNT"]
+      tax: ["GST", "VAT"]
+      heading: ["PARTS", "LABOUR", "LABOR", "BODY WORK", "PAINT WORK", "SUNDRIES", "PARTS AND LABOUR"]
+    terminator_kinds: [total, tax]
+    subtotal_labels: ["SUB TOTAL", "SUBTOTAL"]
+
+  - family_id: family-b-numbered-rate
+    status: proposed
+    description: "Numbered rows: item number, particulars, action code, qty, rate, amount in S$"
+    header:
+      min_matched_columns: 4
+      required_columns: [description, amount]
+      aliases:
+        line_no: ["NO", "S/N", "SN", "ITEM NO"]    # recorded with the row, never parsed
+        description: ["PARTICULARS", "PARTICULARS OF WORK", "REPAIR DETAILS"]
+        operation: ["ACTION", "ACTN", "WORK CODE"]
+        qty: ["QTY", "QUANTITY", "NOS"]
+        unit_price: ["RATE", "RATE (S$)", "UNIT RATE"]
+        amount: ["AMT", "AMT (S$)", "AMOUNT (S$)", "AMOUNT (SGD)"]
+    column_binding:
+      mode: gutter
+    numbers:
+      decimal_separator: "."
+      thousands_separator: ","
+      quantity_units: ["PCS", "PC", "EA", "SET", "SETS"]
+    currency_markers:
+      "S$": "SGD"
+      "SGD": "SGD"
+      "$": null
+    row_patterns:
+      total: ["SUB TOTAL", "SUBTOTAL", "TOTAL", "GRAND TOTAL", "TOTAL AMOUNT", "DISCOUNT", "LESS DISCOUNT"]
+      tax: ["GST", "ADD GST"]
+      heading: ["PARTS", "LABOUR", "BODY WORK", "PAINT WORK"]
+    terminator_kinds: [total, tax]
+    subtotal_labels: ["SUB TOTAL", "SUBTOTAL"]
+
+  # Compact quotation without quantity or unit price. Rows from this family always have
+  # quantity null (column_not_located); M8 then withholds the cost check
+  # (quantity_missing). The parser never defaults quantity to one.
+  - family_id: family-c-compact-quote
+    status: proposed
+    description: "Three-column quotation: job description, work type, price. No qty or unit price column"
+    header:
+      min_matched_columns: 3
+      required_columns: [description, amount]
+      aliases:
+        description: ["JOB DESCRIPTION", "REPAIR ITEM", "JOB"]
+        operation: ["WORK", "WORK TYPE", "TYPE OF WORK"]
+        amount: ["PRICE", "PRICE (S$)", "PRICE (SGD)", "CHARGES"]
+    column_binding:
+      mode: gutter
+    numbers:
+      decimal_separator: "."
+      thousands_separator: ","
+      quantity_units: []
+    currency_markers:
+      "S$": "SGD"
+      "SGD": "SGD"
+      "$": null
+    row_patterns:
+      total: ["SUB TOTAL", "SUBTOTAL", "TOTAL", "TOTAL QUOTATION", "DISCOUNT"]
+      tax: ["GST"]
+      heading: ["BODYWORK", "BODY WORK", "PAINTWORK", "PAINT WORK"]
+    terminator_kinds: [total, tax]
+    subtotal_labels: ["SUB TOTAL", "SUBTOTAL"]

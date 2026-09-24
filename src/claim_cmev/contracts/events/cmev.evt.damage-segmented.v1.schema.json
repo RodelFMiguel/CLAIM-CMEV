@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.evt.damage-segmented.v1.schema.json",
+  "title": "cmev.evt.damage-segmented.v1",
+  "description": "Damage observations exist for one photo. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "photo_id": {
+          "$ref": "envelope.v1.schema.json#/$defs/id"
+        },
+        "damage_mask_ref": {
+          "$ref": "envelope.v1.schema.json#/$defs/maskRef"
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "observation_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "photo_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "damage_type": {
+                "$ref": "envelope.v1.schema.json#/$defs/damageCode"
+              },
+              "damage_confidence": {
+                "$ref": "envelope.v1.schema.json#/$defs/confidence"
+              },
+              "assignment_status": {
+                "enum": [
+                  "assigned",
+                  "unresolved"
+                ]
+              },
+              "part_code": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/partCode"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "part_reason": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "no_part_overlap",
+                      "below_containment_threshold",
+                      "ambiguous_between_parts",
+                      "part_not_accepted",
+                      "mostly_background",
+                      "part_masks_missing"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "side": {
+                "const": "unknown"
+              },
+              "side_reason": {
+                "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+              },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "part_code": {
+                      "$ref": "envelope.v1.schema.json#/$defs/partCode"
+                    },
+                    "containment": {
+                      "$ref": "envelope.v1.schema.json#/$defs/confidence"
+                    },
+                    "rank": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "part_code",
+                    "containment",
+                    "rank"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "primary_containment": {
+                "$ref": "envelope.v1.schema.json#/$defs/confidence"
+              },
+              "runner_up_containment": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/confidence"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "background_containment": {
+                "$ref": "envelope.v1.schema.json#/$defs/confidence"
+              },
+              "area_pixels": {
+                "$ref": "envelope.v1.schema.json#/$defs/count"
+              },
+              "area_fraction": {
+                "$ref": "envelope.v1.schema.json#/$defs/confidence"
+              },
+              "bbox_norm": {
+                "$ref": "envelope.v1.schema.json#/$defs/boxNorm"
+              },
+              "damage_mask_ref": {
+                "$ref": "envelope.v1.schema.json#/$defs/partialArtifactRef"
+              },
+              "part_mask_ref": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/partialArtifactRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "versions": {
+                "$ref": "envelope.v1.schema.json#/$defs/versions"
+              },
+              "assignment_config_version": {
+                "$ref": "envelope.v1.schema.json#/$defs/version"
+              }
+            },
+            "required": [
+              "observation_id",
+              "photo_id",
+              "damage_type",
+              "damage_confidence",
+              "assignment_status",
+              "part_code",
+              "part_reason",
+              "side",
+              "side_reason",
+              "candidates",
+              "primary_containment",
+              "runner_up_containment",
+              "background_containment",
+              "area_pixels",
+              "area_fraction",
+              "bbox_norm",
+              "damage_mask_ref",
+              "part_mask_ref",
+              "assignment_config_version"
+            ],
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "part_code": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "part_reason": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "part_reason": {
+                      "type": "null"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "observation_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "dropped_region_count": {
+          "$ref": "envelope.v1.schema.json#/$defs/count"
+        },
+        "unknown_part_count": {
+          "$ref": "envelope.v1.schema.json#/$defs/count"
+        },
+        "empty_result": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "photo_id",
+        "damage_mask_ref",
+        "observations",
+        "observation_ids",
+        "dropped_region_count",
+        "unknown_part_count",
+        "empty_result"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

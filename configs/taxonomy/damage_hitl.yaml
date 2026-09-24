@@ -1,0 +1,18 @@
+# The eight HITL damage labels: the named ACCESS CONTINGENCY only (data contracts
+# section 3.3; proposal v2 sections 11.2 and 12.4). Not active. Selecting it first
+# requires a recorded split, targets and every affected proposal/specification change.
+# Hard rules: never merged with the CarDD vocabulary, never mapped implicitly and never
+# pooled. "dent" and "scratch" share a spelling with CarDD but are NOT the same label.
+taxonomy_version: damage-hitl-1.0.0
+family: hitl
+status: contingency
+active: false
+codes:
+  - {code: dent, hitl_title: Dent}
+  - {code: cracked, hitl_title: Cracked}
+  - {code: scratch, hitl_title: Scratch}
+  - {code: flaking, hitl_title: Flaking}
+  - {code: broken-part, hitl_title: Broken part}
+  - {code: paint-chip, hitl_title: Paint chip}
+  - {code: missing-part, hitl_title: Missing part}
+  - {code: corrosion, hitl_title: Corrosion}

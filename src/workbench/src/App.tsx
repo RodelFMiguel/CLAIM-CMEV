@@ -873,9 +873,10 @@ function NewClaim() {
             <label>
               Vehicle class
               <select name="vehicle_class" defaultValue="unknown">
-                <option value="compact-sedan">Compact sedan</option>
-                <option value="suv">SUV</option>
-                <option value="hatchback">Hatchback</option>
+                <option value="sedan_standard">Standard sedan</option>
+                <option value="suv_crossover">SUV / crossover</option>
+                <option value="hatchback_small">Small hatchback</option>
+                  <option value="van_commercial">Van / commercial</option>
                 <option value="unknown">Not established</option>
               </select>
             </label>

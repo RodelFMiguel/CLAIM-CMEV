@@ -1,0 +1,59 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:damage_segment:ph_01JAX7Q1A:c04a1f88",
+  "versions": {
+    "damage_model": "damage-segformer-b0/0.9.0",
+    "parts_model": "parts-segformer-b0/1.2.0",
+    "assignment_config": "assign-1.0.0",
+    "taxonomy": "damage-cardd-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-orchestrator"
+  },
+  "occurred_at": "2026-09-22T03:14:20Z",
+  "dedup_key": "efd7aaa2645f8253053b531a2d64ff49b8e886b709768b90bcf71076d1c74996",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "10bf089249402ffcaf4c89903535e3e7e410f5e859b97af6a1d68f6157ac21f5",
+  "payload": {
+    "photo": {
+      "file_id": "ph_01JAX7Q1A",
+      "object_uri": "s3://cmev-originals/01JAX.../ph_01JAX7Q1A.jpg",
+      "sha256": "b2c395aaf4cc3c62b77345938cbdca34d921267bf39f8cc7fa3232e2737a12eb",
+      "media_type": "image/jpeg",
+      "byte_count": 3874112,
+      "width": 4032,
+      "height": 3024,
+      "page_number": null,
+      "exif_orientation": 6
+    },
+    "part_mask_ref": {
+      "artifact_id": "pm_01JAX8Q9",
+      "object_uri": "s3://cmev-derived/01JAX.../parts_ph_01JAX7Q1A.png",
+      "sha256": "f6a7e46cb18cb6fa7166d0297c56c18a0b130a955ce8a31c268489834c9a6fc1",
+      "width": 512,
+      "height": 512,
+      "encoding": "class_index_png"
+    },
+    "transform": {
+      "stored_width": 4032,
+      "stored_height": 3024,
+      "exif_orientation": 6,
+      "model_width": 512,
+      "model_height": 512,
+      "scale": 0.126984,
+      "pad_left": 0.0,
+      "pad_top": 0.0,
+      "mask_frame": "model"
+    },
+    "model_id": "damage-segformer-b0",
+    "model_version": "0.9.0",
+    "preprocess_config_version": "vision-pre-1.0.0",
+    "assignment_config_version": "assign-1.0.0",
+    "taxonomy_version": "damage-hitl-1.0.0"
+  }
+}

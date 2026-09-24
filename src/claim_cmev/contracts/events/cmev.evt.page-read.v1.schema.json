@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.evt.page-read.v1.schema.json",
+  "title": "cmev.evt.page-read.v1",
+  "description": "Located text exists for one page. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "page_id": {
+          "$ref": "envelope.v1.schema.json#/$defs/id"
+        },
+        "page_number": {
+          "$ref": "envelope.v1.schema.json#/$defs/revision"
+        },
+        "corrected_render_ref": {
+          "$ref": "envelope.v1.schema.json#/$defs/artifactRef"
+        },
+        "page_reading_ref": {
+          "$ref": "envelope.v1.schema.json#/$defs/artifactRef"
+        },
+        "transform": {
+          "$ref": "envelope.v1.schema.json#/$defs/pageTransform"
+        },
+        "text_granularity": {
+          "enum": [
+            "word",
+            "line",
+            "block",
+            "mixed"
+          ]
+        },
+        "token_count": {
+          "$ref": "envelope.v1.schema.json#/$defs/count"
+        },
+        "mean_text_confidence": {
+          "anyOf": [
+            {
+              "$ref": "envelope.v1.schema.json#/$defs/confidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mean_text_confidence_reason": {
+          "anyOf": [
+            {
+              "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "page_quality": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "complete",
+                "partial",
+                "unreadable"
+              ]
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+              }
+            }
+          },
+          "required": [
+            "state",
+            "reasons"
+          ],
+          "additionalProperties": false
+        },
+        "correction_applied": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "page_id",
+        "page_number",
+        "corrected_render_ref",
+        "page_reading_ref",
+        "transform",
+        "text_granularity",
+        "token_count",
+        "mean_text_confidence",
+        "page_quality",
+        "correction_applied"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

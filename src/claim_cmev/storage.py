@@ -26,6 +26,10 @@ class Storage:
                     raise
                 self.client.create_bucket(Bucket=self.bucket)
 
+    def uri(self, key):
+        """Logical object URI carried in messages; bytes are still reached only through the API."""
+        return f"s3://{self.bucket}/{key}" if self.s3 else f"file://local-evidence/{key}"
+
     def write(self, key, data, media_type):
         if self.s3:
             self.client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=media_type)

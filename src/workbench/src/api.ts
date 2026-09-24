@@ -82,12 +82,15 @@ export const write = <T>(path: string, body: unknown) =>
     body: JSON.stringify(body),
     headers: { "Idempotency-Key": crypto.randomUUID() },
   });
-export const money = (value: string | number | null | undefined) =>
+export const money = (
+  value: string | number | null | undefined,
+  currency = "SGD",
+) =>
   value == null
     ? "\u2014"
     : new Intl.NumberFormat("en-SG", {
         style: "currency",
-        currency: "SGD",
+        currency,
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }).format(Number(value));

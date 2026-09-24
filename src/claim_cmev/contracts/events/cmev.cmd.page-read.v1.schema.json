@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.cmd.page-read.v1.schema.json",
+  "title": "cmev.cmd.page-read.v1",
+  "description": "Correct and OCR one estimate page. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "$ref": "envelope.v1.schema.json#/$defs/fileRef"
+        },
+        "ocr_engine": {
+          "$ref": "envelope.v1.schema.json#/$defs/identifier"
+        },
+        "ocr_version": {
+          "$ref": "envelope.v1.schema.json#/$defs/version"
+        },
+        "preprocess_config_version": {
+          "$ref": "envelope.v1.schema.json#/$defs/version"
+        }
+      },
+      "required": [
+        "page",
+        "ocr_engine",
+        "ocr_version",
+        "preprocess_config_version"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

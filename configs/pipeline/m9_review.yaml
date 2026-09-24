@@ -1,0 +1,66 @@
+# M9 review, finalize, print and overlay configuration.
+# See docs/specs/module-09-review-report.md ("Configuration", "Finalize preconditions")
+# and docs/specs/ui_specification.md sections 6.8 to 6.13.
+#
+# Status: every value is PROPOSED. The module specification names this file
+# configs/pipeline/review.yaml; the M9 implementation keeps it under the
+# module-prefixed name used by the other pipeline configurations. Bump
+# config_version on any change.
+config_version: "m9-review/0.1.0"
+
+review:
+  # Proposal v2 section 2.6 and data contracts section 10. Must equal
+  # claim_cmev.contracts.review.DISMISSAL_REASONS; the loader refuses drift.
+  dismissal_reasons:
+    - hidden_damage_after_dismantling
+    - adas_calibration_or_specialist_procedure
+    - parts_price_change
+    - inadequate_photograph
+    - system_error
+    - other
+  note_required_for_reasons: [other]
+  dismissal_note_max_chars: 300
+  note_max_chars: 2000
+  # UI specification section 6.9 "Correct row dialog".
+  line_item_correction_reasons: [ocr_error, mapping_error, wrong_row, other]
+  idempotency_ttl_hours: 72
+  usability_telemetry_enabled: false
+  explainer_enabled: false
+
+amounts:
+  # UI specification section 6.8: decimal, at most 2 places, greater than 0,
+  # at most 999,999.99 (proposed). Thousands separators are refused.
+  max_decimal_places: 2
+  max_amount: "999999.99"
+  allow_zero: false
+
+finalize:
+  # P1 and P2 are proposed in module-09 "Open decisions" and need a team
+  # decision; until then they are evaluated and reported as advisories only.
+  enforce_p1_assessment_not_superseded: false
+  enforce_p2_completeness_confirmed: false
+  # Branch stages whose state F1 reads for the current input revision
+  # (application platform section 6.1). Consolidation is covered by F2.
+  required_stages: [parts, damage, summary, page_read, line_items, pen_marks]
+  passing_stage_states: [succeeded, done, not_required]
+
+print:
+  synthetic_cost_statement: "Reference costs are synthetic and do not represent real repair prices."
+  cost_basis_statement: "Basis: one part, SGD, before tax, quantity 1, no discount."
+  final_approval_not_recorded: "Final approved amount: not recorded. Approval happens outside this prototype."
+  fixture_notice: "Fixture data: these results come from labelled fixtures, not from model output."
+  no_judgement_statement: "No result in this report means that a repair is unnecessary or that a price is wrong."
+
+overlay:
+  line_width_px: 3
+  selected_line_width_px: 6
+  selected_fill_alpha: 64
+  colors:
+    row: [37, 99, 235]
+    row_selected: [234, 88, 12]
+    mark_exclusion: [220, 38, 38]
+    mark_price_change: [124, 58, 237]
+    mark_selected: [234, 88, 12]
+    damage: [220, 38, 38]
+    damage_selected: [234, 88, 12]
+    mask_outline: [250, 204, 21]

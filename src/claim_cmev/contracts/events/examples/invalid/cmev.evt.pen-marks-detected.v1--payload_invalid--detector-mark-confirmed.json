@@ -1,0 +1,70 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:pen_marks_detect:all:9ef10d35",
+  "versions": {
+    "penmark_model": "penmarks-frcnn-r50/0.7.0",
+    "link_config": "marklink-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-worker-penmarks"
+  },
+  "occurred_at": "2026-09-22T03:15:12Z",
+  "dedup_key": "b60f3a1c85d27e49f0a2c4e6b8d0f13579ace2468bd0f2a4c6e8013579bdf246",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "7c2d40be1a935f68c0e2a4b6d8f0135792bd4e6a8c0f2b4d6e8a0c2e4f60813b",
+  "payload": {
+    "mark_ids": [
+      "pm_01JAXA01",
+      "pm_01JAXA02"
+    ],
+    "marks": [
+      {
+        "mark_id": "pm_01JAXA01",
+        "page_id": "dp_01JAX8S1",
+        "mark_type": "exclusion",
+        "box_norm": [
+          0.1,
+          0.35,
+          0.62,
+          0.381
+        ],
+        "detection_confidence": 0.88,
+        "entry_id": "li_01JAX9T1B",
+        "candidate_entry_ids": [
+          "li_01JAX9T1B"
+        ],
+        "link_reason": "unambiguous_row_overlap",
+        "state": "confirmed",
+        "trocr_suggestion": null
+      },
+      {
+        "mark_id": "pm_01JAXA02",
+        "page_id": "dp_01JAX8S1",
+        "mark_type": "price_change",
+        "box_norm": [
+          0.79,
+          0.306,
+          0.93,
+          0.325
+        ],
+        "detection_confidence": 0.71,
+        "entry_id": null,
+        "candidate_entry_ids": [
+          "li_01JAX9T1A",
+          "li_01JAX9T1B"
+        ],
+        "link_reason": "mark_between_rows",
+        "state": "pending",
+        "trocr_suggestion": null
+      }
+    ],
+    "unlinked_count": 1,
+    "conflicting_count": 0,
+    "branch": "document"
+  }
+}

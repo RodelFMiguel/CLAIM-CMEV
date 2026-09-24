@@ -1,0 +1,122 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:damage_segment:ph_01JAX7Q1A:c04a1f88",
+  "versions": {
+    "damage_model": "damage-segformer-b0/0.9.0",
+    "parts_model": "parts-segformer-b0/1.2.0",
+    "assignment_config": "assign-1.0.0",
+    "taxonomy": "damage-cardd-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-worker-damage"
+  },
+  "occurred_at": "2026-09-22T03:14:31Z",
+  "dedup_key": "51ea03c7b98d2f461a0c3e5d7b9f1a2c4e608b1d3f5a7c9e0b2d4f6a8c1e3057",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "aa14bd93c7e0f2615d8a3b4c9e7f0a2d6b8c1e3f5a7d9b0c2e4f6a8d1b3c5e70",
+  "payload": {
+    "photo_id": "ph_01JAX7Q1A",
+    "damage_mask_ref": {
+      "artifact_id": "am_01JAX8R4",
+      "object_uri": "s3://cmev-derived/01JAX.../damage_ph_01JAX7Q1A.png",
+      "sha256": "e5f63fbf12158dcf74191c9df225c685d6574b991aba119bdadba2cbfdba77c2",
+      "width": 512,
+      "height": 512,
+      "encoding": "class_index_png"
+    },
+    "observations": [
+      {
+        "observation_id": "ob_01JAX8R5A",
+        "photo_id": "ph_01JAX7Q1A",
+        "damage_type": "dent",
+        "damage_confidence": 0.83,
+        "assignment_status": "assigned",
+        "part_code": "front-bumper",
+        "part_reason": null,
+        "side": "unknown",
+        "side_reason": "hitl_labels_unsided",
+        "candidates": [
+          {
+            "part_code": "front-bumper",
+            "containment": 0.91,
+            "rank": 1
+          },
+          {
+            "part_code": "grille",
+            "containment": 0.06,
+            "rank": 2
+          }
+        ],
+        "primary_containment": 0.91,
+        "runner_up_containment": 0.06,
+        "background_containment": 0.03,
+        "area_pixels": 5412,
+        "area_fraction": 0.0206,
+        "bbox_norm": [
+          0.312,
+          0.5504,
+          0.4871,
+          0.6693
+        ],
+        "damage_mask_ref": {
+          "artifact_id": "am_01JAX8R4",
+          "component_index": 1
+        },
+        "part_mask_ref": {
+          "artifact_id": "pm_01JAX8Q9"
+        },
+        "assignment_config_version": "assign-1.0.0"
+      },
+      {
+        "observation_id": "ob_01JAX8R5B",
+        "photo_id": "ph_01JAX7Q1A",
+        "damage_type": "scratch",
+        "damage_confidence": 0.64,
+        "assignment_status": "unresolved",
+        "part_code": null,
+        "part_reason": "ambiguous_between_parts",
+        "side": "unknown",
+        "side_reason": "hitl_labels_unsided",
+        "candidates": [
+          {
+            "part_code": "front-door",
+            "containment": 0.52,
+            "rank": 1
+          },
+          {
+            "part_code": "fender",
+            "containment": 0.44,
+            "rank": 2
+          }
+        ],
+        "primary_containment": 0.52,
+        "runner_up_containment": 0.44,
+        "background_containment": 0.04,
+        "area_pixels": 913,
+        "area_fraction": 0.0035,
+        "bbox_norm": [
+          0.6015,
+          0.4402,
+          0.7233,
+          0.488
+        ],
+        "damage_mask_ref": {
+          "artifact_id": "am_01JAX8R4",
+          "component_index": 2
+        },
+        "part_mask_ref": {
+          "artifact_id": "pm_01JAX8Q9"
+        },
+        "assignment_config_version": "assign-1.0.0"
+      }
+    ],
+    "dropped_region_count": 3,
+    "unknown_part_count": 1,
+    "empty_result": false
+  }
+}

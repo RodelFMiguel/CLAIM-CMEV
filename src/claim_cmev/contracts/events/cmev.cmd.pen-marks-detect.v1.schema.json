@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.cmd.pen-marks-detect.v1.schema.json",
+  "title": "cmev.cmd.pen-marks-detect.v1",
+  "description": "Detect and link pen marks on every page. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "page_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "page_number": {
+                "$ref": "envelope.v1.schema.json#/$defs/revision"
+              },
+              "corrected_render_ref": {
+                "$ref": "envelope.v1.schema.json#/$defs/artifactRef"
+              },
+              "transform": {
+                "$ref": "envelope.v1.schema.json#/$defs/pageTransform"
+              }
+            },
+            "required": [
+              "page_id",
+              "page_number",
+              "corrected_render_ref",
+              "transform"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "row_boxes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "entry_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "page_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "row_box_norm": {
+                "$ref": "envelope.v1.schema.json#/$defs/boxNorm"
+              },
+              "amount_box_norm": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/boxNorm"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "entry_id",
+              "page_id",
+              "row_box_norm",
+              "amount_box_norm"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "model_id": {
+          "$ref": "envelope.v1.schema.json#/$defs/identifier"
+        },
+        "model_version": {
+          "$ref": "envelope.v1.schema.json#/$defs/version"
+        },
+        "link_config_version": {
+          "$ref": "envelope.v1.schema.json#/$defs/version"
+        },
+        "trocr_enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pages",
+        "row_boxes",
+        "model_id",
+        "model_version",
+        "link_config_version",
+        "trocr_enabled"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

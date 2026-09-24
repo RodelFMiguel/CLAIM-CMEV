@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.evt.job-failed.v1.schema.json",
+  "title": "cmev.evt.job-failed.v1",
+  "description": "A stage failed. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "stage": {
+          "enum": [
+            "parts_segment",
+            "damage_segment",
+            "part_summary",
+            "page_read",
+            "line_items_extract",
+            "pen_marks_detect",
+            "consolidate"
+          ]
+        },
+        "target_ref": {
+          "anyOf": [
+            {
+              "$ref": "envelope.v1.schema.json#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason_code": {
+          "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+        },
+        "reason_text": {
+          "$ref": "envelope.v1.schema.json#/$defs/text"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "partial_artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/partialArtifactRef"
+          }
+        }
+      },
+      "required": [
+        "stage",
+        "target_ref",
+        "reason_code",
+        "reason_text",
+        "attempt",
+        "retryable"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

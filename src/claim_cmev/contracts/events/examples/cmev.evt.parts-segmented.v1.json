@@ -1,0 +1,72 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:parts_segment:ph_01JAX7Q1A:7d2e9b14",
+  "versions": {
+    "parts_model": "parts-segformer-b0/1.2.0",
+    "preprocess_config": "vision-pre-1.0.0",
+    "taxonomy": "parts-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-worker-parts"
+  },
+  "occurred_at": "2026-09-22T03:14:19Z",
+  "dedup_key": "10bf089249402ffcaf4c89903535e3e7e410f5e859b97af6a1d68f6157ac21f5",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "aa14bd93c7e0f2615d8a3b4c9e7f0a2d6b8c1e3f5a7d9b0c2e4f6a8d1b3c5e70",
+  "payload": {
+    "photo_id": "ph_01JAX7Q1A",
+    "part_mask_ref": {
+      "artifact_id": "pm_01JAX8Q9",
+      "object_uri": "s3://cmev-derived/01JAX.../parts_ph_01JAX7Q1A.png",
+      "sha256": "f6a7e46cb18cb6fa7166d0297c56c18a0b130a955ce8a31c268489834c9a6fc1",
+      "width": 512,
+      "height": 512,
+      "encoding": "class_index_png"
+    },
+    "transform": {
+      "stored_width": 4032,
+      "stored_height": 3024,
+      "exif_orientation": 6,
+      "model_width": 512,
+      "model_height": 512,
+      "scale": 0.126984,
+      "pad_left": 0.0,
+      "pad_top": 0.0,
+      "mask_frame": "model"
+    },
+    "parts": [
+      {
+        "part_code": "front-bumper",
+        "pixel_count": 48211,
+        "mean_confidence": 0.91
+      },
+      {
+        "part_code": "grille",
+        "pixel_count": 9310,
+        "mean_confidence": 0.86
+      },
+      {
+        "part_code": "hood",
+        "pixel_count": 61550,
+        "mean_confidence": 0.89
+      }
+    ],
+    "part_prediction_ids": [
+      "pp_01JAX8Q9A",
+      "pp_01JAX8Q9B",
+      "pp_01JAX8Q9C"
+    ],
+    "image_quality": {
+      "state": "acceptable",
+      "blur_score": 212.4,
+      "exposure_state": "normal",
+      "reasons": []
+    },
+    "empty_result": false
+  }
+}

@@ -1,10 +1,21 @@
+# One image for cmev-api, every worker role and the offline cost-table bootstrap.
+# The package is installed non-editable, so the versioned configuration and the Alembic
+# migrations are copied beside it and located through CMEV_* variables.
 FROM python:3.12-slim-bookworm
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
+    CMEV_TAXONOMY_DIR=/srv/configs/taxonomy \
+    CMEV_M3_CONFIG=/srv/configs/pipeline/m3_summary.yaml \
+    CMEV_M9_REVIEW_CONFIG=/srv/configs/pipeline/m9_review.yaml \
+    CMEV_M8_CONFIG=/srv/configs/pipeline/m8_rules.yaml \
+    CMEV_MIGRATIONS_DIR=/srv/infra/migrations
 WORKDIR /srv
 COPY pyproject.toml README.md ./
 COPY src/claim_cmev ./src/claim_cmev
+COPY configs ./configs
+COPY infra/migrations ./infra/migrations
 RUN pip install . && useradd --uid 10001 --create-home cmev \
-    && mkdir -p /srv/artifacts/models /srv/artifacts/cost_tables
+    && mkdir -p /srv/artifacts/models /srv/artifacts/cost_tables \
+    && chown 10001:10001 /srv/artifacts/cost_tables
 USER 10001:10001
 EXPOSE 8000
 CMD ["uvicorn", "claim_cmev.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,7 +1,7 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-09-23 (Asia/Singapore).
-Baseline inspected for this update: commit `ed5431a` on branch `code-skeleton`. Confirm the current branch/HEAD and working tree when resuming; this is a dated snapshot.
+Last updated: 2026-09-25 (Asia/Singapore), implementation check-in requested by the user.
+Implementation baseline: commit 1c9ca28 on branch code-skeleton. The accumulated Claude/Codex changes are included in the commit containing this check-in update. No push was requested or performed. Read the current state and [verification record](docs/verification/model-independent-2026-09-24.md); earlier chronological handoffs below retain their original, sometimes superseded status.
 
 This file is the team's maintained handoff, not an automatically synchronised chat transcript. Share it with the skills and source changes through the team's normal version-control workflow.
 
@@ -18,14 +18,15 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 
 | Area | Verified state at this handoff |
 | --- | --- |
-| Repository | The earlier scaffold now has a baseline React workbench and FastAPI/worker code under `src`; specification routing and application changes are committed on `code-skeleton` |
-| Specifications | The v2 index and shared/module specifications define the full target; the implemented fixture baseline is a limited slice recorded in ADR 0003 |
-| Architecture | ADR 0002 governs container/Kafka boundaries. The default lean Compose profile built and started six healthy services on Docker Desktop 4.92.0; fixture containers omit unused host model/cost mounts |
-| Application | Public information page, login, searchable queue, claim intake, review, evidence originals, mark decision, notes, finalization and frozen print view; FastAPI persistence and asynchronous fixture worker |
-| Data and models | Existing acquisition tooling/catalogue remain. No trained model is loaded or evaluated by the baseline; uploaded originals are preserved and fixture results are explicitly labelled |
-| Shared agent workflows | Seven canonical skills reference the specifications directly and match their generated Claude copies; stable invocation names retained |
-| Validation | 17 backend tests pass; frontend TypeScript/production build passes; local and container browser walkthroughs pass login through PDF and 390px mobile queue; API and storage readiness are healthy |
-| Evaluation | No model accuracy, price calibration, real claim outcome, usability comparison or financial benefit has been measured |
+| Repository | Claude's changes preserved and extended by Codex; accumulated implementation checked in on code-skeleton with this context update |
+| Specifications | Full target remains broader than the implementation. Only individually verified M9 checklist items are ticked; nine-priority status and gaps are in the verification record |
+| Architecture | Persisted orchestration, outbox/deduplication, fixture producers and real M8 consolidation run in lean and split-service full Compose. Full groups fixture producers in one container; final inference/GPU packaging remains |
+| Application | Typed review actions, M6 correction replay, M3 human-confirmation reruns, pinned cost lookup, review overlays, durable request retry and frozen M9 reports are connected to the API/workbench |
+| Data and models | No trained model loaded/evaluated. Evidence stages still produce labelled fixtures. M7 costs are synthetic and built offline. Prior PaddleOCR smoke used synthetic pages in a private venv; live M4/M5 workers remain unwired |
+| Shared agent workflows | Canonical skills remain under .agents/skills; no workflow changes in this continuation |
+| Validation | Latest full suite: 1287 passed, 1 skipped, two dependency warnings. Final TypeScript/Vite build and whitespace checks passed. Lean/full Docker and browser workflows passed; final two-page Chromium PDF inspected with complete version footers |
+| Evaluation | No model accuracy, real price calibration, real claim outcome, usability comparison or financial benefit measured |
+
 
 ## Decisions and rules that affect implementation
 
@@ -34,7 +35,7 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 - Every assessment retains its input and model/taxonomy/config/cost-table versions. New inputs or explicit reassessment produce new revisions.
 - Shared schemas and vocabulary connect the lanes. Unknown sides/parts and absent ranges must remain explicit.
 - The older [architecture sketch](docs/solution_architecture.md) is historical; its direct agreed-cost feedback loop is superseded by the proposal.
-- [ADR 0002](docs/adr/0002-containerised-event-runtime.md) supersedes ADR 0001 and the original v2 runtime. Follow technical/integration specifications while preserving proposed dependency status; this handoff does not establish a deployed or smoke-tested runtime.
+- [ADR 0002](docs/adr/0002-containerised-event-runtime.md) supersedes ADR 0001 and the original v2 runtime. Follow technical/integration specifications while preserving proposed dependency status; the current fixture runtime smoke is recorded separately from the remaining target architecture.
 - V2 uses pending/confirmed/rejected mark states. Pending price changes do not fall back to printed prices. Decision-changing human actions create new assessments; original machine results remain immutable.
 - HITL predictions do not resolve side. V2 preserves unknown identity, uses recorded human identity/coverage confirmation where needed, and treats grouped-view evaluation as exploratory.
 - V2 cost references use part/operation/vehicle class/currency under a fixed single-part SGD basis. Model year is metadata only; independent base cases determine support. Rule tests, ordinary interval coverage and injected-anomaly experiments are reported separately.
@@ -42,12 +43,80 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 
 ## Immediate next work
 
-1. Use the now-running lean fixture stack for scoped module integration. Keep fixture and real outputs visibly separate; add read-only model/cost mounts and version checks when real consumers arrive.
-2. Keep the baseline fixture label visible and preserve revision/approval gates while expanding toward M9 and the other module specifications. Current UI lacks full additions/corrections/dismissals, overlays and a durable offline action queue.
-3. Confirm CarDD consent/files, HITL parts access, supported layouts and marking rules; reserve grouped evaluation cases before model fitting. Do not count fixture outputs as model evidence.
-4. Assign named lane/adapter owners and reconcile the full runtime effort with the 50-person-day proposal. LayoutLMv3/CORD/label-alignment, TrOCR and approval refresh remain stretch work.
+1. Before wiring live M5 records, resolve the previously reported unsided-part identity rule across M5/M8 and add producer-to-consumer coverage for uncertain printed amounts and parser version keys. Preserve unknown identity unless the taxonomy explicitly establishes that side does not apply.
+2. Connect the tested M4/M5 document libraries to persisted artifacts and worker commands. Obtain team-reviewed supported layouts/aliases and permitted sample pages for real-page acceptance. Keep fixture mode explicit and fail closed when live prerequisites are unavailable. The current fixture pipeline does not run OCR on uploads.
+3. Extend the evidence panel to actual page/photo artifacts and aligned row/mark/mask overlays, then replace manual fixture-ID/coordinate controls. Complete persistence of unsent generic form drafts and targeted accessibility acceptance; current IndexedDB guarantees cover submitted requests and note/amount drafts.
+4. Complete remaining runtime acceptance: broker interruption/restart, coordinated PostgreSQL/object-store restore, capacity, dedicated migration job and eventual per-model/GPU packaging. Local replay/failure tests and both Compose smoke runs do not substitute for these checks.
+5. Team prerequisites remain CarDD consent/files, HITL access, layouts/marking rules, frozen taxonomy/config choices, grouped evaluation reservations, owners and the runtime effort budget. LightGBM/RQ4 is a separate offline experiment, not an already-measured outcome.
 
-These are project priorities, not claims that the next contributor has been assigned all of them. Take the scoped task agreed with the team.
+The current integrated fixture milestone is complete. See the final Codex entry below for changed paths, checks and remaining boundaries; do not restart from the superseded Outbox import failure in the historical Claude handoff.
+
+## Model and module inputs and outputs (2026-09-24)
+
+This is a planning summary of the current specifications, requested before implementation. It does not mark any module complete. At the original planning snapshot the worker generated fixture assessments directly. The current worker instead joins typed fixture records and runs real deterministic M8 checks with a pinned synthetic table; no trained evidence model or real-price reference is integrated. Read the linked specifications for exact schemas and acceptance criteria.
+
+### Models to train, fit or integrate
+
+The core plan has four trained/fitted components: M1, M2, the M6 detector and M7. M7 contains two quantile regressors rather than one neural network; M4 integrates pretrained OCR without project-specific training. Training data and runtime inputs are different and are shown separately.
+
+| Module / method | Training or fitting input | Input when used | Output and downstream use |
+| --- | --- | --- | --- |
+| [M1: part segmentation](docs/specs/module-01-vehicle-part-segmentation.md) - fine-tuned SegFormer-B0 | HITL vehicle photographs and part polygons converted to semantic labels: 21 part classes plus background. Inspect annotation content rather than trusting the swapped dataset folder names. | One vehicle photograph, with pinned weights, taxonomy and recorded preprocessing transforms. | The model predicts pixel-level part classes. The adapter saves a part mask and part predictions with confidence, pixel counts, transform and version references. M2 uses the masks for assignment; M3 uses the predictions for summaries/coverage. Side remains unknown; the model does not identify a repair operation. |
+| [M2: damage segmentation](docs/specs/module-02-damage-segmentation.md) - a separately fine-tuned SegFormer-B0 | CarDD photographs and damage annotations converted to semantic labels: dent, scratch, crack, glass shatter, lamp broken and tire flat, plus background. Consent/files must be verified before use. | The neural model receives the vehicle photograph. The complete M2 module also receives M1 part masks for the same photo and revision. | The model predicts damage-class masks. Deterministic postprocessing creates connected regions and assigns them to part masks, producing damage observations with confidence, assignment/candidate information, mask references and area measures. M3 consumes these observations. Assignment is not learned by the segmentation model; unresolved part/side stays explicit. |
+| [M4: page reading](docs/specs/module-04-page-reading.md) - pretrained PaddleOCR | No project training. Pin the OCR package/weights and verify actual box granularity on sample pages. | An estimate page image after PDF rasterisation and geometry correction, where applicable. | OCR returns located text and available confidence values. The module preserves rendered/corrected pages, reading order, actual text-box granularity, quality signals and transforms back to the original. M5 consumes the text/boxes; M6 consumes the corrected page and geometry. OCR alone does not produce validated repair rows or confirmed handwritten amounts. |
+| [M6: pen-mark detector](docs/specs/module-06-pen-mark-recognition.md) - fine-tuned Faster R-CNN ResNet-50 FPN | Generated marked estimates plus the development subset of team-marked pages, labelled with exclusion/price-change classes and bounding boxes; retain true row associations for linking evaluation. | The detector receives M4's corrected page image. The complete M6 module additionally needs M5 rows, row/amount boxes and layout geometry for linking. | The detector returns mark boxes, classes and scores. A deterministic linker produces pending PenMark records with a linked entry ID or retained candidate rows. The surveyor confirms/rejects/relinks marks and enters revised amounts. M8 gates decisions on these states. Detecting a price-change mark is not recognising its numeric amount. |
+| [M7: reference cost ranges](docs/specs/module-07-reference-cost-ranges.md) - empirical percentile baseline and offline LightGBM quantile pair | Synthetic repair-price records, grouped by independent base case with disjoint training/validation/calibration/test partitions. LightGBM features are part, operation and vehicle class; the target is amount under the fixed SGD cost basis. | Offline builders evaluate eligible cost keys. During claim processing M8 supplies a lookup key to the published table; no M7 model runs per claim. | Lower/upper reference bounds, independent support counts/status, currency/basis, method, build lineage and table version. Publish a frozen table keyed by part, operation, vehicle class and currency. Side, damage type and model year are not features. Synthetic ranges do not establish real repair-price accuracy. |
+
+Model architectures and scope above follow [training specification section 3](docs/specs/model_training_specification.md#3-what-is-trained-and-what-is-not). Recipe values, thresholds, supported layouts and dependency versions marked proposed in the specifications remain proposed until selected and recorded.
+
+### Deterministic modules and application outputs
+
+These components need code, fixtures and validation, but no newly trained weights.
+
+| Component | Inputs | Outputs / responsibility |
+| --- | --- | --- |
+| M2 damage-to-part assignment | Damage-region masks and M1 part masks in the same coordinate frame; versioned overlap/ambiguity thresholds. | Assigned, ambiguous or unassigned damage observations with candidate scores and reasons. Test with synthetic masks before integrating either model. |
+| [M3: part summary and coverage](docs/specs/module-03-part-summary-coverage.md) | M1 predictions, M2 observations, photo quality/visibility signals and recorded human identity/coverage confirmations for the claim revision. | Part summaries retaining every source observation, plus per-part/side coverage states and reasons. Adequate coverage requires the specified human confirmation; sharpness or mask size alone is insufficient. No inferred count of unique physical dents. |
+| [M5: line-item extraction](docs/specs/module-05-line-item-extraction.md) | M4 text boxes/reading order and versioned rules for 2-3 supported layouts, vocabulary and exact monetary parsing. | Stable line-item IDs, source row/field boxes, original text, mapped part/side/operation, quantity, printed amounts, uncertainty and declaration completeness. Printed amounts remain separate from surveyor revisions. Zero extracted rows do not establish an explicitly empty scope. |
+| Orchestrator | Versioned commands/completion/failure events and persisted stage state for one claim/input revision. | Stage dispatch, retry/dead-letter handling and a deduplicated consolidation command carrying artifact references and pinned versions. It decides readiness, not evidence findings. |
+| [M8: consolidation and checks](docs/specs/module-08-consolidation-checks.md) | M3 summaries/coverage, M5 rows/completeness, M6 marks/human actions, claim metadata and the pinned M7 table. | An immutable assessment with documentary, mark, photographic and cost checks, overall results, reason codes, evidence references and versions; separately gated possible additions. No photo coverage means insufficient evidence. Unsupported requires adequate evidence of the correct part with confidently absent supported damage. Pending repricing never falls back to the printed amount. |
+| [M9: review overview and report](docs/specs/module-09-review-report.md) | Assessment records, original evidence/overlays, current review state and surveyor actions. | Review UI, recorded corrections/confirmations, new input/assessment revisions for decision-changing actions, and a print view tied to a completed assessment and frozen review. Final claim approval remains separate. |
+
+Common contracts carry claim/input identity, stable record IDs, artifact references, provenance and applicable model/parser/taxonomy/configuration/cost-table versions. Monetary values travel as decimal strings with explicit currency and basis. See [data contracts](docs/specs/data_contracts.md) and [integration contracts](docs/specs/integration_contracts.md).
+
+**Dependency clarification to resolve during orchestration implementation:** M6's detailed specification requires both M4 pages and M5 rows, although the high-level branch diagram depicts M5/M6 in parallel. Detection alone can run alongside M5; final linking must consume M5 rows. Do not emit a linked M6 result before those inputs exist. The implemented orchestrator waits for M5 rows before linked M6 production; the original diagram alone is insufficient to describe that dependency.
+
+### Optional stretch components
+
+| Component | Input | Output / boundary |
+| --- | --- | --- |
+| S1: LayoutLMv3 alternative to M5 | Page image, OCR tokens and normalized boxes; training uses CORD adaptation followed by generated estimates with reliable token/field alignment. | Token field labels, then adapter grouping into the same M5 line-item/completeness contract. Day-5 gated stretch; the rule parser remains core. |
+| S2: pretrained TrOCR | Isolated handwritten price-change crops. | Text/amount suggestion with confidence, stored separately from the human-confirmed amount. No core fine-tuning commitment; never copied automatically into an effective price. |
+| Optional cmev-explainer | Already-computed M8 findings and their recorded reasons/evidence. | Generated explanation text with provenance; no changed checks, amounts, states or findings. Off by default and outside the decision path. |
+
+S3 approval/reference refresh is a scripted stretch workflow, not another model. See [training specification](docs/specs/model_training_specification.md) and [specification index](docs/specs/README.md).
+
+## Implementation priorities without trained models (2026-09-24)
+
+Recommended integration-first order, recorded at the user's request. This is a backlog, not a claim that implementation has started, a new scope decision or an assignment of owners. Existing upload, authentication, storage, basic mark confirmation, revisions and frozen-print behaviour should be extended rather than rebuilt.
+
+| Priority | Task and specification | Deliverable / acceptance focus |
+| --- | --- | --- |
+| 1 | Shared contracts and validated fixtures - [data contracts section 14](docs/specs/data_contracts.md#14-tasks) and [integration contract tests](docs/specs/integration_contracts.md#11-contract-test-requirements) | Typed M3/M5/M6/M8 records, exact money, uncertainty/reason fields, stable IDs and revision/version checks. Adapt simplified fixture payloads to the shared contracts; round-trip valid examples and reject invalid ones. |
+| 2 | M8 deterministic assessment engine - [M8 tasks](docs/specs/module-08-consolidation-checks.md#implementation-tasks) | Pure consolidate, compare_amount and propose_additions functions; ordered gates, Decimal arithmetic, side-exact matching, per-check results and immutable findings. Implement the specified Experiment A rule cases, including pending marks, exclusions, missing/uncertain evidence and absent ranges. |
+| 3 | Real orchestration with fixture producers - [platform section 12](docs/specs/application_platform.md#12-tasks) and [technical section 17](docs/specs/technical_specification.md#17-technical-tasks) | Reuse Kafka/outbox infrastructure; implement shared consumer handling, required migrations, stage dispatch, persisted branch state and the join. Verify duplicate/out-of-order events, failure/retry, restart and stale revisions. Reconcile the M6 row dependency above before wiring dispatch. |
+| 4 | M6 linking and correction rules - [M6 tasks](docs/specs/module-06-pen-mark-recognition.md#implementation-tasks) | Pure link_marks and apply_mark_action using fixture detection boxes and row/amount boxes. Preserve ambiguous candidates and conflicts; extend manual link/add/amount actions and test that unresolved repricing never uses printed prices. Detection accuracy remains unmeasured. |
+| 5 | M4 page preparation and pretrained OCR - [M4 tasks](docs/specs/module-04-page-reading.md#implementation-tasks) | PDF rasterisation, deterministic page IDs, geometry correction, transform round trips and a pinned pretrained OCR smoke test. Requires pretrained weights and sample pages, not project-specific training. Establish actual box granularity before M5 column rules. |
+| 6 | M5 deterministic estimate parser - [M5 tasks](docs/specs/module-05-line-item-extraction.md#implementation-tasks) | Select 2-3 layouts and reviewed aliases; implement headers/columns, wrapped rows, exact amounts, stable IDs and completeness. Start with OCR-box fixtures, then connect M4; unsupported layouts and uncertain fields remain explicit. |
+| 7 | M2 assignment and M3 summary/coverage - [M2 tasks](docs/specs/module-02-damage-segmentation.md#implementation-tasks), [M3 tasks](docs/specs/module-03-part-summary-coverage.md#implementation-tasks) | Synthetic mask tests for overlap, ambiguity and background; conservative observation grouping and confirmation-aware coverage. Cover opposite sides, cropped views, missing photos and failed inference. Threshold calibration still requires suitable validation data. |
+| 8 | M7 synthetic cost baseline and lookup - [M7 tasks](docs/specs/module-07-reference-cost-ranges.md#implementation-tasks) | Seeded generator, independent base-case grouping/splits, empirical ranges, support/bounds validation and pinned load_table/lookup_range. Keep builds offline and test that publishing a new table never changes an old assessment. The LightGBM comparison remains separate work. |
+| 9 | M9 evidence and correction workflow - [M9 tasks](docs/specs/module-09-review-report.md#implementation-tasks) | Server-rendered overlays and row/mark highlights; identity/coverage confirmation, row corrections, possible additions and dismissals. Extend review concurrency, reassessment/reuse lineage, finalization blockers and durable pending edits using fixtures. |
+
+**First implementation milestone:** priorities 1 and 2 with a small integration into the existing review screen: validated fixture branch records -> genuine M8 rules -> persisted assessment -> displayed results/reasons. All fixture provenance stays visible. A passed photo check alone must not become overall ok while cost requirements remain unmet.
+
+This order need not serialize the team: M4 -> M5 -> M6 linking is an independent document workstream, and M9 can grow with each backend capability. Reserve grouped evaluation data before tuning: supported layouts/marking conventions, permitted pages/photos, shared image hashes and vehicle/writer/physical-page/template groups as applicable. Keep final-test membership frozen; fixture rule checks and trained-model accuracy are different evidence. Verify CarDD access/files before M2 training and preserve any contingency taxonomy separately.
+
+Named lane/adapter owners and the runtime effort-budget conflict remain open. The new tables do not change the 50-person-day scope or activate LayoutLMv3, TrOCR, the explainer or approval refresh.
 
 ## Open decisions and missing inputs
 
@@ -373,3 +442,365 @@ Decisions (accepted/proposed) and references: No new domain or runtime decision.
 Checks actually run, results and artifact locations: Grepped `docs/specs/*.md` and `docs/agent-workflows.md` for `SQLite|jobs table|no message broker|worker process|API process` before and after editing; confirmed zero remaining present-tense "section 9.1 specifies/states/plans" or "section 9.4 states" hits. Left `docs/specs/README.md`, `docs/specs/application_platform.md` and `docs/agent-workflows.md` unedited after reading them, since their references are either historical-v1 or phrased as general history ("a change from v2 section 9.1") that remains true rather than a quote of currently-nonexistent text. `git diff --stat` confirms exactly the nine intended files changed, 28 insertions/28 deletions. No Markdown link checker, Mermaid renderer or test suite was run; this was a prose/table wording pass only.
 Uncommitted work, limitations and missing prerequisites: All nine files are uncommitted, alongside the still-uncommitted proposal rewrite from the prior entry. Module specs 06-09 and the shared documents not listed above were not re-scanned in this pass beyond the grep above; if they are found to quote the old proposal text later, the same past-tense correction pattern applies. The platform-effort budget conflict remains open and unresolved by design.
 Next concrete step and agreed owner (or unassigned): Unassigned. Recommend committing the proposal and specification changes together, since the specs' accuracy now depends on the proposal edits from the prior entry.
+
+## Model I/O and implementation priority handoff (2026-09-24)
+
+Date/time and timezone: 2026-09-24, Asia/Singapore (time not recorded).
+Contributor / coding agent: Codex, at the user's request.
+Task and relevant module: Document inputs/outputs across M1-M9 and preserve the model-independent implementation priority list.
+Branch / baseline commit / resulting commit or PR: code-skeleton / 1c9ca28 / no new commit or PR.
+Changed paths and completed behaviour: CONTEXT.md only; added core trained/pretrained model table, deterministic-module table, optional stretch boundaries, nine ranked implementation tasks and a first milestone; refreshed the next-work pointer.
+Decisions (accepted/proposed) and references: Planning summary of current module, data, integration and training specifications. The priority order is recommended, not a change to scope or assigned ownership. M6's need for M5 rows is explicitly flagged against the parallel high-level diagram; transport specs were not edited.
+Checks actually run, results and artifact locations: Read current specifications, Git status/HEAD and worker.py. All 26 new local links/anchors and all 4 table shapes passed validation; the earlier context from Open decisions through the prior handoffs matches HEAD unchanged; git diff --check passed. Only CONTEXT.md changed. No application tests or model experiments run for this documentation-only change.
+Uncommitted work, limitations and missing prerequisites: CONTEXT.md is uncommitted. No model, parser, orchestration or rule implementation was added; no datasets or dependency access were newly verified. Earlier handoffs and historical validation remain intact.
+Next concrete step and agreed owner (or unassigned): Unassigned; implement priority 1 shared contracts and priority 2 M8 rules against fixtures, then connect the resulting assessment to the existing review screen.
+
+## Implementation priorities 1-9 partial handoff (2026-09-24)
+
+Date/time and timezone: 2026-09-24, Asia/Singapore (time not recorded).
+Contributor / coding agent: Claude Code as coordinator, with one subagent per priority working on separate paths. Handed to Codex at the user's request while three lanes were unfinished. The run was interrupted twice by API spend limits.
+Task and relevant module: Implement the nine [implementation priorities](#implementation-priorities-without-trained-models-2026-09-24), meaning the M1-M9 platform and rule work that needs no trained models, and update the specification checklists.
+Branch / baseline commit / resulting commit or PR: `code-skeleton` / `1c9ca28` / no commit or PR. Everything below is uncommitted.
+
+Workspace and running jobs:
+- Worktree: the main checkout, not a separate git worktree.
+  - WSL path: `/home/elephantombot/projects/CLAIM-CMEV`.
+  - Windows path: `\\wsl.localhost\Ubuntu\home\elephantombot\projects\CLAIM-CMEV`.
+- Python: the WSL `.venv` (Python 3.12.3).
+- Uncommitted changes: `git status --short` listed 136 entries after the M5 update, all new or modified and none staged. That includes `CONTEXT.md` and `pyproject.toml`.
+- Running jobs when this entry was last updated. One Claude Code subagent was still editing:
+  - Priority 3 orchestration owns these paths:
+    - `src/claim_cmev/{messaging,persistence,orchestration}/`
+    - `src/claim_cmev/runtime.py`, `worker.py`, `fixtures.py`, `storage.py` and `api/`
+    - `workers/`, `infra/`, `apps/api/`
+    - `tests/integration/` and `tests/backend/`
+  - The M5 parser subagent has finished; see priority 6 below.
+- Before editing any of those paths, confirm that the job has stopped: no new file modifications, and a later dated entry in this file recording its result.
+- No containers, servers or training jobs were started or left running.
+
+Status by priority. Test counts are as of this handoff. "Done" means the pure module and its tests exist. It does not mean the module is wired into the running application.
+
+| Priority | Status | Paths | Entry points and evidence |
+| --- | --- | --- | --- |
+| 1 Shared contracts | Done | `src/claim_cmev/contracts/` (`common`, `claims`, `imaging`, `documents`, `costs`, `assessment`, `review`, `fixtures`, `events/`), `src/claim_cmev/taxonomy/`, `configs/taxonomy/*.yaml`, `tests/contracts/`, HITL `subset_mapping` in `data/manifests/dataset_sources.json` | 456 tests. Details below the table |
+| 2 M8 rules | Done (pure) | `src/claim_cmev/comparison/`, `configs/pipeline/m8_rules.yaml`, `tests/unit/m8/` | 98 tests. Details below the table |
+| 3 Orchestration | **In progress and partial; currently breaks `tests/backend`** | `src/claim_cmev/messaging/` (transport, kafka, outbox, consumer), `src/claim_cmev/persistence/` (tables, migrations), `infra/migrations/` (Alembic env and `0001_runtime_schema.py`), modified `src/claim_cmev/runtime.py` | The ops tables, transports and consumer runtime were being written. None of these exist yet: the orchestrator join, fixture producers, consolidator service, worker roles, API rewiring and `tests/integration`. Verify every file before building on it |
+| 4 M6 linking and state | Done (pure) | `src/claim_cmev/documents/pen_marks/`, `configs/pipeline/m6_linking.yaml`, `tests/unit/m6/` | 70 tests. Details below the table. There is no detector |
+| 5 M4 page reading | Done except the consumer and Dockerfile | `src/claim_cmev/documents/text_layout/`, `src/claim_cmev/vision/transforms.py`, `configs/pipeline/m4_page_reading.yaml`, `tests/unit/m4/` | 74 tests pass, plus 1 real-Paddle test that skips without weights. Details below the table |
+| 6 M5 parser | Done (pure); no consumer yet | `src/claim_cmev/documents/line_items/` (`text`, `config`, `vocabulary`, `values`, `table`, `completeness`, `parser`), `configs/pipeline/m5_layout_families.yaml`, `configs/pipeline/m5_estimate_vocabulary.yaml`, `tests/unit/m5/` (including `data/paddleocr_synthetic_pages.json`) | 196 tests. Details below the table |
+| 7 M2 assignment, M3 summary/coverage | Done (pure) | `src/claim_cmev/vision/damage/`, `src/claim_cmev/vision/multiview/`, `configs/pipeline/m2_assignment.yaml`, `configs/pipeline/m3_summary.yaml`, `tests/unit/m2/`, `tests/unit/m3/` | 103 tests. Details below the table. There are no model adapters |
+| 8 M7 cost baseline | Done except LightGBM, RQ4 and experiment C | `src/claim_cmev/costs/reference/`, `pipelines/costs/`, `configs/costs/*.yaml`, `tests/unit/m7/` | 102 tests. Details below the table |
+| 9 M9 review | Pure functions done; the API and UI work has not started | `src/claim_cmev/review/` (`actions`, `finalize`, `report`, `overlays`, `state`, `config`), `configs/pipeline/m9_review.yaml`, `tests/unit/m9/` | 112 tests. Details below the table. The FastAPI endpoints and React UI still use the committed baseline logic |
+
+Entry points and details for each priority:
+- **1 Shared contracts.**
+  - There are Pydantic records for every data-contracts record, but no SQLAlchemy tables.
+  - There are 17 topic JSON Schemas, 17 valid and 77 invalid examples, and `events.registry.validate_message`.
+  - `effective_price_for` implements the pending-price rule.
+  - `contracts.fixtures` holds 4 validated fixture bundles: `pending_price_change`, `exclusion_and_supported`, `partial_extraction` and `unphotographed_part`.
+- **2 M8 rules.**
+  - Entry points: `consolidate(request, *, config, ranges)`, `compare_amount`, `propose_additions`, `request_from_bundle`, `reason_codes.catalogue()`, and `lineage.carry_forward_dismissals`.
+  - The tests cover all 42 experiment A cases and map each safety invariant SI-01 to SI-12 to at least one case.
+  - `consolidate` accepts M7's `PinnedCostTable` directly as `ranges`.
+- **4 M6 linking and state.**
+  - Entry points: `link_marks`, `link_detections`, `apply_mark_action`, `transition_mark`, `apply_review_event`, `row_mark_states` and `unresolved_marks`.
+  - Cross-action tests prove that an unresolved price change never produces the printed amount.
+- **5 M4 page reading.**
+  - Entry points:
+    - `run_page_reading(request, engine, config)`
+    - `correct_page_geometry`
+    - `render_pages`, which uses pypdfium2
+    - `PaddleOcrEngine`, which is imported lazily
+    - `StubOcrEngine`
+  - PaddleOCR 2.10.0 and paddlepaddle 2.6.2 are installed only in the git-ignored `runtime/venvs/ocr/`.
+  - The synthetic smoke results are in the git-ignored `artifacts/evaluation/m4-ocr-smoke/`.
+- **6 M5 parser.**
+  - Main entry point: `parse_pages(pages, *, config, vocabulary, job_key, claim_id, input_revision, currency, cost_basis, versions, provenance, missing_pages=())`. It returns a `ParseResult` with:
+    - `line_items`
+    - `completeness` (parser-sourced)
+    - `unparsed_regions`
+    - `layout_family`
+    - `rows`, one per classified row
+    - `pages`
+    - `versions`
+  - Other entry points:
+    - `line_items_event_payload`, which is schema-checked
+    - `pen_mark_row_boxes`, which produces the `row_boxes` for M6
+    - `confirm_declaration_completeness`, the only route to `explicitly_empty`
+    - `parse_decimal`
+    - `load_layout_families`
+    - `load_estimate_vocabulary`
+  - Three layout families are defined, all proposed:
+    - `family-a-ruled-grid`, which matches M4's synthetic page and the contract fixture page
+    - `family-b-numbered-rate`
+    - `family-c-compact-quote`, which has no quantity column, so its quantity is always null
+  - Fuzzy matching is off.
+  - A new subtotal check compares printed subtotals with the exact sum of the rows above them and never corrects anything. It is a response to M4's finding about misread amounts.
+  - The M4-to-M5 handoff is tested three ways: M4's own synthetic render through `run_page_reading`, real PaddleOCR boxes from the synthetic smoke pages, and all four contract fixture scenarios.
+- **7 M2 assignment, M3 summary/coverage.**
+  - Entry points: `assign_damage_to_part`, `group_observations`, `decide_coverage` (an ordered rule table), `summarise_parts` and `summary_job_key`.
+  - The outputs reproduce the groups and coverage in all four fixture bundles.
+- **8 M7 cost baseline.**
+  - Build command: `python -m claim_cmev.costs.reference.build --seed 20260924 --out artifacts/cost_tables --promote`.
+  - Entry points: `load_table`, `lookup_range`, `PinnedCostTable` and `active_table_version`.
+  - The demo table `ct-20260922-0c9a22f4` is in the git-ignored `artifacts/cost_tables/`. Rebuild it with the command above; the build is deterministic.
+  - Coverage on the synthetic test partition is 0.9039 (1082 of 1197).
+- **9 M9 review.**
+  - Entry points: `open_review`, `ReviewState`, `classify_review_action`, `apply_review_action`, `replay_review_actions`, `evaluate_finalize_preconditions`, `finalize_review`, `build_print_payload`, and the overlay renderers (`render_page_highlight`, `render_mark_crop`, `render_photo_overlay`).
+  - `apply_review_action` returns an `ActionOutcome` carrying the HTTP status and any conflict details. It checks, in order: the idempotency key, whether the review is finalized, whether the assessment is current, stale revisions, which fields apply to the action type, and then per-type rules.
+  - A decision-changing action returns a `ReassessmentPlan` with the corrections, the stages to rerun and reuse, the `reuse_lineage`, and a `neural_rerun` flag. For a price correction, `neural_rerun` is false.
+  - `evaluate_finalize_preconditions` implements F1-F6, with P1 and P2 behind flags that default to off. Each blocker links to the offending entry, mark or stage.
+  - The endpoints to switch over in `api/main.py`:
+    - `preconditions()` becomes `evaluate_finalize_preconditions`.
+    - `review_context` becomes `apply_review_action`.
+    - The finalize handler becomes `finalize_review`.
+    - The print-view handler becomes `build_print_payload`.
+
+Other changed paths:
+- `pyproject.toml`:
+  - Adds numpy, alembic, pypdfium2, opencv-python-headless, jsonschema and pyyaml. All six are installed in `.venv`.
+  - Sets the pytest `testpaths` to the backend, contracts, unit and integration test folders.
+  - Ships the package's JSON and YAML data files.
+- Deleted the `.gitkeep` placeholders in `configs/taxonomy`, `src/claim_cmev/taxonomy` and `tests/contracts`.
+
+Decisions (accepted/proposed) and references:
+- These values are all recorded as **proposed** until the team freezes them:
+  - all thresholds
+  - the vocabularies
+  - the vehicle classes: `hatchback_small`, `sedan_standard`, `suv_crossover` and `van_commercial`
+  - the layout families
+  - the cost basis `single_part_pre_tax_no_discount_v1`
+  - the eligible cost keys
+- Only two values were selected on validation data, both from synthetic M7 data: the support threshold of 8 and the CQR conformal offset.
+- The config files use names of the form `configs/pipeline/mN_*.yaml` rather than the spec names (`page_reading.yaml`, `consolidation.yaml`, `penmarks_linking.yaml`, `damage_assignment.yaml`, `part_summary.yaml`). `vision/multiview/` was kept; the proposed rename to `vision/summary/` was not adopted.
+- Document-branch order for orchestration: page_read, then line_items, then pen_marks. This lets mark linking use the M5 rows, and resolves the flagged M5/M6 discrepancy conservatively. The orchestrator does not implement this order yet.
+- M8 conservative readings:
+  - Rule R1 is checked first. If the image branch fails, every row is insufficient, including excluded rows.
+  - Rule A5 is applied strictly: any pending or unlinked mark withholds additions.
+  - A pending price change stores `amount_unresolved`.
+  - A withheld range gives the `insufficient_support` cost result.
+  - Eight reason codes were added to the spec catalogue, marked `source="addition"`.
+- Contract choices:
+  - Text granularity gains a `mixed` value.
+  - `side_source` uses `absent`.
+  - `layout_family` is null, with a reason.
+  - The `ImageQuality` states and the Finalization precondition names are proposals.
+  - The damage-segmented event uses `damage_type`, while the record uses `damage_code`.
+  - Two typos in the spec's example messages were fixed: a 65-character hex `dedup_key` and truncated sha256 values.
+- M7 writes JSON and CSV rather than Parquet, because pyarrow is not installed. A `no_records` key looks up as `insufficient_support`.
+- M4 artifact keys include a version-signature segment.
+- The M4 agent recommends that Tesseract is not needed and the fallback stays disabled. This is a recommendation, not a team decision.
+
+Checks actually run, results and artifact locations:
+- `.venv/bin/python -m pytest -q <suite>` on WSL Python 3.12.3:
+
+| Suite | Result |
+| --- | --- |
+| `tests/contracts` | 456 passed |
+| `tests/unit/m2` | 38 passed |
+| `tests/unit/m3` | 65 passed |
+| `tests/unit/m4` | 74 passed, 1 skipped |
+| `tests/unit/m5` | 196 passed |
+| `tests/unit/m6` | 70 passed |
+| `tests/unit/m7` | 102 passed |
+| `tests/unit/m8` | 98 passed |
+| `tests/unit/m9` | 112 passed |
+| `tests/unit/test_sync_skills.py` and `test_download_datasets.py` | 32 passed |
+
+- `tests/backend` fails at collection with `ImportError: cannot import name 'Outbox' from 'claim_cmev.runtime'`, caused by the in-progress priority 3 refactor.
+- `.venv/bin/python -m pytest -q --continue-on-collection-errors` after the M5 update: 1243 passed, 1 skipped, and that 1 collection error. A plain `pytest -q` stops at the collection error.
+- The PaddleOCR smoke test used synthetic pages only. Results are in `artifacts/evaluation/m4-ocr-smoke/results.json`:
+  - Every box was line-level and carried a confidence value.
+  - On CPU, the median OCR time was 1.15-1.35 s per page, and peak memory was 1.8-2.5 GiB.
+  - Amounts under pen strokes were misread with high confidence. For example, 420.00 was read as 20.00 at 0.99, and 640.00 as 40.0 at 0.99.
+  - So the assumption in M4 step 15, that confidence drops when print is obscured, does not hold for this engine.
+- Not run: the frontend build, the browser walkthrough, the Docker Compose stack, any PostgreSQL or Kafka test, any trained model, and any real page or photograph.
+
+Specification checklist candidates. None of these boxes is ticked yet. Tick each one only after checking its evidence.
+- module-07, 7 boxes:
+  - `generate_prices`
+  - grouped splits with a reserved test hash
+  - the empirical percentile method
+  - the conformal decision
+  - build validation
+  - `load_table` and `lookup_range`
+  - the final-test `metrics.json`
+- training specification, Lane 4, 7 boxes:
+  - `generate_prices.py`
+  - separate ordinary and injected runs
+  - the empirical baseline first
+  - the support sweep
+  - conformal on calib
+  - publishing the table
+  - refusing crossed bounds
+- module-04, 5 boxes:
+  - geometry
+  - PDF rasterisation
+  - `run_page_reading`
+  - the granularity assertion
+  - page fixtures
+- module-05, 4 boxes:
+  - `parse_pages`, step by step, with unit tests per step
+  - exact decimal parsing
+  - deterministic entry IDs that are stable across a retry
+  - the fixtures list
+- training specification, 1 box: "Record the parser code and configuration version in every emitted row".
+- module-06, 2 boxes: `link_marks` and `apply_mark_action`.
+- module-09, 2 boxes: `classify_review_action` with `apply_review_action`, and `evaluate_finalize_preconditions` with blockers that link to the offending row.
+- module-02, 1 box: `assign_damage_to_part`.
+- module-03, 3 boxes: `group_observations`, `decide_coverage` and the rule fixtures.
+- module-08, 6 boxes:
+  - `consolidate`
+  - `compare_amount`
+  - `propose_additions`
+  - per-check storage
+  - `content_hash` and dismissal carry-forward
+  - experiment A
+- evaluation_plan, 1 box: the experiment A case set with its SI map.
+- product_specification, 1 box: SI-01 to SI-12 tests.
+- data_contracts section 14, 6 boxes:
+  - the HITL contingency taxonomy and its no-merge test
+  - the HITL folder swap and its loader test
+  - the effective-price rule
+  - the completeness distinction
+  - absent ranges and suppressed additions
+  - pen-mark transitions
+  - deterministic review-action replay and stale-edit conflict behaviour
+- integration_contracts section 11, 7 boxes:
+  - round-trip validation
+  - example messages
+  - invalid examples
+  - schema rejection
+  - null carries a reason
+  - side is never invented (M2 fuzz testing plus M8 withholding)
+  - no language model in the path (static check only; the explainer profile check is still pending)
+- Leave these unticked, because they are only partly met:
+  - anything that needs SQLAlchemy or migrations
+  - consumers and Dockerfiles
+  - team freezes
+  - real data and trained models
+  - the M4 smoke test on real pages
+  - LightGBM, RQ4 and experiment C
+  - all UI acceptance items
+
+Uncommitted work, limitations and missing prerequisites:
+- Nothing is committed or pushed. Priority 3 is partial. Priorities 6 and 9 exist only as pure libraries.
+- Completed:
+  - priority 1
+  - priorities 2, 4, 6, 7 and 9 as pure libraries
+  - priority 5 except its consumer and Dockerfile
+  - priority 8 except LightGBM, RQ4 and experiment C
+- Partial: priority 3.
+- Untouched within the priorities:
+  - the orchestrator join
+  - the fixture producers
+  - the consolidator service
+  - worker roles
+  - the API rewiring and the M9 API and UI integration
+  - per-module Kafka consumer shells and Dockerfiles
+  - the `full` Compose profile
+  - relational tables for the claim, review, imaging and document records
+  - the frontend changes, including the vehicle-class options
+  - the browser walkthrough rerun
+- Fixture validation versus model evaluation: every test here is a deterministic check on fixture, synthetic or generated inputs. The M7 coverage figure is measured on synthetic prices. The PaddleOCR smoke run used synthetic pages. No trained model was run or evaluated, and no real claim material was used. Subagents may still have been writing when this entry was saved, so check `git status` and the file contents rather than trusting this table.
+- The running application still shows mocked fixture assessments. The API and UI cannot yet reach the real M8 engine, so the first milestone is not met.
+- Contract follow-ups reported by the module agents:
+  - `cmd.part-summary` lacks `reuse_from_input_revision` and an image-branch status.
+  - The damage-segmented observation has no area denominator.
+  - `primary_containment` and `background_containment` should be nullable when part masks are missing.
+  - `AssessmentFinding` and `ProposedRepairAddition` have no field for the rule that decided them.
+  - The `assessment-ready` schema has no `superseded` field.
+  - `PageTransform.corrected_to_pdf_points` is valid only for pages with `/Rotate 0`.
+  - `processing_status` has no `partial` value.
+  - `evt.page-read` carries no text boxes, so M5 must read them from the `DocumentPage` records or the page-reading artifact.
+  - `MarkAction` and `PenMarkCandidate` are M6 types and not yet contract records.
+  - `cmd.consolidate` has no `reuse_lineage` field.
+  - `ReviewEvent` requires `mark_id` for `enter_amount`. It also has no `carried_from` field and no payload-hash field.
+  - `Assessment` has no `cost_basis` field.
+- Cross-module issues found when M5 finished. Resolve these before wiring real M5 output into M8:
+  - M5 gives unsided parts such as bumpers and the hood `side=unknown` with `side_source=absent`. The contract fixtures use `not_applicable/document_text` instead. As written, M8 rule R5 would withhold these rows as `side_unresolved` indefinitely. One of the two needs a rule for unsided parts.
+  - M8 must treat any `field_uncertainty` on `printed_line_amount`, such as `arithmetic_mismatch`, as incomplete extraction.
+  - M5 writes the version keys `layout_families`, `vocabulary` and `parser_code`, but the integration event example uses `parser_config`.
+  - `row_kind`, the row flags and `row_band_index` exist only in `ParseResult.rows`, not on the `LineItem` contract.
+  - `cmd.line-items-extract` carries page references, not text boxes, so the consumer must load `DocumentPage` records.
+  - The subtotal check is skipped when another row is already uncertain. So on the synthetic obscured page, two misread amounts still pass through as printed; a test pins this behaviour.
+  - The spec's config names were `layout_families.yaml` and `configs/taxonomy/estimate_vocabulary.yaml`. The separate `line_items.yaml` parser keys were merged under `parser:`.
+- When the API switches to M9, reconcile these behaviours:
+  - Finalize freezes the presented review revision without incrementing it. This follows platform section 9.2 and the data contracts, but UI spec section 8 and the current API increment it.
+  - A finalized review refuses any further action.
+  - The existing `tests/backend` and e2e tests assume the old shapes, so they will need updating.
+- The taxonomy YAML lives in `configs/`, outside the package. Containers need `configs/` copied in, or `CMEV_TAXONOMY_DIR` set.
+- Local tooling:
+  - Node 22 is in `runtime/tools/node-v22.23.2-linux-x64/bin`.
+  - The OCR venv needs `libgomp` from `runtime/venvs/ocr/_support/` on `LD_LIBRARY_PATH`.
+  - Docker Desktop is reachable from PowerShell at `C:\Users\Rodel\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe`.
+
+Next concrete step and agreed owner (or unassigned): Codex, at the user's handover. Follow items 1-4 of [Immediate next work](#immediate-next-work):
+1. Make the full test suite pass. Start with `tests/backend`, which is blocked by the `runtime.py` refactor.
+2. Finish priority 3, including the fixture producers and a consolidator that calls `comparison.consolidate`.
+3. Wire M9 into the API and UI, then rerun the browser walkthrough.
+4. Tick specification boxes only where the evidence supports them.
+
+## Codex takeover verification (2026-09-24)
+
+Date/time and timezone: 2026-09-24, Asia/Singapore.
+Contributor / coding agent: Codex, after the user confirmed Claude stopped editing.
+Task and relevant module: Verify the partial handoff before continuing priorities 3 and 9.
+Branch / baseline commit / resulting commit or PR: code-skeleton / 1c9ca28 / no new commit or PR.
+Changed paths and completed behaviour: CONTEXT.md verification entry only at this milestone; all existing changes preserved.
+Decisions/status: The preceding Claude handoff is stale for priority 3. Current files include the orchestrator join, fixture producers, real M8 consolidation with pinned synthetic cost tables, API read adapter, worker roles and integration tests. The reported Outbox collection failure is no longer present. M9 API action/finalize logic still duplicates the pure review library; UI expansion remains.
+Checks actually run: WSL .venv/bin/python -m pytest -q: 1282 passed, 1 skipped, 2 dependency deprecation warnings in 64.71s. These are fixture/synthetic/local-transport checks, not trained-model evaluation or a fresh Kafka/PostgreSQL/browser pass.
+Uncommitted work, limitations and missing prerequisites: Existing large uncommitted tree retained. No training or data acquisition performed.
+Next concrete step and agreed owner: Codex to integrate the pure M9 action/finalize/report services and review controls, preserving original records, reassessment lineage and fixture provenance.
+
+## Codex M9 API milestone (2026-09-24)
+
+Date/time and timezone: 2026-09-24, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: Priority 9 API integration over priority 3.
+Branch / baseline commit / resulting commit or PR: code-skeleton / 1c9ca28 / uncommitted.
+Changed paths and completed behaviour: api/main.py, api/views.py, new api/review_service.py and orchestration/corrections.py, orchestration/consolidation.py, documents/pen_marks/state.py, tests/backend/test_baseline.py. Generic typed review-actions endpoint and legacy note/mark adapters call M9; M6 replays typed mark decisions; reassessments preserve the pinned cost table. Finalization freezes the current revision and stores the typed M9 print report.
+Decisions/status: Follow platform section 9.2 and Finalization contract: finalize does not increment review_revision. The earlier UI wording/test assumption is superseded. Unknown side still needs explicit correction; no automatic inference introduced.
+Checks actually run: 109 passed across tests/backend, tests/integration and tests/unit/m6. Includes mark confirm/reject, replay, immutable old assessment, stage reuse and frozen print pairing. Fixture/local SQLite transport only.
+Uncommitted work, limitations and missing prerequisites: Identity/coverage and addition paths, inherited review metadata and UI integration are being completed next. No model evaluation performed.
+Next concrete step and agreed owner: Codex to exercise every exposed action through reassessment, then finish workbench integration and browser checks.
+
+
+## Codex review/workbench integration milestone (2026-09-24)
+
+Date/time and timezone: 2026-09-24, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: Priorities 3, 7 and 9, including human correction replay.
+Branch / baseline commit / resulting commit or PR: code-skeleton / 1c9ca28 / uncommitted.
+Changed paths and completed behaviour: orchestration/review_summary.py, fixtures.py and plan.py now rerun deterministic M3 over original stored M1/M2 records for identity/coverage confirmations. M9 carries notes and verified unchanged-finding dismissals with origin linkage, and preserves accepted additions as human scope with supplied operation/amount or an absent-amount reason. api/views.py exposes review overlays separately from immutable machine results. Workbench adds typed action controls, actual M8 outcome labels, synthetic ranges/support, current taxonomy options, IndexedDB pending-request recovery and expanded frozen report sections.
+Decisions/status: Human additions remain separate from printed document rows; no fabricated page box, printed amount, operation or repair price. Fixture-derived corrected rows remain fixture-labelled. Identity/coverage confirmations in fixture mode explicitly refer to demonstration photo IDs, not uploaded pixels.
+Checks actually run: Full Python suite 1285 passed, 1 skipped before two additional integration cases; the expanded review HTTP suite then passed all 5 cases (including missed marks, revised amounts, dismissal carry and stale/idempotent writes). TypeScript build check passed. Browser lost-acknowledgement/reload/replay exercised without duplicate note; full walkthrough still in progress. Both Compose profiles pass config validation.
+Uncommitted work, limitations and missing prerequisites: Container start exposed missing installed-package M3/M9 config paths; Dockerfile updated and rebuild in progress. Real inference, real-evidence overlays and evaluated model claims remain unavailable. No production or real claim data used.
+Next concrete step and agreed owner: Codex to complete browser/PDF and container smoke checks, document their results and reconcile specification implementation status.
+
+
+## Codex verified runtime and report milestone (2026-09-24)
+
+Date/time and timezone: 2026-09-24, Asia/Singapore.
+Contributor / coding agent: Codex, continuing the user's handover request.
+Task and relevant module: Complete the partial orchestration/review integration before the next document-evidence milestone; verify the nine-priority state.
+Branch / baseline commit / resulting commit or PR: code-skeleton / 1c9ca28 / no new commit or PR.
+Changed paths and completed behaviour: Previous API, orchestration, review and workbench changes verified end-to-end. Added tests/backend/test_review_integration.py, tests/e2e/review-controls.mjs and print-report.mjs; extended baseline.mjs for lost-acknowledgement replay. messaging/kafka.py reduces idle poll delay; Dockerfile.api supplies installed M3/M9 config paths. ClaimReview.tsx/styles.css print immutable report sections with complete page-margin version footers. README.md, infra/README.md, tests/README.md, application_platform.md, ui_specification.md and module-09-review-report.md now describe the actual integration. Detailed priority-by-priority status is in docs/verification/model-independent-2026-09-24.md.
+Decisions/status: Typed review-actions is the generic HTTP endpoint; compatibility routes remain. Human accepted additions are separate scope, not fabricated printed rows. Dismissals carry only with unchanged content and retain origin metadata. Finalize freezes the presented revision; existing frozen reports cannot be edited. One unresolved request per actor/claim is durably saved before sending and retried with its exact original key/payload; stale conflicts require refresh/reapplication.
+Checks actually run: Latest full Python suite 1287 passed, 1 skipped, two dependency deprecation warnings (71.19s). Final npm run build passed TypeScript and Vite after the print fix (254.89 kB JS / 79.24 kB gzip). WSL git diff --check passed. Both Compose configurations/builds passed; six lean and eight full long-running services healthy with successful offline cost bootstrap. Baseline browser walkthrough passed against lean Docker (real PostgreSQL/Redpanda/MinIO). Review-controls passed locally and against full Docker, including row/addition/dismissal/completeness and stale conflict recovery. Final local frozen report exported at assessment 2/review 3; both PDF pages contain page numbers and schema/version footer; rendered page inspection confirms no overlap. Earlier Docker baseline froze assessment 2/review 2; later local notes account for the different pairing. Generated evidence remains ignored under artifacts/evaluation/ui-baseline and ui-review.
+Uncommitted work, limitations and missing prerequisites: Everything remains uncommitted and prior work is preserved. All evidence-stage results are fixtures; synthetic cost validation is not real repair-price accuracy. No new OCR/model evaluation. Current fixture-ID and coordinate controls are prototypes, not real overlay acceptance. Generic unsent form drafts, live M4/M5 integration, team layout/alias decisions, broker outage/restore, trained inference/GPU and evaluation remain. Final PDF margin boxes were verified in Chromium; other print engines were not checked.
+Next concrete step and agreed owner: Next implementation item is the M5/M8 identity/uncertainty contract reconciliation, followed by live document artifact/worker wiring. Codex is the requested continuing implementer; team-reviewed layouts/data/configuration choices remain unassigned. Use the current next-work list above rather than the superseded historical handoff.
+
+Verification cleanup: Codex stopped its isolated cmev-codex-review containers and local API/Vite/worker processes after checks. Named volumes, runtime/codex-review-20260924.db, evidence and ignored screenshots/PDFs are retained. No user services or stored data were removed.
+
+
+## Implementation check-in (2026-09-25)
+
+Date/time and timezone: 2026-09-25, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task: Check in the latest accumulated changes at the user's request.
+Branch / baseline commit / resulting commit: code-skeleton / 1c9ca28 / the commit containing this entry; use Git history for its identifier.
+Changed paths and status: Preserve and commit the accumulated implementation, configurations, specifications, tests and verification handoff. No new implementation behavior in this check-in step. Earlier uncommitted-status entries are historical snapshots.
+Validation: Reviewed working-tree paths and dependency/manifest changes; screened candidates for large/binary files, sensitive file types and common credential patterns with no matches. Staged whitespace validation runs before commit. Prior milestone evidence remains 1287 tests passed, 1 skipped, frontend build and lean/full browser smoke; those suites were not repeated for this version-control-only step.
+Limitations: Fixture/synthetic boundaries and remaining work above are unchanged. Generated evidence, runtime databases, model files and local credentials remain excluded. No push requested or performed.
+Next concrete step: Continue the M5/M8 contract reconciliation and live document integration described above.

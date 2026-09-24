@@ -1,0 +1,14 @@
+# Grouped price splits (M7 "Split discipline"). Every quote of one base case stays in
+# one partition; base cases are allocated per cost key so each key reaches every
+# partition where its count allows. Test membership is reserved and hashed before fitting.
+split_version: split-2026.09.1
+status: proposed
+group_key: base_case_id
+stratify_by: cost_key
+seed: 20260922
+cutoff_date: 2026-06-30        # records dated after this are excluded with `after_cutoff`
+ratios:
+  train: "0.55"
+  validation: "0.15"
+  calibration: "0.10"
+  test: "0.20"

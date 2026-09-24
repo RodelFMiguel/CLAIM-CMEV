@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.evt.assessment-ready.v1.schema.json",
+  "title": "cmev.evt.assessment-ready.v1",
+  "description": "An assessment revision is committed. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload",
+    "assessment_revision"
+  ],
+  "properties": {
+    "assessment_revision": {
+      "$ref": "envelope.v1.schema.json#/$defs/revision"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "assessment_revision": {
+          "$ref": "envelope.v1.schema.json#/$defs/revision"
+        },
+        "assessment_state": {
+          "enum": [
+            "ready",
+            "incomplete"
+          ]
+        },
+        "finding_counts": {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            },
+            "unsupported": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            },
+            "cost_outlier": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            },
+            "insufficient_evidence": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            },
+            "excluded": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            }
+          },
+          "required": [
+            "ok",
+            "unsupported",
+            "cost_outlier",
+            "insufficient_evidence",
+            "excluded"
+          ],
+          "additionalProperties": false
+        },
+        "proposed_addition_count": {
+          "$ref": "envelope.v1.schema.json#/$defs/count"
+        },
+        "suppressed_addition_count": {
+          "$ref": "envelope.v1.schema.json#/$defs/count"
+        },
+        "cost_checks": {
+          "type": "object",
+          "properties": {
+            "within_range": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            },
+            "outside_range": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            },
+            "insufficient_support": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            },
+            "not_evaluated": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            }
+          },
+          "required": [
+            "within_range",
+            "outside_range",
+            "insufficient_support",
+            "not_evaluated"
+          ],
+          "additionalProperties": false
+        },
+        "pinned_versions": {
+          "$ref": "envelope.v1.schema.json#/$defs/versions"
+        },
+        "incomplete_reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+          }
+        }
+      },
+      "required": [
+        "assessment_revision",
+        "assessment_state",
+        "finding_counts",
+        "proposed_addition_count",
+        "suppressed_addition_count",
+        "cost_checks",
+        "pinned_versions",
+        "incomplete_reasons"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

@@ -1,0 +1,51 @@
+# M6 pen-mark linking configuration. See docs/specs/module-06-pen-mark-recognition.md,
+# "Configuration and thresholds" (the specification names this file penmarks_linking.yaml).
+#
+# Status: every value is PROPOSED, copied from the module specification. None has been
+# selected on validation pages; no detector exists yet and detection or linking accuracy
+# is unmeasured. Select on the validation group only, freeze before the final test, and
+# bump link_config_version on any change. Every PenMark records this version under
+# versions["link_config"].
+link_config_version: "m6-linking/0.1.0"
+
+detection:
+  # Per-class score thresholds applied before linking. They mirror
+  # detector.score_threshold.* in the (not yet written) configs/models/penmarks.yaml.
+  score_threshold:
+    exclusion: 0.50      # tuned towards recall >= 0.90
+    price_change: 0.45   # tuned towards recall >= 0.85
+  # Merge same-class boxes on one page at or above this IoU; counted once. The merged
+  # detections stay listed in the linking result (detection artifact), never dropped silently.
+  dedupe_iou: 0.60
+
+band:
+  extend_above_row_heights: 0.60   # a: prices are usually written above the printed amount
+  extend_below_row_heights: 0.25   # b
+
+link:
+  weights:          # must sum to 1.0, validated at load
+    v: 0.45         # vertical overlap with the row band
+    c: 0.25         # mark area inside the row box
+    rc: 0.15        # row area covered by the mark
+    col: 0.15       # centre in an allowed column
+  min_score: 0.50
+  margin_to_second: 0.20        # EX-1 (exclusion marks)
+  candidate_min_score: 0.20     # candidate retention only, never linking
+
+price_change:
+  margin_to_second: 0.35            # PC-2, deliberately stricter than exclusions
+  amount_overlap_min: 0.30          # PC-1 fires at or above this amount-token overlap
+  amount_overlap_second_max: 0.10   # PC-1 is blocked when a second row is touched above this
+
+column:
+  # "all": the mark centre may lie anywhere across the row box (an X may cross the row).
+  # [amount]: the centre must lie in the page's amount column (union of the rows'
+  # printed-amount boxes). The specification also allows unit_price, but the M5 row
+  # contract carries no unit-price column box, so only "amount" is supported.
+  exclusion_columns: all
+  price_change_columns: [amount]
+  right_margin_tolerance_px: 40     # amounts written just right of the column
+  default_page_width_px: 2480       # used to express the tolerance when the page width is not supplied
+
+row:
+  max_marks_per_row: 2              # more non-rejected marks than this makes the row conflicting

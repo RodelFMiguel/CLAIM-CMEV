@@ -1,0 +1,38 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:parts_segment:ph_01JAX7Q1A:7d2e9b14",
+  "versions": {
+    "parts_model": "parts-segformer-b0/1.2.0",
+    "preprocess_config": "vision-pre-1.0.0",
+    "taxonomy": "parts-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-orchestrator"
+  },
+  "occurred_at": "2026-09-22T03:14:08Z",
+  "dedup_key": "aa14bd93c7e0f2615d8a3b4c9e7f0a2d6b8c1e3f5a7d9b0c2e4f6a8d1b3c5e70",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "3f7c9a1b4e2d8c60a5f1b3d7e9c2a4867b0d5e1f3a9c7b2d4e6f8a0c1b3d5e7f",
+  "payload": {
+    "photo": {
+      "file_id": "ph_01JAX7Q1A",
+      "object_uri": "s3://cmev-originals/01JAX.../ph_01JAX7Q1A.jpg",
+      "sha256": "b2c395aaf4cc3c62b77345938cbdca34d921267bf39f8cc7fa3232e2737a12eb",
+      "media_type": "image/jpeg",
+      "byte_count": 3874112,
+      "width": 4032,
+      "height": 3024,
+      "page_number": null,
+      "exif_orientation": 6
+    },
+    "model_id": "parts-segformer-b0",
+    "model_version": "1.2.0",
+    "preprocess_config_version": "vision-pre-1.0.0",
+    "taxonomy_version": "parts-1.0.0"
+  }
+}

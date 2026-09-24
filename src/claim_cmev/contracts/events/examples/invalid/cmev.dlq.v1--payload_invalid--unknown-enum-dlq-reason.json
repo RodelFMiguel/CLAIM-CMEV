@@ -1,0 +1,61 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:page_read:pg_01JAX7Q2A:6d3f01ab",
+  "versions": {
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-orchestrator"
+  },
+  "occurred_at": "2026-09-22T03:15:46Z",
+  "dedup_key": "4e81c0a37b69d2f50a1c3e5b7d9f0224466880aacce02468acef13579bdf0246",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "0c9a27e4b1d38f56a0c2e4b6d8f1032547698badcfe0213456789abcdef01234",
+  "payload": {
+    "original_topic": "cmev.cmd.page-read.v1",
+    "original_envelope": {
+      "schema_version": "0.2.0",
+      "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+      "input_revision": 1,
+      "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:page_read:pg_01JAX7Q2A:6d3f01ab",
+      "trace_id": "9d1f0c2a7b3e4f58"
+    },
+    "original_payload": {
+      "page": {
+        "file_id": "pg_01JAX7Q2A",
+        "object_uri": "s3://cmev-originals/01JAX.../pg_01JAX7Q2A.jpg"
+      },
+      "ocr_engine": "paddleocr",
+      "ocr_version": "2.7.3",
+      "preprocess_config_version": "doc-pre-1.0.0"
+    },
+    "failure_history": [
+      {
+        "attempt": 1,
+        "occurred_at": "2026-09-22T03:15:20Z",
+        "reason_code": "ocr_engine_error",
+        "reason_text": "RuntimeError during recognition"
+      },
+      {
+        "attempt": 2,
+        "occurred_at": "2026-09-22T03:15:32Z",
+        "reason_code": "ocr_engine_error",
+        "reason_text": "RuntimeError during recognition"
+      },
+      {
+        "attempt": 3,
+        "occurred_at": "2026-09-22T03:15:44Z",
+        "reason_code": "ocr_engine_error",
+        "reason_text": "RuntimeError during recognition"
+      }
+    ],
+    "dlq_reason": "gave_up",
+    "first_failed_at": "2026-09-22T03:15:20Z",
+    "last_failed_at": "2026-09-22T03:15:44Z",
+    "replayable": true
+  }
+}

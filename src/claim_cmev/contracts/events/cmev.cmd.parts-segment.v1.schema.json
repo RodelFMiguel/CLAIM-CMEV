@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.cmd.parts-segment.v1.schema.json",
+  "title": "cmev.cmd.parts-segment.v1",
+  "description": "Segment parts on one photo. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "photo": {
+          "$ref": "envelope.v1.schema.json#/$defs/fileRef"
+        },
+        "model_id": {
+          "$ref": "envelope.v1.schema.json#/$defs/identifier"
+        },
+        "model_version": {
+          "$ref": "envelope.v1.schema.json#/$defs/version"
+        },
+        "preprocess_config_version": {
+          "$ref": "envelope.v1.schema.json#/$defs/version"
+        },
+        "taxonomy_version": {
+          "type": "string",
+          "pattern": "^parts-\\d+\\.\\d+\\.\\d+$"
+        }
+      },
+      "required": [
+        "photo",
+        "model_id",
+        "model_version",
+        "preprocess_config_version",
+        "taxonomy_version"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

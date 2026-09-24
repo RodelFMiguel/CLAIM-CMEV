@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.cmd.part-summary.v1.schema.json",
+  "title": "cmev.cmd.part-summary.v1",
+  "description": "Summarise every observation for the input revision. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "observation_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "part_prediction_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "photo_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "identity_confirmations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "confirmation_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "photo_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "part_code": {
+                "$ref": "envelope.v1.schema.json#/$defs/partCode"
+              },
+              "side": {
+                "enum": [
+                  "left",
+                  "right",
+                  "centre",
+                  "not_applicable"
+                ]
+              },
+              "actor": {
+                "$ref": "envelope.v1.schema.json#/$defs/shortText"
+              },
+              "recorded_at": {
+                "$ref": "envelope.v1.schema.json#/$defs/timestamp"
+              },
+              "review_revision": {
+                "$ref": "envelope.v1.schema.json#/$defs/revision"
+              }
+            },
+            "required": [
+              "confirmation_id",
+              "photo_id",
+              "part_code",
+              "side",
+              "actor",
+              "recorded_at",
+              "review_revision"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "coverage_confirmations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "confirmation_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "photo_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "part_code": {
+                "$ref": "envelope.v1.schema.json#/$defs/partCode"
+              },
+              "side": {
+                "enum": [
+                  "left",
+                  "right",
+                  "centre",
+                  "not_applicable"
+                ]
+              },
+              "actor": {
+                "$ref": "envelope.v1.schema.json#/$defs/shortText"
+              },
+              "recorded_at": {
+                "$ref": "envelope.v1.schema.json#/$defs/timestamp"
+              },
+              "review_revision": {
+                "$ref": "envelope.v1.schema.json#/$defs/revision"
+              },
+              "photo_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "envelope.v1.schema.json#/$defs/id"
+                },
+                "minItems": 1
+              },
+              "covers_enough": {
+                "type": "boolean"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "confirmation_id",
+              "part_code",
+              "side",
+              "actor",
+              "recorded_at",
+              "review_revision",
+              "covers_enough"
+            ],
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "required": [
+                  "photo_id"
+                ]
+              },
+              {
+                "required": [
+                  "photo_ids"
+                ]
+              }
+            ]
+          }
+        },
+        "summary_config_version": {
+          "$ref": "envelope.v1.schema.json#/$defs/version"
+        },
+        "taxonomy_version": {
+          "type": "string",
+          "pattern": "^parts-\\d+\\.\\d+\\.\\d+$"
+        }
+      },
+      "required": [
+        "observation_ids",
+        "part_prediction_ids",
+        "photo_ids",
+        "identity_confirmations",
+        "coverage_confirmations",
+        "summary_config_version",
+        "taxonomy_version"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

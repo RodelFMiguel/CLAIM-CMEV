@@ -1,7 +1,9 @@
 name: claim-cmev
 
+# Profiles (technical specification 11.1): `lean` runs one combined worker; `full` runs the
+# orchestrator, the fixture stage producers and the consolidator as separate containers
+# from the same image. Both use the same handlers, topics and records.
 x-app-environment: &app-environment
-  CMEV_PROFILE: lean
   CMEV_FIXTURE_MODE: "true"
   CMEV_DATABASE_URL: postgresql+psycopg://cmev:${CMEV_DB_PASSWORD:?Set CMEV_DB_PASSWORD in infra/compose/.env}@cmev-db:5432/cmev
   CMEV_KAFKA_BOOTSTRAP: cmev-kafka:9092
@@ -12,14 +14,41 @@ x-app-environment: &app-environment
   CMEV_OBJECT_STORE_BUCKET: cmev-evidence
   CMEV_MODEL_REGISTRY_PATH: /srv/artifacts/models
   CMEV_COST_TABLE_PATH: /srv/artifacts/cost_tables
+  CMEV_ACTIVE_COST_TABLE_VERSION: ${CMEV_ACTIVE_COST_TABLE_VERSION:-}
   DEMO_EMAIL: ${CMEV_DEMO_EMAIL:-surveyor@claim-cmev.demo}
   DEMO_PASSWORD: ${CMEV_DEMO_PASSWORD:?Set local demonstration password}
   COOKIE_SECURE: "false"
   ALLOWED_ORIGINS: http://localhost:${CMEV_WEB_PORT:-8080},http://127.0.0.1:${CMEV_WEB_PORT:-8080}
 
+x-app-image: &app-image
+  build:
+    context: ../..
+    dockerfile: infra/Dockerfile.api
+  image: claim-cmev-app:pipeline
+
+x-worker: &worker
+  <<: *app-image
+  depends_on:
+    cmev-api:
+      condition: service_healthy
+    cmev-kafka:
+      condition: service_healthy
+    cmev-cost-bootstrap:
+      condition: service_completed_successfully
+  volumes:
+    - cost-tables:/srv/artifacts/cost_tables:ro
+  healthcheck:
+    test: [CMD, python, -m, claim_cmev.worker, healthcheck]
+    interval: 15s
+    timeout: 5s
+    start_period: 40s
+    retries: 4
+  networks: [backend]
+  restart: unless-stopped
+
 services:
   cmev-web:
-    profiles: [lean]
+    profiles: [lean, full]
     build:
       context: ../..
       dockerfile: infra/Dockerfile.web
@@ -31,51 +60,76 @@ services:
     networks: [edge, backend]
     restart: unless-stopped
 
+  # Offline M7 build into a volume that every runtime service mounts read-only. The
+  # builder is deterministic; a rerun reuses the published table. Runs to completion once.
+  cmev-cost-bootstrap:
+    profiles: [lean, full]
+    <<: *app-image
+    command: [python, -m, claim_cmev.costs.reference.build, --seed, "20260924", --out, /srv/artifacts/cost_tables,
+              --config-dir, /srv/configs/costs, --promote]
+    volumes:
+      - cost-tables:/srv/artifacts/cost_tables
+    network_mode: none
+    restart: "no"
+
   cmev-api:
-    profiles: [lean]
-    build:
-      context: ../..
-      dockerfile: infra/Dockerfile.api
-    image: claim-cmev-api:baseline
-    environment: *app-environment
+    profiles: [lean, full]
+    <<: *app-image
+    environment:
+      <<: *app-environment
+      CMEV_PROFILE: ${CMEV_PROFILE:-lean}
     depends_on:
       cmev-db:
         condition: service_healthy
       cmev-objectstore:
         condition: service_healthy
+      cmev-cost-bootstrap:
+        condition: service_completed_successfully
+    volumes:
+      - cost-tables:/srv/artifacts/cost_tables:ro
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/readyz', timeout=4)"]
       interval: 10s
       timeout: 5s
-      start_period: 30s
+      start_period: 40s
       retries: 6
     networks: [backend]
     restart: unless-stopped
 
   cmev-worker-combined:
     profiles: [lean]
-    build:
-      context: ../..
-      dockerfile: infra/Dockerfile.api
-    image: claim-cmev-api:baseline
-    command: [python, -m, claim_cmev.worker]
-    environment: *app-environment
-    depends_on:
-      cmev-api:
-        condition: service_healthy
-      cmev-kafka:
-        condition: service_healthy
-    healthcheck:
-      test: [CMD, python, -m, claim_cmev.worker, healthcheck]
-      interval: 15s
-      timeout: 5s
-      start_period: 30s
-      retries: 4
-    networks: [backend]
-    restart: unless-stopped
+    <<: *worker
+    command: [python, -m, claim_cmev.worker, run, --role, combined]
+    environment:
+      <<: *app-environment
+      CMEV_PROFILE: lean
+
+  cmev-orchestrator:
+    profiles: [full]
+    <<: *worker
+    command: [python, -m, claim_cmev.worker, run, --role, orchestrator]
+    environment:
+      <<: *app-environment
+      CMEV_PROFILE: full
+
+  cmev-worker-producers:
+    profiles: [full]
+    <<: *worker
+    command: [python, -m, claim_cmev.worker, run, --role, producers]
+    environment:
+      <<: *app-environment
+      CMEV_PROFILE: full
+
+  cmev-consolidator:
+    profiles: [full]
+    <<: *worker
+    command: [python, -m, claim_cmev.worker, run, --role, consolidator]
+    environment:
+      <<: *app-environment
+      CMEV_PROFILE: full
 
   cmev-kafka:
-    profiles: [lean]
+    profiles: [lean, full]
     image: docker.redpanda.com/redpandadata/redpanda:v26.2.2
     command:
       - redpanda
@@ -95,7 +149,7 @@ services:
       - --advertise-kafka-addr
       - cmev-kafka:9092
       - --set
-      - redpanda.auto_create_topics_enabled=true
+      - redpanda.auto_create_topics_enabled=false
     healthcheck:
       test: [CMD, rpk, cluster, health, --exit-when-healthy, -X, brokers=localhost:9092]
       interval: 10s
@@ -108,7 +162,7 @@ services:
     restart: unless-stopped
 
   cmev-db:
-    profiles: [lean]
+    profiles: [lean, full]
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: cmev
@@ -125,7 +179,7 @@ services:
     restart: unless-stopped
 
   cmev-objectstore:
-    profiles: [lean]
+    profiles: [lean, full]
     build:
       context: ../..
       dockerfile: infra/Dockerfile.objectstore
@@ -153,3 +207,4 @@ volumes:
   postgres-data:
   kafka-data:
   objectstore-data:
+  cost-tables:

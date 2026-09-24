@@ -1,0 +1,5 @@
+# Mapping status for every mapped value (data contracts section 3.4). Each mapped value
+# also stores its original source text and the mapping version.
+taxonomy_version: mapping-status-1.0.0
+status: frozen
+values: [resolved, ambiguous, unmapped]

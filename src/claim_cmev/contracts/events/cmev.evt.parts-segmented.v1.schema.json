@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.evt.parts-segmented.v1.schema.json",
+  "title": "cmev.evt.parts-segmented.v1",
+  "description": "Part masks exist for one photo. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "photo_id": {
+          "$ref": "envelope.v1.schema.json#/$defs/id"
+        },
+        "part_mask_ref": {
+          "$ref": "envelope.v1.schema.json#/$defs/maskRef"
+        },
+        "transform": {
+          "$ref": "envelope.v1.schema.json#/$defs/imageTransform"
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "part_code": {
+                "$ref": "envelope.v1.schema.json#/$defs/partCode"
+              },
+              "pixel_count": {
+                "$ref": "envelope.v1.schema.json#/$defs/count"
+              },
+              "mean_confidence": {
+                "$ref": "envelope.v1.schema.json#/$defs/confidence"
+              }
+            },
+            "required": [
+              "part_code",
+              "pixel_count",
+              "mean_confidence"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "part_prediction_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "image_quality": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "acceptable",
+                "limited",
+                "unusable",
+                "not_assessed"
+              ]
+            },
+            "blur_score": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exposure_state": {
+              "enum": [
+                "normal",
+                "under",
+                "over",
+                "not_assessed"
+              ]
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+              }
+            }
+          },
+          "required": [
+            "state",
+            "blur_score",
+            "exposure_state",
+            "reasons"
+          ],
+          "additionalProperties": false
+        },
+        "empty_result": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "photo_id",
+        "part_mask_ref",
+        "transform",
+        "parts",
+        "part_prediction_ids",
+        "image_quality",
+        "empty_result"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

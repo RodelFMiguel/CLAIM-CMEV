@@ -1,0 +1,91 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:page_read:pg_01JAX7Q2A:6d3f01ab",
+  "versions": {
+    "ocr": "paddleocr/2.7.3",
+    "preprocess_config": "doc-pre-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-worker-ocr"
+  },
+  "occurred_at": "2026-09-22T03:14:48Z",
+  "dedup_key": "d121a28d50258b435c7917ef39ad90c7dce229761c2cf74b986f31f7021e27af",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "2dc8cae0a5c2de280b34a8e2246c31a679f4a33e410024875c3d5850fd896a4b",
+  "payload": {
+    "page_id": "dp_01JAX8S1",
+    "page_number": 1,
+    "corrected_render_ref": {
+      "artifact_id": "dr_01JAX8S0",
+      "object_uri": "s3://cmev-derived/01JAX.../corrected_pg_01JAX7Q2A.png",
+      "sha256": "a7b896e96a175bfa278ea7fdfa0ef98890a7a60f4062ebee2c6f2b9dddffdbb6",
+      "media_type": "image/png",
+      "byte_count": 5120934
+    },
+    "page_reading_ref": {
+      "artifact_id": "dj_01JAX8S2",
+      "object_uri": "s3://cmev-derived/01JAX.../reading_pg_01JAX7Q2A.json",
+      "sha256": "b8c92ccc275adc34219850e0a1be4c33a49cde025ee929ccbea56e2a03ce11de",
+      "media_type": "application/json",
+      "byte_count": 84211
+    },
+    "transform": {
+      "source_width": 3024,
+      "source_height": 4032,
+      "corrected_width": 2480,
+      "corrected_height": 3508,
+      "rotation_degrees": 0.0,
+      "exif_orientation": 1,
+      "render_scale": null,
+      "geometry_correction": "perspective",
+      "correction_reason": "boundary_reliable",
+      "homography": [
+        [
+          0.8421,
+          0.0213,
+          -118.4
+        ],
+        [
+          -0.0162,
+          0.8537,
+          -207.9
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "homography_inverse": [
+        [
+          1.187,
+          -0.0296,
+          134.4
+        ],
+        [
+          0.0225,
+          1.1709,
+          246.1
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "text_granularity": "line",
+    "token_count": 214,
+    "mean_text_confidence": 0.93,
+    "page_quality": {
+      "state": "complete",
+      "reasons": []
+    },
+    "correction_applied": true
+  }
+}

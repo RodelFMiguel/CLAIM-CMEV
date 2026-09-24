@@ -367,6 +367,23 @@ The first nine carry over from the v1 platform. The rest are new and exist becau
 | **Worker starts with a model whose hash does not match its manifest** | The worker refuses to start and is never marked ready. No command is consumed. No fixture output is substituted |
 | **Same claim assessed under the `lean` and `full` profiles** | Identical findings from identical inputs and identical pinned versions |
 
+## Implementation note (2026-09-24)
+
+The fixture-backed API routes review actions through
+POST /claims/{claim_id}/assessments/{r}/review-actions. Its strict body is
+ReviewActionRequest (action_type, expected_review_revision, optional
+expected_input_revision and action-specific fields); the Idempotency-Key header is
+required. Notes and mark-decision endpoints remain compatibility adapters. Other
+resource-specific URLs in section 3 describe the target API and are not separate aliases
+in this implementation. Decision-changing success is 202; review-only success is 200.
+The assessment response adds review_overlay (dismissals with origin linkage, addition
+decisions and accepted scope) without changing machine findings. Print-view adds the
+frozen typed M9 report alongside the existing snapshot.
+
+See [verification and remaining boundaries](../verification/model-independent-2026-09-24.md).
+Human additions remain separate from printed rows. Finalize freezes the presented
+review revision as section 9.2 specifies.
+
 ## 12. Tasks
 
 - [ ] Implement `cmev-api`: configuration, HTTP surface in section 3, Kafka producer through the outbox, result consumer for `assessment-ready` and `job-failed`.

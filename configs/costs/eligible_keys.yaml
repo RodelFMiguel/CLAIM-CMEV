@@ -1,0 +1,63 @@
+# Frozen (proposed) cost grid and eligible part/operation combinations for M7.
+# Grid = cost-catalogue parts x {repair, replace, paint} x vehicle classes, SGD only.
+# Keys outside `eligible` publish a withheld row with `unsupported_combination`;
+# they are never generated just to fill the grid. Status: proposed, pending the
+# Lanes 1-3 vocabulary agreement (M7 implementation task 1).
+# The fixed basis (quantity 1, pre-tax, no discounts, operation semantics) is defined
+# once in configs/taxonomy/cost_basis.yaml and checked by the build. Bundled operations
+# are outside the basis. Left and right parts share one synthetic price by convention;
+# that never resolves photographic side identity.
+version: eligible-keys-2026.09.1
+status: proposed
+currency: SGD
+cost_basis: single_part_pre_tax_no_discount_v1
+part_vocabulary_ref: data_contracts section 3.1 (21 HITL part codes)
+# The 21 HITL parts minus front-wheel, back-wheel and licence-plate (M7 cost key table).
+catalogue_parts:
+  - windshield
+  - back-windshield
+  - front-window
+  - back-window
+  - front-door
+  - back-door
+  - front-bumper
+  - back-bumper
+  - headlight
+  - tail-light
+  - hood
+  - trunk
+  - mirror
+  - roof
+  - grille
+  - rocker-panel
+  - quarter-panel
+  - fender
+operations: [repair, replace, paint]
+vehicle_classes: [hatchback_small, sedan_standard, suv_crossover, van_commercial]
+# Reviewed subset. Every other catalogue pair is withheld as unsupported_combination.
+eligible:
+  front-bumper: [repair, replace, paint]
+  back-bumper: [repair, replace, paint]
+  hood: [repair, replace, paint]
+  trunk: [repair, replace, paint]
+  fender: [repair, replace, paint]
+  quarter-panel: [repair, replace, paint]
+  front-door: [repair, replace, paint]
+  back-door: [repair, replace, paint]
+  headlight: [replace]
+  tail-light: [replace]
+  mirror: [replace, paint]
+  grille: [replace]
+  windshield: [repair, replace]
+  back-windshield: [replace]
+excluded_notes:
+  headlight: lamp units are replaced, not repaired or painted
+  tail-light: lamp units are replaced, not repaired or painted
+  mirror: mirror repair is not priced separately; the cap may be painted
+  grille: grilles are replaced; plastic and chrome finishes are not painted
+  windshield: glass is never painted; chip repair and replacement are priced
+  back-windshield: tempered rear glass cannot be repaired and is never painted
+  front-window: not in the reviewed v2 subset
+  back-window: not in the reviewed v2 subset
+  roof: not in the reviewed v2 subset
+  rocker-panel: not in the reviewed v2 subset
