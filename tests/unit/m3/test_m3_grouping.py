@@ -78,12 +78,12 @@ def test_same_physical_part_confirmed_on_two_photos_forms_one_group():
     assert group.supporting_photo_ids == ["ph_01", "ph_02"]
 
 
-def test_latest_identity_confirmation_wins():
+def test_conflicting_sides_on_one_photo_withhold_observation_identity():
     observations = [obs("o_1", "ph_01", "dent", "front-door")]
     groups = _groups(observations, [identity("ic_old", "ph_01", "front-door", "left", review=1),
                                     identity("ic_new", "ph_01", "front-door", "right", review=2)])
-    assert _shape(groups) == [("resolved", "front-door", "right", ("o_1",))]
-    assert groups[0].identity_confirmation_ids == ["ic_new"]
+    assert _shape(groups) == [("part_only", "front-door", "unknown", ("o_1",))]
+    assert groups[0].identity_confirmation_ids == []
 
 
 def test_identity_for_another_part_does_not_resolve():

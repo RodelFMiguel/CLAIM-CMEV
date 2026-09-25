@@ -95,10 +95,10 @@ def test_job_key_includes_the_confirmation_set():
 
 def test_superseded_confirmations_are_reported():
     old = identity("ic_old", "ph_01", "front-door", "left", review=1)
-    new = identity("ic_new", "ph_01", "front-door", "right", review=2)
+    new = identity("ic_new", "ph_01", "front-door", "left", review=2)
     outcome = run([], [pred("ph_01", "front-door")], [old, new])
     assert outcome.superseded_confirmation_ids == ("ic_old",)
-    assert [c.side for c in outcome.coverage if c.part_code == "front-door"] == ["right"]
+    assert [c.side for c in outcome.coverage if c.part_code == "front-door"] == ["left"]
 
 
 def test_confirmation_for_an_unknown_photo_is_rejected():

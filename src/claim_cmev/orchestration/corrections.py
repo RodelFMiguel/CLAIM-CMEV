@@ -37,15 +37,19 @@ def apply_corrections(records, marks, claim_input, revision):
                     data["part_code"] = None if values["part_code"] == "unknown" else values["part_code"]
                     data["part_mapping_status"] = "resolved" if data["part_code"] else "unmapped"
                 if "operation" in values:
-                    data["operation_mapping_status"] = "unmapped" if values["operation"] == "unknown" else "resolved"
+                    data["operation"] = None if values["operation"] == "unknown" else values["operation"]
+                    data["operation_mapping_status"] = "resolved" if data["operation"] else "unmapped"
                 if "side" in values:
                     data["side_source"] = "absent" if values["side"] == "unknown" else "human_correction"
                 data["field_uncertainty"] = [u for u in data["field_uncertainty"] if u["field"] not in values]
                 if data["part_code"] is None and not any(u["field"] == "part_code" for u in data["field_uncertainty"]):
                     data["field_uncertainty"].append({"field": "part_code", "reason": "human_unresolved"})
-                if data["operation"] == "unknown" and not any(u["field"] == "operation" for u in data["field_uncertainty"]):
+                if data["operation"] is None and not any(u["field"] == "operation" for u in data["field_uncertainty"]):
                     data["field_uncertainty"].append({"field": "operation", "reason": "human_unresolved"})
                 if "printed_line_amount" in values:
+                    if not item.printed_amount_corrected:
+                        data["original_printed_line_amount"] = item.printed_line_amount
+                    data["printed_amount_corrected"] = True
                     data.update(effective_price=values["printed_line_amount"], effective_price_source="printed",
                                 effective_price_reason=None)
                 revised.append(LineItem.model_validate(data))

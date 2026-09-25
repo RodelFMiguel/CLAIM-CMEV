@@ -376,6 +376,8 @@ class _Job:
                 rotation_degrees=geometry.rotation_deg, exif_orientation=rendered.source.exif_orientation,
                 render_scale=rendered.source.render_scale, geometry_correction=geometry.kind,
                 correction_reason=geometry.reason,
+                render_to_pdf=(tuple(tuple(float(v) for v in row) for row in rendered.source.render_to_source)
+                               if rendered.source.render_scale is not None else None),
                 homography=tuple(tuple(float(v) for v in row) for row in geometry.homography),
                 homography_inverse=tuple(tuple(float(v) for v in row) for row in geometry.inverse)),
             extraction_route="ocr", text_granularity=actual,

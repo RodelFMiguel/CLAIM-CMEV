@@ -107,7 +107,7 @@ Every mapped value stores the original source text, the mapped code, the mapping
 
 Bounding boxes in interchange are `[x_min, y_min, x_max, y_max]`, normalised to `[0, 1]`, origin top-left, bounds ordered. Report page numbers are one-based.
 
-For pages, store page width, height, rotation, rendering scale, whether perspective correction was applied, and the inverse transform back to the uploaded page and to the original PDF. A box is normalised on the **corrected render**; navigating back to the original requires the stored transform.
+For pages, store page width, height, rotation, rendering scale, whether perspective correction was applied, and the inverse transform back to the uploaded page and to the original PDF. A box is normalised on the **corrected render**; navigating back to the original requires the stored transform. New PDF page records carry optional `render_to_pdf`, a 3x3 matrix from source-render pixels to original PDF user-space points (bottom-left origin), including crop offsets and page rotation. Compose it after `homography_inverse`. Scale alone is insufficient. Image uploads use null. Legacy PDF records lacking the matrix remain readable, but PDF-point conversion refuses until regenerated; their old coordinates are not reinterpreted.
 
 Masks reference raster artifacts with height, width, class encoding and source photo ID. Preserve resize, padding and orientation transforms. A part mask and a damage mask for the same photo must be reconcilable to one grid; if they cannot be, the job fails with `mask_geometry_mismatch` rather than resampling a class map with interpolation that invents values.
 
@@ -159,11 +159,12 @@ Page file ID, page number (one-based), corrected render reference, page-reading 
 | `amount_box_norm` | nullable | The printed amount's own box, used for mark linking |
 | `original_part_text`, `original_operation_text` | yes | Exactly as read. Never normalised away |
 | `part_code`, `part_mapping_status` | yes, `part_code` nullable | Null with a reason when unmapped or ambiguous |
-| `side`, `side_source` | yes | `unknown` unless the printed text or a correction resolves it. `side_source` is `document_text`, `human_correction` or `absent` |
+| `side`, `side_source` | yes | `unknown` unless printed text, a correction, or an explicitly unsided taxonomy part resolves it. Unsided parts with no side text use `not_applicable` and `side_source=absent`; absent text never resolves a sided part. `side_source` is `document_text`, `human_correction` or `absent` |
 | `operation`, `operation_mapping_status` | yes, `operation` nullable | Null with a reason |
 | `quantity` | nullable | Decimal string. **A missing quantity is never silently set to one** |
 | `unit_price` | nullable | Decimal string with a reason when absent |
-| `printed_line_amount` | nullable | Decimal string. The workshop's printed price, as read |
+| `printed_line_amount` | nullable | Decimal string. Current reading of the workshop's printed price, including an explicit OCR correction |
+| `original_printed_line_amount`, `printed_amount_corrected` | optional | First extracted numeric amount (nullable) and correction flag (default false). On the first printed-amount correction preserve that original; later corrections cannot replace it. `original_amount_text` remains unchanged. Show the original and corrected reading in review and frozen reports |
 | `effective_price` | nullable | **Held separately from `printed_line_amount`.** See the rule below |
 | `effective_price_source` | yes | `printed`, `surveyor_entry` or `unresolved`, with a reason when `unresolved` |
 | `currency`, `cost_basis` | yes | From explicit document or claim information, or a recorded correction |

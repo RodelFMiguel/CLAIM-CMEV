@@ -13,7 +13,7 @@ try {
   }});
   assert.ok(login.ok());
   const claims = await (await page.request.get(base + '/api/v1/claims')).json();
-  const c = claims.items.find(c => c.reference === 'CLM-24019');
+  const c = claims.items.find(c => c.reference === (process.env.CMEV_E2E_PRINT_REFERENCE || 'CLM-24019'));
   const path = '/api/v1/claims/' + c.claim_id + '/assessments/' + c.assessment_revision;
   const review = await (await page.request.get(base + path + '/review')).json();
   if (!review.finalized) {
@@ -23,7 +23,12 @@ try {
   }
   await page.goto(base + '/claims/' + c.claim_id + '/print?assessment=' + c.assessment_revision + '&review=' + c.review_revision);
   await page.getByRole('button', { name: 'Print to PDF' }).waitFor();
-  await mkdir('artifacts/evaluation/ui-review', { recursive: true });
+  const assessment = await (await page.request.get(base + path)).json();
+  for (const row of assessment.line_items.filter(r => r.printed_amount_corrected)) {
+    assert.ok(row.original_printed_amount !== undefined);
+    await page.getByText(/Original extraction:/).first().waitFor();
+  }
+  await mkdir('artifacts/evaluation/ui-review' , { recursive: true });
   await page.pdf({ path: 'artifacts/evaluation/ui-review/frozen-report.pdf', format: 'A4', printBackground: true });
   console.log('Exported frozen report ' + c.assessment_revision + '/' + c.review_revision);
 } finally { await browser.close(); }

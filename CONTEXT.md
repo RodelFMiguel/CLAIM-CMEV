@@ -1,6 +1,6 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-09-25 (Asia/Singapore), implementation check-in requested by the user.
+Last updated: 2026-09-25 (Asia/Singapore), architecture and remaining-effort estimate added at the user's request.
 Implementation baseline: commit 1c9ca28 on branch code-skeleton. The accumulated Claude/Codex changes are included in the commit containing this check-in update. No push was requested or performed. Read the current state and [verification record](docs/verification/model-independent-2026-09-24.md); earlier chronological handoffs below retain their original, sometimes superseded status.
 
 This file is the team's maintained handoff, not an automatically synchronised chat transcript. Share it with the skills and source changes through the team's normal version-control workflow.
@@ -18,7 +18,7 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 
 | Area | Verified state at this handoff |
 | --- | --- |
-| Repository | Claude's changes preserved and extended by Codex; accumulated implementation checked in on code-skeleton with this context update |
+| Repository | Claude's changes preserved and extended by Codex; implementation committed as f280209 on code-skeleton; subsequent architecture/effort documentation is recorded in the final section |
 | Specifications | Full target remains broader than the implementation. Only individually verified M9 checklist items are ticked; nine-priority status and gaps are in the verification record |
 | Architecture | Persisted orchestration, outbox/deduplication, fixture producers and real M8 consolidation run in lean and split-service full Compose. Full groups fixture producers in one container; final inference/GPU packaging remains |
 | Application | Typed review actions, M6 correction replay, M3 human-confirmation reruns, pinned cost lookup, review overlays, durable request retry and frozen M9 reports are connected to the API/workbench |
@@ -804,3 +804,207 @@ Changed paths and status: Preserve and commit the accumulated implementation, co
 Validation: Reviewed working-tree paths and dependency/manifest changes; screened candidates for large/binary files, sensitive file types and common credential patterns with no matches. Staged whitespace validation runs before commit. Prior milestone evidence remains 1287 tests passed, 1 skipped, frontend build and lean/full browser smoke; those suites were not repeated for this version-control-only step.
 Limitations: Fixture/synthetic boundaries and remaining work above are unchanged. Generated evidence, runtime databases, model files and local credentials remain excluded. No push requested or performed.
 Next concrete step: Continue the M5/M8 contract reconciliation and live document integration described above.
+
+
+## Latest architecture and remaining delivery estimate (2026-09-25)
+
+Date/time and timezone: 2026-09-25, Asia/Singapore.
+Contributor: Codex, at the user's request.
+Baseline inspected: commit f280209 on code-skeleton; working tree was clean before this documentation update.
+Changed path: CONTEXT.md only. This section supersedes earlier planning snapshots for current status, without deleting their history.
+
+### Architecture: implemented harness and missing real processing
+
+Legend: [I] implemented and exercised; [P] partly implemented; [M] missing.
+[I] describes application behavior, not measured model accuracy. The arrows below show
+the existing stage dependency graph and the intended real processors at each stage.
+
+~~~text
+                         CLAIM-CMEV ONLINE APPLICATION
+ +------------------------------------------------------------------------+
+ | [I] React workbench -> nginx -> FastAPI                                 |
+ |     Login, intake, original uploads, claim/review API, frozen print      |
+ | [P] Evidence panel: real page/photo overlays and direct box editing      |
+ +----------------------------------+-------------------------------------+
+                                    |
+                      [I] Commit input revision + outbox
+                                    |
+                      [I] Kafka / Redpanda transport
+                                    |
+               [I] Orchestrator: persisted jobs, fan-out, retries
+                      /                             \
+                     v                               v
+ +--------------------------------+  +------------------------------------+
+ | IMAGE BRANCH                   |  | DOCUMENT BRANCH                    |
+ |                                |  |                                    |
+ | [P] M1 part stage              |  | [P] M4 page reading                 |
+ | [M] SegFormer-B0 weights,      |  |     Raster/geometry/OCR library [I] |
+ |     inference + mask artifacts|  | [M] Live PaddleOCR worker +         |
+ |                |               |  |     real-page validation           |
+ |                v               |  |                 |                  |
+ | [P] M2 damage + assignment     |  |                 v                  |
+ | [M] Separate SegFormer-B0      |  | [P] M5 line-item parser             |
+ |     weights + inference       |  |     Deterministic parser/tests [I]  |
+ | [I] Mask assignment library    |  | [M] Live M4 artifact consumption,   |
+ |                |               |  |     reviewed layouts + validation |
+ |                v               |  |                 |                  |
+ | [P] M3 summary + coverage      |  |                 v                  |
+ | [I] Rules + human corrections  |  | [P] M6 marks + row linking          |
+ | [M] Real observation/quality   |  | [M] Faster R-CNN weights/inference  |
+ |     integration + calibration |  | [I] Linker, confirmation and amount |
+ |                |               |  |     correction state machine       |
+ +----------------+---------------+  +-----------------+------------------+
+                  |                                    |
+                  +------------------+-----------------+
+                                     v
+                 [I] Orchestrator join: stage completion + versions
+                     Inputs to consolidation: M3 + M5 + M6 records
+                                     |
+                                     v
+                 [I] M8 deterministic comparison and cost checks <-----+
+                     No LLM decides the findings                     |
+                                     |                               |
+                                     v                               |
+                 [I] Immutable assessment + pinned versions          |
+                                     |                               |
+                                     v                               |
+                 [P] M9 review / evidence / frozen report             |
+                     [I] Corrections, dismissals, accepted scope,     |
+                         durable submitted requests and PDF          |
+                     [M] Real overlays, all form drafts, final       |
+                         accessibility/usability acceptance          |
+                                                                     |
+ OFFLINE ONLY                                                        |
+ [I] Synthetic M7 generator -> empirical ranges -> published table ---+
+ [M] LightGBM quantile pair + comparison/RQ4 evaluation
+     Runtime reads the pinned table; no per-claim M7 fitting.
+
+ [M] Training/data pipelines -> evaluated M1/M2/M6 artifact packages
+                             -> validated read-only model registry
+                             -> real stage workers above
+~~~
+
+**What runs today:** all six initial evidence stages are supplied by FixtureProducers. M8 runs real deterministic rules on those records. M6 human changes replay through the real state machine; identity/coverage changes can rerun deterministic M3 over stored fixture observations. Uploaded photos and documents are stored, but the runtime does not yet derive model/OCR/parser results from their pixels. Setting CMEV_FIXTURE_MODE=false currently refuses to start; it is not a switch to an available live pipeline.
+
+**The document dependency matters:** current scheduling is M4 -> M5 -> M6, because linking marks requires the M5 row boxes. M6 detection could later overlap M5, but linked output must wait for rows. The join coordinates completion, failures and version compatibility; M8 decides findings. Missing photos, ambiguous identity and pending marks withhold applicable decisions rather than become passes or unsupported-repair findings.
+
+**Persistence and packaging beneath the diagram:**
+
+~~~text
+ [I] PostgreSQL: ops jobs/outbox/dedup/branch state, pipeline artifacts,
+                assessments; claims/reviews currently use baseline_records
+ [M] Complete specified domain tables/migrations and integrity constraints
+
+ [I] MinIO: original evidence + API-mediated access
+ [P] Derived evidence: real masks/pages/overlays and their lineage still needed
+
+ [I] lean: web + API + combined worker + broker + database + object store
+ [I] current full: web + API + orchestrator + fixture-producers +
+                   consolidator + broker + database + object store
+ [I] Offline cost-bootstrap job; serving services mount cost tables read-only
+ [M] target full: replace fixture-producers with six actual module workers,
+                  validated model mounts, measured CPU/GPU configuration
+ [M] isolated training image/profile; recovery/restore and capacity acceptance
+~~~
+
+Decision-changing review actions feed back through the API to a new input revision and reassessment, reusing unaffected stages. Notes/dismissals update the review overlay. A finalized assessment/review pairing remains frozen; final insurer approval is separate.
+
+### Effort basis and definition of completion
+
+These are **remaining engineering estimates**, made from current code and specifications, not previously approved budgets or measured productivity. One man-day/person-day (PD) means eight hours of one person's focused work. Ranges include implementation, review and task-level checks. They exclude elapsed GPU execution, external access/consent delays, scheduling participants and cloud expenditure; those still affect calendar delivery.
+
+"Complete" here means the bounded v2 research prototype: real processing for the supported scope, integrated models and deterministic modules, required runtime/recovery checks, held-out evaluation, a small usability pilot, and final report/presentation. It does not mean insurer production deployment or guaranteed attainment of the proposed accuracy targets. A measured shortfall must be reported against its original target.
+
+Assumptions: reuse the committed libraries; use the proposed model families unless validation requires a recorded change; support only 2-3 agreed estimate layouts; have a usable GPU and permitted data; allow bounded initial training and validation iterations rather than open-ended research. Task estimates are engineering judgment with substantial uncertainty until those prerequisites are confirmed. Row-local model/parser evaluation is included with that component; R20 covers cross-module experiments, avoiding charging the same evaluation twice.
+
+### Remaining implementation, models and acceptance work
+
+Dependency IDs indicate required inputs; independent preparation and adapter scaffolding can begin earlier. Owners are suggested skill areas, not assigned people. "Ready now" does not mean all external acceptance data is already available.
+
+| ID | Remaining deliverable and completion evidence | Current starting point / model | Main dependencies; suggested owner | Effort (PD) |
+| --- | --- | --- | --- | ---: |
+| R01 | Reconcile M5/M8 unsided-part identity, uncertain printed amounts, parser version keys and remaining producer/consumer gaps; freeze agreed layouts, taxonomy, cost basis and API compatibility decisions with tests. | Typed contracts/rules exist; previously reported cross-module issues still need resolution. No model. | Ready now; domain + backend owners | 2-3 |
+| R02 | Build/review vision label conversion and grouped splits; verify data access, duplicate hashes and joint-label holdouts; preserve label provenance and reserve final tests before tuning. | HITL mapping helper/access records exist; full training preparation is absent. CarDD consent/files remain unconfirmed. | Start access audit now; vision/data owner | 4-6 |
+| R03 | Collect and label the team acceptance data: about 60 marked physical pages, assignment sample after checking reusable joint labels, and 5-10 vehicle groups. Record writer/page/template/vehicle partitions and independent intended decisions. | Targets are specified; no verified completed collection was found in the handoff. Includes team annotation effort. | R01/R02 split policy; team + domain reviewer | 5-8 |
+| R04 | Extend smoke-page synthesis into reproducible training generators for 2-3 estimate layouts and marked-page variants, with exact field/mark/row truth and asset licences. | M4 synthetic smoke helper exists; full estimate/mark training generators do not. | R01 and agreed R03 partition design; document/data owner | 3-5 |
+| R05 | Implement shared model artifact manifests/hashes, startup validation and live version selection; build isolated training environment/profile and read-only serving registry. Refuse missing/incompatible models. | Fixture version bundles and cost-table pinning exist; trained-model registry handover is absent. | R01; ML/platform owners | 3-5 |
+| R06 | Build shared SegFormer training entry point, fine-tune/evaluate M1, publish artifact, implement photo preprocessing/inference and mask/prediction adapter. Report per-class IoU and exact versions. | **M1: SegFormer-B0**, proposed HITL part model; no integrated checkpoint or live part inference. Side remains unknown unless separately confirmed. | R02/R05; vision owner | 5-8 |
+| R07 | Train/evaluate separate M2 model and wire damage mask/region artifacts into the existing assignment code. Report all supported classes and withholding. | **M2: separate SegFormer-B0**, proposed six-class CarDD model; region/assignment libraries already exist. | R02/R05 and shared trainer from R06; vision owner. CarDD access gates fitting | 5-8 |
+| R08 | Connect real M1/M2 records to M3, verify coordinates/quality, calibrate assignment and coverage thresholds on validation data and test reviewed-identity reruns without lost observations. | Deterministic M2 assignment/M3 summary libraries and correction replay exist. **No extra learned model.** | R03/R06/R07; vision + integration owners | 3-5 |
+| R09 | Package pinned pretrained OCR and wire M4 commands to stored originals, rendered/corrected pages and OCR artifacts; validate rotated PDFs, transforms, failure paths and real-page OCR/amount accuracy. | **M4: pretrained PaddleOCR**, no project training. Raster/OCR adapter and synthetic smoke exist; live worker is missing. | R01/R05, R03 pages for acceptance; document owner | 3-5 |
+| R10 | Wire M5 to persisted M4 output; finalize reviewed aliases/layout rules and uncertainty/completeness behavior; measure complete-entry, row and box accuracy on held-out layouts/pages. | **M5: deterministic parser**, no model training. Existing parser and OCR-box tests are reused. | R01/R04/R09 and R03 acceptance pages; document owner | 3-5 |
+| R11 | Train/evaluate and package the pen-mark detector, first on generated pages then permitted development pages; publish held-out detection results separately from human corrections. | **M6: Faster R-CNN ResNet-50 FPN**, proposed two foreground classes: exclusion and price change. No integrated detector. | R03/R04/R05; detection owner | 5-8 |
+| R12 | Wire M6 inference to corrected page artifacts and M5 rows; calibrate linking tolerances, preserve unresolved candidates and verify manual add/relink/amount actions against real boxes. | Linker/state machine and review actions exist. Automatic handwritten amount recognition is **not** required. | R09/R10/R11; detection + backend owners | 2-3 |
+| R13 | Implement the bounded LightGBM comparison, calibration decision and RQ4 support-reduction/ordinary-versus-injected anomaly runs; publish reproducible comparison and a selected frozen table. | **M7: lower/upper LightGBM quantile regressors**, fitted offline. Synthetic generator, empirical baseline, splits, support rules and lookup already exist. | R01 eligible keys/basis; cost/ML owner. Can proceed independently of image models | 3-5 |
+| R14 | Exercise M8 with actual branch outputs and partial/failure cases; close adapter defects, verify source references, matching uncertainty, accepted scope and pinned cost behavior. | M8 deterministic engine/join are implemented; this is real-input integration, not rebuilding consolidation or adding an LLM. | R08/R10/R12; backend + domain owners. Empirical M7 table can unblock this before R13 | 2-3 |
+| R15 | Build real evidence overlays/highlights and box interactions: masks, original/corrected pages, row/mark links and photo identity/coverage selection. Verify coordinate round trips and source navigation. | M9 overview/actions exist; current fixture-ID/manual-coordinate controls are prototypes. | R08/R09/R10/R12 artifacts; frontend + imaging owners | 4-6 |
+| R16 | Complete remaining M9 acceptance gaps: all unsent form drafts, conflict/finalize blocker navigation, error/reconnect states, keyboard/tablet/accessibility and real-evidence frozen-print checks. | Submitted-request replay, note/amount drafts, review API and Chromium report already work. Does not include full offline file sync. | R14/R15; frontend + QA owners | 2-4 |
+| R17 | Complete specified claim/review/imaging/document/cost persistence and service-query/API gaps, with migrations from current records, integrity constraints and historical revision preservation. Verify existing demonstrations survive migration. | ops/pipeline/assessment tables exist; claims/reviews remain in generic baseline_records. Avoid replacing completed outbox/join code. | R01; backend/database owner; can proceed alongside model work | 4-6 |
+| R18 | Package six real module workers, CPU/GPU serving configuration and read-only mounts; pin dependencies/images, expose required health/version diagnostics and verify lean/full equality on the same real inputs. | Current full splits orchestration/producers/consolidation but still groups all fixtures in one producer container. | R05 and live adapters R06-R12; platform + module owners | 3-5 |
+| R19 | Complete deployment acceptance: broker/consumer interruption and replay, timeout/backlog behavior, coordinated database/object-store snapshot/restore, historical report recovery, measured RAM/VRAM/startup/latency and runbook. | Local transport tests and Docker browser smoke passed; actual outage/restore/capacity evidence remains incomplete. | R17/R18; platform + QA owners | 4-6 |
+| R20 | Assemble/freeze evaluation manifests and cross-module runners; execute Experiment B, RQ1/RQ2/RQ3 integration/coverage/correction analyses and archive rule-test evidence for Experiment A. Report denominators, withholding and pre-correction results. | Unit/fixture tests exist; evaluated real-pipeline research results do not. Component fitting/metrics belong to R06-R12; RQ4/Experiment C to R13. | R03/R08/R12/R14 and frozen release artifacts; evaluation owners | 4-6 |
+| R21 | Instrument and run the small review pilot: two reviewers, three cases each, correction/evidence-access/time/comprehension measures. Use alternated manual/assisted cases if making an effort comparison. | Workbench exists; usability measurements are not recorded. | R16/R20; QA/domain reviewer + participants | 2-3 |
+| R22 | Produce final technical/research report and presentation, implementation/target traceability, actual effort and shortfall reporting, reproducibility handoff and documented-only views. | Handoff/specifications exist; final delivery/report completion is not established. Retain the original ten-person-day report allocation. | R13/R19/R20/R21; all lanes | 10 |
+| | **Total remaining core prototype delivery, before contingency** | | | **81-123** |
+
+This total includes data preparation/annotation, model development, integration, acceptance and reporting. It is not "81-123 days of training": GPU fitting may run for hours while the engineering work spans days. It also does not re-estimate the already implemented harness.
+
+For planning, carry a **20% additional uncertainty reserve**, giving approximately **98-148 PD** including contingency. The reserve is new estimate headroom, not a claim that the original five contingency days remain available. The largest uncertainties are data/label quality, OCR on photographed pages, detector generalization, and GPU/container compatibility.
+
+The original proposal budget was **50 PD for the entire project**, including ten report days. The estimate above is **remaining work from f280209**, not a revised 50-PD total; spent effort has not been measured here. Completing every stated target is therefore unlikely to fit the original budget without an explicit scope/budget decision. Do not add the old ADR runtime estimate again: R05/R17/R18/R19 already estimate the remaining infrastructure work. Adding people can parallelize lanes but cannot remove data-access gates, shared-GPU contention or final integration dependencies; person-days are not calendar days.
+
+### Optional work excluded from the core total
+
+| Item | Additional scope and model | Incremental effort (PD) |
+| --- | --- | ---: |
+| Stretch S1 | LayoutLMv3/CORD data preparation and OCR-token alignment, fitting/adapter integration, paired comparison with the core parser | 8-12 |
+| Stretch S2 | Pretrained TrOCR crop/amount suggestions, separate confidence/provenance, review UI and held-out exact-amount evaluation; no automatic confirmation | 3-5 |
+| Stretch S3 | Scripted synthetic final-approval import/refresh, independent support and supersession eligibility, lineage, versioned rebuild and pinned-old-assessment checks | 4-6 |
+| Optional explainer | LLM-generated wording over fixed M8 findings, schema/provenance checks and evidence that it cannot alter decisions or amounts | 2-4 |
+
+These estimates assume the core dependencies are complete. They do not activate the stretch goals or bypass their recorded gate. Enterprise identity/authorization, insurer systems, real-price sourcing, production availability/compliance and full offline evidence synchronization are outside this bounded prototype estimate and require a separate scope. Additional operations/audit/cost-detail screens remain described-only; the existing claim dashboard is retained.
+
+### Suggested execution order and verification boundary
+
+1. Start R01 now; in parallel obtain data/access and reserve splits (R02/R03), and agree registry interfaces (R05). Do not wait for trained models to settle document contracts.
+2. Progress document integration R04 -> R09 -> R10 and the R17 database work. In parallel train M1/M2 after data gates and run the independent M7 comparison.
+3. Finish M6 training/linking and the image summary integration; connect all real branches to M8 and M9. Build overlays against real artifact contracts as they become available.
+4. Complete full-profile serving, recovery, frozen evaluation, pilot and report. Keep model results separate from fixture checks at every milestone.
+
+Evidence used: current worker refusal of live mode and FixtureProducers registration; orchestration/plan.py dependency graph; persistence/tables.py schema boundary; existing vision/document/cost packages and pipeline files; Compose profiles; the [verified milestone](docs/verification/model-independent-2026-09-24.md); [module specifications](docs/specs/README.md), [training plan](docs/specs/model_training_specification.md), [technical architecture](docs/specs/technical_specification.md), [platform requirements](docs/specs/application_platform.md) and [evaluation plan](docs/specs/evaluation_plan.md).
+
+Validation for this update: read-only code/specification inspection, estimate-total arithmetic and Markdown/whitespace checks. No application tests, training runs or model evaluations were repeated for this documentation-only change. Existing 1287-passed/1-skipped evidence remains the dated fixture/synthetic result, not evidence that the missing work above is complete.
+
+
+## Defect remediation started (2026-09-25)
+
+Contributor: Codex; baseline f280209. User authorized fixing the reported review findings. Preserve the preceding uncommitted architecture/effort section.
+Confirmed before editing: section-subtotal row loss, continuation-prefix omission with false completeness, and failed dead-letter validation blocking subsequent messages, reproduced using runtime/review-scratch scripts.
+First fixes: messaging/consumer.py now retains malformed messages in ops.dead_letters and emits bounded database references with sanitized routing metadata; parser scans later sections after totals and records unbound continuation-prefix regions, withholding completeness. Added parser and poison-message regressions. Malformed inputs use transport/content-derived deduplication rather than trusting invalid envelope identifiers.
+Validation: tests/unit/m5 plus tests/integration/test_runtime_idempotency.py: 207 passed. Synthetic/local transport only; no Kafka outage/model evaluation claim.
+Status: review operation/coverage/completeness and worker connection cleanup changes are in progress, not yet verified. Remaining reported findings are still open. Prior blanket milestone-complete wording does not establish correctness on the newly reproduced paths.
+Next: verify review reassessment regressions, preserve original values and decisions across uploads, then cover identity, finalization and UI/runtime defects. No commit or push requested for this remediation.
+
+
+### Review and UI remediation milestone (2026-09-25)
+
+Changed paths: contracts/documents.py; orchestration/corrections.py and review_summary.py; review/actions.py, finalize.py and report.py; api/main.py and views.py; fixtures.py; vision/multiview/confirmations.py; worker.py; workbench ClaimReview.tsx, ReviewControls.tsx and pendingActions.ts; focused backend/M3/M5 regressions.
+Verified: unknown operation reassesses instead of stalling; confirmations preserve measured view signals; conflicting sides on one photo withhold photo-level identity; unsided taxonomy parts parse as not_applicable with absent text source; unreadable uploaded pages withhold declaration completeness; explicitly-empty rejects existing rows; unchanged document decisions and notes survive photo uploads; absent branches can produce a frozen incomplete-evidence report. Failed processing remains blocked. Earlier full checkpoint: 1295 passed, 1 skipped (fixture/synthetic only).
+In progress after that checkpoint: original extracted amount retained through repeated corrections and report export; atomic multi-tab pending-request protection and actor parsing; independent tab drafts; continuous reconnect polling; failed-stage retry controls; result styling and no unrelated evidence fallback; proxy-peer login isolation by account; full PDF crop/rotation transform; accepted human scope passed into consolidation; bounded-query reads. These later changes still require the next regression run and browser verification.
+Compatibility decisions: historical assessments remain immutable. New optional original-amount fields preserve the first extracted value; historical records retain defaults. New PDF render_to_pdf matrix maps to original PDF user space; legacy records without this matrix explicitly refuse PDF-point conversion and require regeneration. No historical coordinates or unknown sides are silently reinterpreted. No trained models were run.
+Next: validate all later changes, exercise browser recovery/printing and update contract/specification notes. No commit or push performed.
+
+
+### Defect remediation verified (2026-09-25)
+
+Contributor: Codex. Supersedes the in-progress status above. Preserved the existing architecture/effort entry and all preceding changes. No commit or push performed.
+
+Changed paths: the document parser/vocabulary (now m5-estimate-vocabulary/0.2.0), shared document/event records, M3 confirmation/replay logic, M8 accepted-scope input, review actions/finalization/report, API read/write adapters, dead-letter consumer/worker cleanup, workbench review controls/storage/styles, module/shared specifications, and maintained regression tests. Detailed finding-to-fix evidence: [defect remediation verification](docs/verification/defect-remediation-2026-09-25.md).
+
+Verified outcomes: later estimate sections are retained; unbound continuation regions are flagged partial; poison messages no longer recursively poison the dead-letter path; unknown operations reassess; measured coverage survives confirmation; unsided parser rows can pass M8 with explicit fixture evidence; conflicting sides withhold identity; unreadable pages cannot silently establish completeness; explicitly-empty rejects rows; original amount readings survive corrections and frozen PDF; unchanged-source decisions/audit survive uploads. Absent branches can freeze explicitly incomplete reports; failed stages remain blocking and have retry controls. Accepted human scope changes missing-scope reassessment without inventing printed rows. Browser pending requests survive multi-tab conflicts and legacy actor-key migration; duplicate tabs receive independent draft keys. Evidence selection, styling, reconnect polling, login isolation, PDF transforms, identity history, worker cleanup and repeated database reads are corrected.
+
+Validation: **1314 passed, 1 skipped** in the complete Python suite; the skipped test is optional real PaddleOCR smoke without configured weights. TypeScript and production Vite build passed. Chromium baseline, focused defect scenarios, review-controls/tablet recovery and corrected frozen-PDF export passed. Synthetic CLM-24020 assessment/review 4/6 retains original $1,150, corrected printed $1,160 and effective $980 separately. PDF text checked against frozen records and the affected rendered page inspected. `git diff --check` passed. Test services stopped; ignored local database/screenshots/PDF retained at paths in the verification note.
+
+Limits: these are fixture/synthetic and local-transport checks, not model results or a Kafka outage/production performance test. The original individually numbered 32-finding report was not supplied; the verification matrix covers the supplied defect groups and available reproductions. Unbound continuation rows still require review; two physical sides on one photograph require finer identity evidence and remain withheld by the current photo-level adapter. Changed-source corrections require reconfirmation; historical matrix-less PDF records require regenerated transforms. Existing frozen history is preserved.
+
+Next concrete step: review/commit this remediation patch, then resume the remaining model/data/integration work listed above; do not mark those deliverables complete on the strength of fixture tests.

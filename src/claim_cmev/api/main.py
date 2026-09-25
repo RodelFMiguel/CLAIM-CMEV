@@ -281,15 +281,16 @@ def create_app(database_url=None, storage_path=None):
     @app.post("/api/v1/auth/login")
     def login(body: Login, request: Request, response: Response):
         peer = request.client.host if request.client else "unknown"
-        recent = [t for t in failures.get(peer, []) if time.time() - t < 60]
+        attempt_key = (peer, body.email.casefold())
+        recent = [t for t in failures.get(attempt_key, []) if time.time() - t < 60]
         if len(recent) >= 10:
             fail(429, "login_rate_limited", "Too many attempts. Try again in a minute.")
-        valid = secrets.compare_digest(body.email.lower(), DEMO_USER["email"].lower()) & secrets.compare_digest(
-            body.password, setting("DEMO_PASSWORD", "Demo2026!"))
+        valid = secrets.compare_digest(body.email.lower().encode(), DEMO_USER["email"].lower().encode()) & secrets.compare_digest(
+            body.password.encode(), setting("DEMO_PASSWORD", "Demo2026!").encode())
         if not valid:
-            failures[peer] = recent + [time.time()]
+            failures[attempt_key] = recent + [time.time()]
             fail(401, "invalid_credentials", "The email or password is incorrect.")
-        failures.pop(peer, None)
+        failures.pop(attempt_key, None)
         token = secrets.token_urlsafe(48)
         with database.session.begin() as db:
             old = request.cookies.get(COOKIE)
@@ -316,9 +317,9 @@ def create_app(database_url=None, storage_path=None):
     @app.get("/api/v1/claims")
     def claims(q: str = ""):
         with database.session() as db:
-            all_items = [views.claim_view(db, r.data) for r in db.scalars(select(Record).where(Record.kind == "claim")
+            all_items = views.claim_views(db, [r.data for r in db.scalars(select(Record).where(Record.kind == "claim")
                                                                           .order_by(Record.key))
-                         if r.data.get("owner_id") == DEMO_USER["id"]]
+                         if r.data.get("owner_id") == DEMO_USER["id"]])
         items = [c for c in all_items if not q or q.lower() in json.dumps(c).lower()]
         return {"items": items, "total": len(items),
                 "stats": {"open_claims": sum(c["status"] != "ready_to_print" for c in all_items),
@@ -455,7 +456,33 @@ def create_app(database_url=None, storage_path=None):
                     fail(503, "dispatch_backlog", "Processing backlog is full. Please retry later.",
                          headers={"Retry-After": "30"})
                 c["photograph_count"] = photos
-                result = commit(db, c, records)
+                previous = get(db, f"input:{cid}:{c['input_revision']}") or {}
+                pointer = views.pointer_row(db, cid)
+                old_files = [get(db, "file:" + fid) for fid in previous.get("file_ids", [])]
+                unchanged = {role: [f["file_id"] for f in old_files if f and f["role"] == role] ==
+                             [f["file_id"] for f in records if f["role"] == role]
+                             for role in ("photograph", "estimate_page")}
+                reuse = []
+                if unchanged["photograph"]:
+                    reuse.extend(("parts", "damage", "summary"))
+                if unchanged["estimate_page"]:
+                    reuse.extend(("page_read", "line_items", "pen_marks"))
+                corrections, invalidated = [], []
+                for correction in previous.get("corrections", []):
+                    action_type = correction.get("event", {}).get("action_type", correction.get("action_type"))
+                    role = "photograph" if action_type in ("confirm_identity", "confirm_coverage") else "estimate_page"
+                    (corrections if unchanged[role] else invalidated).append(correction)
+                result = commit(db, c, records, corrections=corrections,
+                                base_assessment_revision=pointer["assessment_revision"] if pointer else None,
+                                reuse_from=previous.get("input_revision"), reuse_stages=reuse,
+                                cost_table_version=previous.get("cost_table_version"),
+                                review_revision=c["review_revision"])
+                if invalidated:
+                    key = f"input:{cid}:{result['input_revision']}"
+                    new_input = get(db, key)
+                    new_input["invalidated_corrections"] = invalidated
+                    new_input["invalidation_reason"] = "source_evidence_changed_requires_review"
+                    put(db, key, "input", new_input, cid)
                 return {"input_revision": result["input_revision"], "job_keys": result["job_keys"], "state": "queued",
                         "trace_id": result["trace_id"]}
             return idem(db, request, body.model_dump(), action, cid)

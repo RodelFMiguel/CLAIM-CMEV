@@ -71,6 +71,7 @@ class PageTransform(ContractModel):
     rotation_degrees: float = 0.0
     exif_orientation: int | None = Field(default=None, ge=1, le=8)
     render_scale: float | None = Field(default=None, gt=0)
+    render_to_pdf: Matrix3 | None = None
     geometry_correction: Literal["perspective", "rotation", "none"]
     correction_reason: ReasonCode
     homography: Matrix3 = IDENTITY_MATRIX
@@ -87,11 +88,17 @@ class PageTransform(ContractModel):
         return _apply(self.homography, x, y)
 
     def corrected_to_pdf_points(self, x: float, y: float) -> Point:
-        """Map a corrected-render pixel to original PDF points (one-based page, top-left origin)."""
+        """Map to original PDF user-space points (bottom-left origin, including crop/rotation).
+
+        Legacy records without the original-page matrix must be regenerated before
+        PDF highlighting; scale alone cannot recover rotation or crop offsets.
+        """
         if self.render_scale is None:
             raise ValueError("page has no PDF render scale; it was uploaded as an image")
         sx, sy = self.corrected_to_source(x, y)
-        return (sx / self.render_scale, sy / self.render_scale)
+        if self.render_to_pdf is None:
+            raise ValueError("PDF source transform unavailable; regenerate this legacy page record")
+        return _apply(self.render_to_pdf, sx, sy)
 
     def norm_box_to_source_quad(self, box: tuple[float, float, float, float]) -> Quad:
         """Corners of a normalised corrected-render box, mapped back to source pixels."""
@@ -205,6 +212,8 @@ class LineItem(ClaimRecord):
     quantity: Money | None
     unit_price: Money | None
     printed_line_amount: Money | None
+    original_printed_line_amount: Money | None = None
+    printed_amount_corrected: bool = False
     effective_price: Money | None
     effective_price_source: EffectivePriceSource
     effective_price_reason: ReasonCode | None = None
@@ -229,8 +238,13 @@ class LineItem(ClaimRecord):
             raise ValueError("part_code is present exactly when part_mapping_status is 'resolved'")
         if (self.operation is not None) != (self.operation_mapping_status == "resolved"):
             raise ValueError("operation is present exactly when operation_mapping_status is 'resolved'")
-        if (self.side == "unknown") != (self.side_source == "absent"):
-            raise ValueError("side is 'unknown' exactly when side_source is 'absent'; no side is inferred")
+        if self.side == "not_applicable" and self.side_source == "absent":
+            from ..taxonomy import load_parts
+            unsided = {p["code"] for p in load_parts().meta["parts"] if p.get("sided") is False}
+            if self.part_code not in unsided:
+                raise ValueError("not_applicable without printed side requires a taxonomy-defined unsided part")
+        elif (self.side == "unknown") != (self.side_source == "absent"):
+            raise ValueError("a physical side requires a source; absent side stays unknown")
         if self.effective_price_source == "unresolved":
             if self.effective_price is not None:
                 raise ValueError("an unresolved effective price must be null")

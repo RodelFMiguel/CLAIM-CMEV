@@ -484,6 +484,15 @@ def parse_pages(
                                          decision.reason, reasons=(status,), family_scores=dict(decision.scores)))
             continue
         family = config.family(decision.family_id)  # mixed families: each page parses with its own family
+        # A later header cannot account for preceding continuation rows. Keep that
+        # region visible and withhold completeness rather than silently discarding it.
+        if table_open and decision.headers[0].band_index > 0:
+            prefix = [b for band in bands[:decision.headers[0].band_index]
+                      if any(any(c.isdigit() for c in box.text) for box in band.boxes) for b in band.boxes]
+            if prefix:
+                regions.append(UnparsedRegion(page.page_id, page.page_number, "continuation_without_header",
+                                              union_box(prefix), tuple(b.box_id for b in prefix)))
+                counts["continuation_without_header"] += 1
         segments: list[Segment] = segment_page(index, bands, decision.headers, family, config.parser)
         for segment in segments:
             if first_header_seen:

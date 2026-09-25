@@ -228,8 +228,7 @@
       "minProperties": 1,
       "additionalProperties": {
         "type": "string",
-        "minLength": 1,
-        "maxLength": 128
+        "minLength": 1
       }
     },
     "provenance": {
@@ -251,14 +250,12 @@
         },
         "producer_service": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 64
+          "minLength": 1
         },
         "source_dataset_id": {
           "anyOf": [
             {
-              "type": "string",
-              "maxLength": 128
+              "type": "string"
             },
             {
               "type": "null"
@@ -268,8 +265,7 @@
         "derivation_refs": {
           "type": "array",
           "items": {
-            "type": "string",
-            "maxLength": 256
+            "type": "string"
           }
         }
       },
@@ -517,6 +513,16 @@
         },
         "homography_inverse": {
           "$ref": "#/$defs/matrix3"
+        },
+        "render_to_pdf": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/matrix3"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

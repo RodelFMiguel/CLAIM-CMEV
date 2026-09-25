@@ -14,7 +14,7 @@ import json
 import re
 from typing import Annotated, Any, Literal, get_args
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, WithJsonSchema
 
 SCHEMA_VERSION = "0.2.0"
 REJECTED_SCHEMA_VERSIONS = frozenset({"0.1.0"})
@@ -96,7 +96,7 @@ def _decimal_string(value: Any) -> str:
     return value
 
 
-DecimalStr = Annotated[str, BeforeValidator(_decimal_string)]
+DecimalStr = Annotated[str, BeforeValidator(_decimal_string), Field(pattern=_DECIMAL_TEXT.pattern)]
 """Exact nonnegative decimal string, used for money and quantities."""
 Money = DecimalStr
 
@@ -135,17 +135,19 @@ def _box(value: tuple[float, float, float, float]) -> tuple[float, float, float,
     return value
 
 
-BoxNorm = Annotated[tuple[float, float, float, float], AfterValidator(_box)]
+BoxNorm = Annotated[tuple[float, float, float, float], AfterValidator(_box), WithJsonSchema({
+    "type": "array", "items": {"type": "number", "minimum": 0, "maximum": 1},
+    "minItems": 4, "maxItems": 4})]
 """[x_min, y_min, x_max, y_max] normalised to [0, 1], origin top-left."""
 
 
 def _versions(value: dict[str, str]) -> dict[str, str]:
-    if not value:
-        raise ValueError("versions map must not be empty")
+    if not value or any(not v for v in value.values()):
+        raise ValueError("versions map and version values must not be empty")
     return value
 
 
-Versions = Annotated[dict[str, str], AfterValidator(_versions)]
+Versions = Annotated[dict[str, Annotated[str, Field(min_length=1)]], AfterValidator(_versions), Field(min_length=1)]
 
 
 class Reason(ContractModel):

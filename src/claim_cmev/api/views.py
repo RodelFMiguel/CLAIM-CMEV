@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
 from ..comparison.reason_codes import REASON_CATALOGUE_VERSION, SYNTHETIC_COST_NOTICE, display_text, is_known
@@ -24,8 +24,8 @@ from ..fixtures import FIXTURE_NOTICE
 from ..messaging.outbox import backlog
 from ..orchestration import state
 from ..orchestration.plan import BRANCH_OF, STAGES
-from ..persistence.tables import assessments, current_pointer
-from ..runtime import get
+from ..persistence.tables import assessments, current_pointer, branch_state, jobs
+from ..runtime import get, Record
 
 OPEN_RESULTS = ("unsupported", "cost_outlier", "insufficient_evidence")
 _MARK_TEXT = {
@@ -59,9 +59,9 @@ def assessment_rows(db: Session, claim_id: str) -> list[Mapping[str, Any]]:
                            .order_by(assessments.c.assessment_revision)).mappings())
 
 
-def _incomplete(db: Session, claim_id: str, revision: int, bs: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+def _incomplete(db: Session, claim_id: str, revision: int, bs: Mapping[str, Any] | None, job_rows=None) -> list[dict[str, Any]]:
     failed = [{"stage": j["stage"], "job_key": j["job_key"], "reason_code": j["reason_code"], "state": j["state"]}
-              for j in state.revision_jobs(db, claim_id, revision) if j["state"] in ("failed", "dead_lettered")]
+              for j in (state.revision_jobs(db, claim_id, revision) if job_rows is None else job_rows) if j["state"] in ("failed", "dead_lettered")]
     if bs is not None:
         for stage in STAGES:
             if bs[stage] == "failed" and not any(f["stage"] == stage for f in failed):
@@ -87,27 +87,30 @@ def review_for(db: Session, claim: Mapping[str, Any], revision: int) -> dict[str
             "finalized": False}
 
 
-def claim_view(db: Session, claim: Mapping[str, Any]) -> dict[str, Any]:
+def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None) -> dict[str, Any]:
     """The stored claim plus derived status, current assessment and counts."""
     view = deepcopy(dict(claim))
     cid, rev = claim["claim_id"], claim["input_revision"]
-    pointer = pointer_row(db, cid)
+    pointer = pointer_row(db, cid) if snapshot is None else snapshot["pointers"].get(cid)
     current = pointer is not None and pointer["input_revision"] == rev
-    bs = state.branch_row(db, cid, rev) if rev else None
-    claim_input = get(db, f"input:{cid}:{rev}") if rev else None
+    bs = (state.branch_row(db, cid, rev) if rev else None) if snapshot is None else snapshot["branches"].get((cid, rev))
+    records = snapshot["records"] if snapshot is not None else None
+    claim_input = (get(db, f"input:{cid}:{rev}") if rev else None) if records is None else records.get(f"input:{cid}:{rev}")
     view.update(latest_assessment_revision=pointer["assessment_revision"] if pointer else None,
                 assessment_revision=pointer["assessment_revision"] if current else None,
                 finding_count=pointer["finding_count"] if current else 0,
                 estimate_row_count=pointer["estimate_row_count"] if current else 0,
                 declared_total=pointer["declared_total"] if current else None,
                 photograph_count=len(claim_input.get("photo_ids", [])) if claim_input else 0)
-    failed = _incomplete(db, cid, rev, bs) if rev else []
+    job_rows = None if snapshot is None else snapshot["jobs"].get((cid, rev), [])
+    failed = _incomplete(db, cid, rev, bs, job_rows) if rev else []
     if not rev:
         status, processing = "awaiting_upload", "awaiting_upload"
     elif current:
-        review = get(db, f"review:{cid}:{pointer['assessment_revision']}") or {}
+        review_key = f"review:{cid}:{pointer['assessment_revision']}"
+        review = (get(db, review_key) if records is None else records.get(review_key)) or {}
         status = "ready_to_print" if review.get("finalized") else "in_review"
-        row = assessment_row(db, cid, pointer["assessment_revision"])
+        row = assessment_row(db, cid, pointer["assessment_revision"]) if snapshot is None else snapshot["assessments"].get((cid, pointer["assessment_revision"]))
         documents = bool(claim_input and claim_input.get("page_targets"))
         processing = "ready" if documents else "awaiting_declared_entries"
         if row is not None and row["state"] == "incomplete" and documents:
@@ -115,11 +118,38 @@ def claim_view(db: Session, claim: Mapping[str, Any]) -> dict[str, Any]:
     elif failed:
         status, processing = "incomplete", "incomplete"
     else:
-        intake = [j for j in state.stage_jobs(db, cid, rev, "intake")]
+        intake = state.stage_jobs(db, cid, rev, "intake") if job_rows is None else [j for j in job_rows if j["stage"] == "intake"]
         queued = bool(intake) and intake[0]["state"] in ("pending", "dispatched")
         status, processing = "processing", "queued" if queued else "processing"
     view.update(status=status, processing_state=processing)
     return view
+
+
+def claim_views(db: Session, claims: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Fetch current list metadata in fixed batches, without loading historical assessments."""
+    if not claims:
+        return []
+    ids = [c["claim_id"] for c in claims]
+    revisions = [(c["claim_id"], c["input_revision"]) for c in claims if c["input_revision"]]
+    pointers = {r["claim_id"]: r for r in db.execute(select(current_pointer).where(
+        current_pointer.c.claim_id.in_(ids))).mappings()}
+    branches = {(r["claim_id"], r["input_revision"]): r for r in db.execute(select(branch_state).where(
+        tuple_(branch_state.c.claim_id, branch_state.c.input_revision).in_(revisions))).mappings()}
+    grouped_jobs = {}
+    for r in db.execute(select(jobs.c.claim_id, jobs.c.input_revision, jobs.c.job_key, jobs.c.stage,
+                              jobs.c.state, jobs.c.reason_code).where(
+            tuple_(jobs.c.claim_id, jobs.c.input_revision).in_(revisions))).mappings():
+        grouped_jobs.setdefault((r["claim_id"], r["input_revision"]), []).append(r)
+    keys = [f"input:{cid}:{rev}" for cid, rev in revisions] + [
+        f"review:{cid}:{p['assessment_revision']}" for cid, p in pointers.items()]
+    records = {r.key: r.data for r in db.scalars(select(Record).where(Record.key.in_(keys)))}
+    assessment_keys = [(cid, p["assessment_revision"]) for cid, p in pointers.items()]
+    current_states = {(r.claim_id, r.assessment_revision): {"state": r.state} for r in db.execute(
+        select(assessments.c.claim_id, assessments.c.assessment_revision, assessments.c.state).where(
+            tuple_(assessments.c.claim_id, assessments.c.assessment_revision).in_(assessment_keys)))}
+    snapshot = {"pointers": pointers, "branches": branches, "jobs": grouped_jobs,
+                "records": records, "assessments": current_states}
+    return [claim_view(db, c, snapshot=snapshot) for c in claims]
 
 
 def processing_view(db: Session, claim: Mapping[str, Any], input_revision: int | None = None) -> dict[str, Any]:
@@ -168,6 +198,9 @@ def _row_legacy(finding: Mapping[str, Any], item: Mapping[str, Any], marks: list
         "description": " ".join(t for t in (item["original_part_text"], item["original_operation_text"]) if t),
         "part_code": item["part_code"] or "unmapped", "side": item["side"], "operation": item["operation"] or "unmapped",
         "quantity": item["quantity"], "printed_amount": item["printed_line_amount"],
+        "original_printed_amount": item.get("original_printed_line_amount"),
+        "printed_amount_corrected": item.get("printed_amount_corrected", False),
+        "original_amount_text": item.get("original_amount_text"),
         "effective_amount": item["effective_price"], "effective_price_source": item["effective_price_source"],
         "effective_price_reason": item["effective_price_reason"], "currency": item["currency"],
         "cost_basis": item["cost_basis"], "mark_state": mark_state.state if mark_state else "none",
@@ -228,7 +261,10 @@ def assessment_view(db: Session, claim: Mapping[str, Any], row: Mapping[str, Any
     cid = claim["claim_id"]
     review = review_for(db, claim, row["assessment_revision"])
     claim_input = get(db, f"input:{cid}:{row['input_revision']}") or {}
-    files = [f for f in (get(db, "file:" + fid) for fid in claim_input.get("file_ids", [])) if f]
+    file_ids = claim_input.get("file_ids", [])
+    by_id = {r.data["file_id"]: r.data for r in db.scalars(select(Record).where(
+        Record.kind == "file", Record.claim_id == cid, Record.key.in_(["file:" + fid for fid in file_ids])))}
+    files = [by_id[fid] for fid in file_ids if fid in by_id]
     items = {i["entry_id"]: i for i in inputs.get("line_items", [])}
     marks = inputs.get("pen_marks", [])
     states = row_mark_states(list(items), [PenMark.model_validate(m) for m in marks]) if items else {}
@@ -257,6 +293,7 @@ def assessment_view(db: Session, claim: Mapping[str, Any], row: Mapping[str, Any
             "files": [f for f in files if not f.get("fixture_placeholder")],
             "fixture_files": [f for f in files if f.get("fixture_placeholder")],
             "fixture_scenario": inputs.get("fixture_scenario"),
+            "invalidated_corrections": claim_input.get("invalidated_corrections", []),
             "versions": {**body["pinned_versions"], "cost_table": row["cost_table_version"],
                          "rules_config": row["rules_config_version"], "schema": body["schema_version"]},
             "reason_catalogue_version": REASON_CATALOGUE_VERSION,

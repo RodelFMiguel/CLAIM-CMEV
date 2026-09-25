@@ -135,9 +135,8 @@ def _salvage(value: Any) -> dict[str, Any] | None:
             and job_key.startswith(f"{claim}:{revision}:")):
         return None
     trace = value.get("trace_id") if isinstance(value.get("trace_id"), str) and value.get("trace_id") else "untraced"
-    versions = value.get("versions") if isinstance(value.get("versions"), Mapping) and value.get("versions") else None
     return {"claim_id": claim, "input_revision": revision, "job_key": job_key, "trace_id": trace[:128],
-            "versions": {str(k): str(v)[:128] for k, v in (versions or {"code": "unknown"}).items()},
+            "versions": {"code": "unknown"},
             "dedup_key": value.get("dedup_key") if isinstance(value.get("dedup_key"), str) else None}
 
 
@@ -285,7 +284,11 @@ class ConsumerRuntime:
         salvaged = None if envelope else _salvage(message.value)
         with self.session_factory.begin() as session:
             now = self.clock()
-            dedup = envelope.dedup_key if envelope else (salvaged or {}).get("dedup_key")
+            dedup = envelope.dedup_key if envelope else hashlib.sha256(
+                json.dumps([message.topic, message.partition, message.offset, _jsonable(message.value)],
+                           sort_keys=True).encode()).hexdigest()
+            if salvaged is not None:
+                salvaged["dedup_key"] = dedup
             if dedup:
                 if session.execute(select(consumed_messages.c.id).where(
                         consumed_messages.c.consumer_group == self.group,
@@ -350,11 +353,14 @@ class ConsumerRuntime:
     def _dlq_message(self, message: Message, ident: Mapping[str, Any], envelope: Envelope | None, dlq_reason: str,
                      history: list[dict[str, Any]], replayable: bool, now: datetime) -> dict[str, Any]:
         original_dedup = envelope.dedup_key if envelope else ident.get("dedup_key") or "none"
-        value = message.value
-        original_envelope = ({k: v for k, v in value.items() if k != "payload"} if isinstance(value, Mapping)
-                             else {})
-        payload_value = value.get("payload") if isinstance(value, Mapping) else value
-        original_payload = payload_value if isinstance(payload_value, Mapping) else str(payload_value)[:65536]
+        # Rejected bytes remain in ops.dead_letters. Republishing them inside a
+        # validated message can repeat the original rejection (or exceed its limit).
+        reference = {"store": "ops.dead_letters", "consumer_group": self.group,
+                     "topic": message.topic, "partition": message.partition, "offset": message.offset,
+                     "sha256": hashlib.sha256(json.dumps(_jsonable(message.value), sort_keys=True).encode()).hexdigest()}
+        original_envelope = {"record_ref": reference}
+        original_payload = {"record_ref": reference}
+        history = [{**h, "reason_text": h["reason_code"]} for h in history]
         dlq_envelope = Envelope(
             claim_id=ident["claim_id"], input_revision=ident["input_revision"], job_key=ident["job_key"],
             versions=ident["versions"], trace_id=ident["trace_id"], occurred_at=now,

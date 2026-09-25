@@ -210,4 +210,5 @@ def test_perspective_page_transform_round_trip():
     assert all(abs(a - b) < 1e-2 for p, q in zip(quad, src.tolist()) for a, b in zip(p, q))
     pdf = PageTransform(source_width=2480, source_height=3508, corrected_width=2480, corrected_height=3508,
                         render_scale=300 / 72, geometry_correction="none", correction_reason="pdf_render")
-    assert pdf.corrected_to_pdf_points(2480, 3508) == pytest.approx((595.2, 841.92))
+    with pytest.raises(ValueError, match="source transform unavailable"):
+        pdf.corrected_to_pdf_points(2480, 3508)

@@ -1093,7 +1093,7 @@ apps/workbench/
 | Item | Decision |
 | --- | --- |
 | Primary | `GET /api/v1/claims/{id}/events` returns `text/event-stream`. `cmev-api` consumes the Kafka status topics and pushes `stage_changed`, `assessment_ready` and `review_revision_changed` events |
-| Fallback | If the stream fails to open or drops twice, fall back to `GET /claims/{id}/processing` every 3 seconds, backing off to 10 seconds after 2 minutes, and stop after 15 minutes with a manual refresh control |
+| Fallback | If the stream fails to open or drops twice, fall back to `GET /claims/{id}/processing` every 3 seconds, backing off to 10 seconds after 2 minutes, and continue while processing remains active, including after transient connection failures; retain a manual refresh control |
 | Build order | Implement polling first because it is simple to test and needs no proxy tuning. Add the stream behind the `sse_enabled` flag once `cmev-api` publishes it |
 | Correctness | Every event carries the claim id and the revision it refers to. An event for an older revision is ignored. The client always reconciles by refetching the named resource rather than trusting the event payload as state |
 | Honesty | A dropped stream shows "Reconnecting" and a last-updated time. It never freezes an old state while looking live |
@@ -1214,3 +1214,8 @@ These need a team decision before or during day 2. None of them is settled by th
 | [Evaluation plan](evaluation_plan.md) | Where the usability measurements in section 11 are reported |
 | [Mockups README](../mockups/README.md) | The described-only views and their required fields |
 | [Proposal v2](../CLAIM-CMEV_project_proposal_v2.md) | The governing plan for scope, rules and budget |
+
+
+### Implemented recovery safeguards (2026-09-25)
+
+Pending requests are keyed by the authenticated actor and claim. IndexedDB compare-and-update transactions prevent a second tab from replacing or deleting a different unacknowledged request. A conflicting tab keeps its form values and reloads to resolve the existing request. Note/amount drafts are stored per tab. Stage retry controls remain visible for retryable failed jobs even when an assessment exists. Selecting a row with no linked original shows missing evidence rather than defaulting to an unrelated upload. Unsupported, cost-outlier, insufficient and OK results use distinct text, icons/borders and styling. Unknown operations remain unknown in the correction form.

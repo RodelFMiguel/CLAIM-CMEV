@@ -252,3 +252,8 @@ Targets are hypotheses from v2 section 13.1. RQ3 is an exploratory case study wi
 | Whether unresolved observations get one group each or one shared bucket per photograph | Lane 1 | Day 3, affects the M9 overview layout |
 | Whether the supported panel list is the full 21 classes or a smaller agreed subset | Lane 1 with Lane 4 | Day 2 |
 | Team vehicle group availability, and which required scenarios are missing | Lane 1 | Day 4, gaps reported not silently dropped |
+
+
+### Confirmation conflict handling (2026-09-25)
+
+The current identity record names a photo and part, without an instance-region selector. Confirmations for different sides of the same part on one photo are retained and withhold photo-level assignment; the last confirmation must not assign every observation to its side. Repeated same-side statements may supersede earlier same-side statements. To resolve a photo that genuinely shows both sides requires instance-level identity evidence, which remains outside this photo-level adapter. Unaffected measured view-quality signals are reused during confirmation reassessment, never replaced with missing/default signals.

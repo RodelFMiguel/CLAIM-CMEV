@@ -596,7 +596,7 @@ def fixture_bundle(scenario: str, claim_id: str, input_revision: int = 1) -> Fix
             original_part_text=row.part_text, original_operation_text=row.op_text,
             original_amount_text=row.amount_text or None,
             part_code=row.part_code, part_mapping_status=row.part_status, side=row.side,
-            side_source="absent" if row.side == "unknown" else "document_text",
+            side_source="absent" if row.side in ("unknown", "not_applicable") else "document_text",
             operation=row.operation, operation_mapping_status=row.op_status,
             quantity=row.qty_text or None, unit_price=unit, printed_line_amount=printed,
             effective_price=printed, effective_price_source="printed" if printed else "unresolved",

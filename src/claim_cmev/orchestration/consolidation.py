@@ -104,6 +104,7 @@ class Consolidator:
                 observations=records.get("damage_observation", []),
                 identity_confirmations=records.get("identity_confirmation", []),
                 coverage_confirmations=records.get("coverage_confirmation", []),
+                accepted_scope=[e for e in review_events(claim_input) if e.action_type == "accept_addition"],
                 line_items=items, pen_marks=marks, declaration=declarations[0] if declarations else None,
                 pages=records.get("document_page", []), cost_table_version=payload["cost_table_version"],
                 rules_config_version=payload["rules_config_version"], pinned_versions=payload["pinned_versions"],
@@ -120,6 +121,7 @@ class Consolidator:
         body = assessment.model_dump(mode="json")
         snapshot = {**inputs, "line_items": [i.model_dump(mode="json") for i in items],
                     "pen_marks": [m.model_dump(mode="json") for m in marks], "mark_actions_applied": actions,
+                    "accepted_scope": [e.model_dump(mode="json") for e in request.accepted_scope],
                     "fixture_scenario": claim_input.get("fixture_scenario")}
         session.execute(insert(assessments).values(
             claim_id=claim_id, assessment_revision=assessment_revision, input_revision=rev, state=assessment.state,

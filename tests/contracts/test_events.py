@@ -181,3 +181,24 @@ def test_image_transform_record_matches_event_definition():
 
 def test_schemas_live_in_the_package():
     assert Path(SCHEMA_DIR).parts[-3:] == ("claim_cmev", "contracts", "events")
+
+
+def test_long_provenance_and_versions_valid_in_records_are_valid_on_wire():
+    from claim_cmev.contracts.common import Provenance
+    message = load_example("cmev.evt.page-read.v1")
+    provenance = Provenance(source_kind="fixture", runtime_profile="lean", producer_service="p-" * 70,
+                            source_dataset_id="d-" * 140, derivation_refs=["r-" * 150])
+    message["provenance"] = provenance.model_dump(mode="json")
+    message["versions"] = {"code": "v-" * 100}
+    validate_message("cmev.evt.page-read.v1", message)
+
+
+def test_empty_version_value_is_rejected_by_record_and_wire():
+    from pydantic import ValidationError, TypeAdapter
+    from claim_cmev.contracts.common import Versions
+    with pytest.raises(ValidationError):
+        TypeAdapter(Versions).validate_python({"code": ""})
+    message = load_example("cmev.evt.page-read.v1")
+    message["versions"] = {"code": ""}
+    with pytest.raises(ContractError):
+        validate_message("cmev.evt.page-read.v1", message)

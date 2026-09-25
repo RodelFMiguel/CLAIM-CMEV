@@ -3,8 +3,9 @@
 An ``IdentityConfirmation`` states that one photo shows one physical part with a side;
 a ``CoverageConfirmation`` states that named views show enough of one physical part.
 They are separate human records and never rewrite a model row. When the surveyor
-revises a statement, the latest confirmation for the same key wins (ordered by review
-revision, then time, then ID) and the earlier one is listed as superseded.
+repeats a statement for the same photo/part/side, the latest confirmation wins.
+Different sides on the same photo/part are retained as a conflict: the photo-level
+contract cannot assign individual predictions to physical sides. Neither side wins.
 
 The job key includes the set of supplied confirmation IDs, so a new confirmation is a
 genuine recomputation while a plain redelivery is not (M3 "Duplicate delivery").
@@ -66,6 +67,7 @@ class ConfirmationIndex:
     """(part_code, side) -> the latest coverage confirmation."""
     supplied_ids: tuple[str, ...] = ()
     superseded_ids: tuple[str, ...] = ()
+    conflicting_identity_ids: tuple[str, ...] = ()
 
     def identity_side(self, photo_id: str, part_code: str) -> str | None:
         found = self.identity.get((photo_id, part_code))
@@ -133,17 +135,27 @@ def build_confirmation_index(identity_confirmations: Sequence[IdentityConfirmati
 
     identity: dict[tuple[str, str], IdentityConfirmation] = {}
     coverage: dict[tuple[str, str], CoverageConfirmation] = {}
+    identity_sides: dict[tuple[str, str], set[str]] = {}
+    for record in by_id.values():
+        if isinstance(record, IdentityConfirmation):
+            identity_sides.setdefault((record.photo_id, record.part_code), set()).add(record.side)
+    conflicting = {key for key, sides in identity_sides.items() if len(sides) > 1}
+    conflict_ids = []
     superseded: set[str] = set()
     for record in sorted(by_id.values(), key=_latest_key):
         if isinstance(record, IdentityConfirmation):
             key, target = (record.photo_id, record.part_code), identity
+            if key in conflicting:
+                conflict_ids.append(record.confirmation_id)
+                continue  # photo-level identity cannot choose between physical sides
         else:
             key, target = (record.part_code, record.side), coverage
         if key in target:
             superseded.add(target[key].confirmation_id)
         target[key] = record
     return ConfirmationIndex(identity=identity, coverage=coverage, supplied_ids=tuple(sorted(by_id)),
-                             superseded_ids=tuple(sorted(superseded)))
+                             superseded_ids=tuple(sorted(superseded)),
+                             conflicting_identity_ids=tuple(sorted(conflict_ids)))
 
 
 def summary_job_versions(versions: Mapping[str, str], confirmation_ids: Iterable[str]) -> dict[str, str]:

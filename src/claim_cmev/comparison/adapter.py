@@ -55,6 +55,8 @@ from claim_cmev.contracts.imaging import (
     PartSummary,
 )
 
+from ..contracts.review import ReviewEvent
+
 from .additions import addition_rule_id, missing_repairs_check, propose_additions
 from .config import RuleConfig
 from .cost_check import RangeLookup, compare_amount, cost_check_not_evaluated, cost_key, cost_rule_id
@@ -87,6 +89,7 @@ class ConsolidationRequest(ContractModel):
     coverage_confirmations: list[CoverageConfirmation] = Field(default_factory=list)
     line_items: list[LineItem] = Field(default_factory=list)
     pen_marks: list[PenMark] = Field(default_factory=list)
+    accepted_scope: list[ReviewEvent] = Field(default_factory=list)
     declaration: DeclarationCompleteness | None = None
     pages: list[DocumentPage] = Field(default_factory=list)
     cost_table_version: str = Field(min_length=1)
@@ -100,6 +103,9 @@ class ConsolidationRequest(ContractModel):
 
     @model_validator(mode="after")
     def _rules(self) -> ConsolidationRequest:
+        if any(e.action_type != "accept_addition" or e.claim_id != self.claim_id or
+               e.assessment_revision >= self.assessment_revision for e in self.accepted_scope):
+            raise ValueError("accepted scope must be recorded accept-addition events for this claim")
         if self.document_branch_state != "complete" and (self.line_items or self.pen_marks):
             raise ValueError("a failed or skipped document branch carries no line items or marks")
         if self.prior_assessment_revision is not None and self.prior_assessment_revision >= self.assessment_revision:
@@ -439,7 +445,9 @@ def consolidate(request: ConsolidationRequest, *, config: RuleConfig, ranges: Ra
     if image_ok and document_ok:
         candidates = propose_additions(request.observations, items, request.pen_marks, request.declaration,
                                        config=config, index=index, assessment_revision=request.assessment_revision,
-                                       job_key=ctx.job_key, page_states=ctx.pages)
+                                       job_key=ctx.job_key, page_states=ctx.pages,
+                                       accepted_parts={(e.new_values["part_code"], e.new_values["side"])
+                                                       for e in request.accepted_scope})
         missing = missing_repairs_check(request.declaration, items, candidates, config=config)
     else:
         state = request.image_branch_state if not image_ok else request.document_branch_state

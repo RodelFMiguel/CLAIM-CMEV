@@ -178,7 +178,9 @@ export function RowControls({
               <Select
                 name="operation"
                 values={operations}
-                initial={row.operation}
+                initial={
+                  operations.includes(row.operation) ? row.operation : "unknown"
+                }
                 title="Operation"
               />
               <label>

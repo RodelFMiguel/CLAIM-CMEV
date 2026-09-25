@@ -326,11 +326,13 @@ def segment_page(page_index: int, bands: Sequence[Band], headers: Sequence[Heade
             if kind in family.terminator_kinds:
                 rows.append(RawRow(page_index, kind, (band,), placed, binding, flags, label))
                 terminated = True
-                break
+                continue
             description_only = all(a.status == "assigned" and a.field == "description" for a in placed)
             if description_only and is_heading(label, family):
                 rows.append(RawRow(page_index, "heading", (band,), placed, binding, flags, label))
                 continue
+            if description_only and terminated:
+                continue  # footer prose; later numeric item bands are still inspected
             if description_only:
                 previous = rows[-1] if rows else None
                 attach = (previous is not None and previous.kind == "item"
@@ -352,6 +354,7 @@ def segment_page(page_index: int, bands: Sequence[Band], headers: Sequence[Heade
                 rows.append(RawRow(page_index, "continuation", (band,), placed, binding,
                                    tuple(sorted({*flags, "unlinked_continuation"})), label))
                 continue
+            terminated = False  # a new item section requires its own terminator
             rows.append(RawRow(page_index, "item", (band,), placed, binding, flags, label))
         segments.append(Segment(page_index, header, binding, tuple(rows), terminated, tuple(outside)))
     return segments

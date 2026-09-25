@@ -4,6 +4,8 @@ Historical baseline reviews remain readable. New actions retain typed events and
 request hashes alongside the legacy display history; assessments are never edited.
 """
 from copy import deepcopy
+from sqlalchemy import select
+from ..persistence.tables import assessments
 from datetime import datetime
 
 from ..contracts.assessment import Assessment
@@ -40,16 +42,21 @@ def load(db, claim, row, review):
     inherited = [ReviewEvent.model_validate({k: v for k, v in a.items() if k in ReviewEvent.model_fields})
                  for a in review.get("actions", [])
                  if a.get("action_type") and a.get("assessment_revision") != row["assessment_revision"]]
+    source_revisions = {e.assessment_revision for e in inherited
+                        if e.action_type in ("dismiss_finding", "accept_addition", "dismiss_addition")}
+    sources = {r.assessment_revision: Assessment.model_validate(r.body) for r in db.execute(
+        select(assessments.c.assessment_revision, assessments.c.body).where(
+            assessments.c.claim_id == claim["claim_id"],
+            assessments.c.assessment_revision.in_(source_revisions)))} if source_revisions else {}
     notes, dismissals, additions, accepted = [], {}, {}, []
     for event in inherited:
         if event.action_type == "add_note":
             notes.append(event)
         if event.action_type not in ("dismiss_finding", "accept_addition", "dismiss_addition"):
             continue
-        origin = views.assessment_row(db, claim["claim_id"], event.assessment_revision)
-        if origin is None:
+        source = sources.get(event.assessment_revision)
+        if source is None:
             continue
-        source = Assessment.model_validate(origin["body"])
         if event.action_type == "dismiss_finding":
             old = next((f for f in source.findings if f.finding_id == event.finding_id), None)
             for current in result.assessment.findings:

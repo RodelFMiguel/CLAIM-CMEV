@@ -53,6 +53,8 @@ def corrected_summary(ctx, claim_input, baseline):
         job_key=ctx.envelope.job_key, versions=versions,
         provenance=Provenance(**ctx.provenance(derivation_refs=[e.action_id for e in review_events(claim_input)])),
         reuse_from_input_revision=source_revision if source_revision < ctx.envelope.input_revision else None)
-    outcome = summarise_parts(observations, predictions, identities, coverage, context=context, config=config,
+    view_signals = {(view.photo_id, slot.part_code): dict(view.signals)
+                    for slot in baseline.coverage for view in slot.views}
+    outcome = summarise_parts(observations, predictions, identities, coverage, context=context, config=config, view_signals=view_signals,
                               photo_ids={p.photo_id for p in predictions} | {o.photo_id for o in observations})
     return outcome, identities, coverage

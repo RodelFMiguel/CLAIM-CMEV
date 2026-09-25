@@ -67,7 +67,8 @@ def _refs(observations: Sequence[ImageDamageObservation], summary: PartSummary) 
 def propose_additions(observations: Sequence[ImageDamageObservation], line_items: Sequence[LineItem],
                       pen_marks: Sequence[PenMark], completeness: DeclarationCompleteness | None, *,
                       config: RuleConfig, index: EvidenceIndex, assessment_revision: int, job_key: str,
-                      page_states: Mapping[str, str] | None = None) -> list[ProposedRepairAddition]:
+                      page_states: Mapping[str, str] | None = None,
+                      accepted_parts: frozenset[tuple[str, str]] | set[tuple[str, str]] = frozenset()) -> list[ProposedRepairAddition]:
     """Rules A1 to A8 over every part summary; proposed, withheld and suppressed candidates.
 
     Returns an empty list when A1 fires (the whole check is ``not_evaluated``); see
@@ -86,6 +87,8 @@ def propose_additions(observations: Sequence[ImageDamageObservation], line_items
     threshold = config.additions.min_observation_confidence
     candidates = []
     for summary in index.summaries:
+        if (summary.part_code, summary.side) in accepted_parts:
+            continue  # Already part of the separate human-agreed scope.
         members = index.members(summary)
         part, side = summary.part_code, summary.side
         confident = [o for o in members if o.damage_code in supported and o.damage_confidence >= threshold]

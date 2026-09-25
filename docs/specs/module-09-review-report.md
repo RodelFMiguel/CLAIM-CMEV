@@ -360,3 +360,10 @@ Unticked compound tasks retain their unverified or model-dependent requirements.
 - How a carried-forward dismissal is presented so it is clearly carried and not freshly made.
 - Whether `usability_event` telemetry is stored at all, or whether the section 13.5 measures are captured on paper. Storing them is simpler to analyse and adds a table nobody else needs.
 - The durable pending-edit storage choice, IndexedDB versus `localStorage`, and its quota behaviour with several open claims.
+
+
+### Review recovery corrections (2026-09-25)
+
+Absent image/document branches may finalize an explicitly incomplete-evidence report once all supplied-input processing and required review gates have completed. Failed processing remains blocking. An unreadable uploaded page/declaration requires a human completeness confirmation before finalization (P2 is enforced for this case); an explicit human acknowledgement of partial scope preserves that partial state and withholds additions. Explicitly-empty is invalid while declared rows exist.
+
+Printed-amount corrections retain the first extraction and original text beside the corrected reading, including in the frozen report. New uploads preserve review audit history and replay corrections only for unchanged source branches. Changed-source corrections remain in input `invalidated_corrections` with a reason and require reconfirmation; they are never blindly applied to newly extracted row/mark identities.

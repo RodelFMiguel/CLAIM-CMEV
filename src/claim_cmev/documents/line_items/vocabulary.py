@@ -130,7 +130,7 @@ class MappingResult:
 
 @dataclass(frozen=True)
 class SideResult:
-    side: Literal["left", "right", "centre", "unknown"]
+    side: Literal["left", "right", "centre", "not_applicable", "unknown"]
     source: Literal["document_text", "absent"]
     reason: str | None  # side_absent_in_text | side_text_ambiguous | multiple_sides_in_text
     text: tuple[str, ...] = ()  # the side words found
@@ -197,7 +197,10 @@ class EstimateVocabulary:
         words = tuple(w for w in rest if w not in self._qualifiers)
         if not words:
             return MappingResult(None, "unmapped", "part_text_missing"), side
-        return self._lookup(words, self._parts, self._components, "part", tuple(PART_CODES)), side
+        part = self._lookup(words, self._parts, self._components, "part", tuple(PART_CODES))
+        if part.code and not self.is_sided(part.code) and side.reason == "side_absent_in_text":
+            side = SideResult("not_applicable", "absent", None)
+        return part, side
 
     def map_operation(self, text: str) -> MappingResult:
         words = tokens(text)

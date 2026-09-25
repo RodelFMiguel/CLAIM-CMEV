@@ -483,7 +483,14 @@ def _v_confirm_identity(state, request, config, action_id):
         return errors
     new = {"part_code": request.part_code, "side": request.side, "photo_ids": list(request.photo_ids),
            "source": "human"}
-    return _Validated({"entry_id": request.entry_id}, {"side": "unknown", "source": "model"}, new)
+    prior = [{"photo_id": photo, "part_code": slot.part_code, "side": slot.side,
+              "confirmation_ids": list(slot.identity_confirmation_ids)}
+             for slot in state.coverage if slot.part_code == request.part_code and slot.identity_confirmation_ids
+             for photo in request.photo_ids if photo in {v.photo_id for v in slot.views}]
+    sides = {value["side"] for value in prior}
+    original = {"side": next(iter(sides)) if len(sides) == 1 else "unknown",
+                "source": "human" if prior else "unconfirmed", "identities": prior}
+    return _Validated({"entry_id": request.entry_id}, original, new)
 
 
 def _v_confirm_coverage(state, request, config, action_id):
@@ -513,6 +520,9 @@ def _v_confirm_completeness(state, request, config, action_id):
                            400, "completeness_state"))
     elif request.completeness_state != "complete" and request.reason_code is None:
         errors.append(_err("reason_required", "Give a reason for a state other than complete.", 400, "reason_code"))
+    if request.completeness_state == "explicitly_empty" and state.line_items:
+        errors.append(_err("declaration_has_rows", "An estimate with declared rows cannot be explicitly empty.",
+                           422, "completeness_state"))
     if state.page_ids is not None and not state.page_ids:
         errors.append(_err("no_pages_read", "No estimate page was read for this input.", 422, "completeness_state"))
     if errors:

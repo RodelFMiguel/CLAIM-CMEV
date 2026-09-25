@@ -241,3 +241,34 @@ def test_same_message_built_twice_has_one_identity():
     retry = Envelope.build("cmev.cmd.page-read.v1", **args, attempt_epoch=1)
     assert one.job_key == two.job_key == retry.job_key
     assert one.dedup_key == two.dedup_key != retry.dedup_key
+
+
+def test_poison_payload_and_invalid_versions_do_not_block_later_messages(database, cost_tables, pipeline):
+    from claim_cmev.messaging.consumer import consume_batch
+    make_claim(database, "pending_price_change", cost_tables)
+    pipeline.relay()
+    good = pipeline.broker.messages("cmev.evt.input-revision-created.v1")[0]
+    runtime = pipeline.runtime("cmev-orchestrator")
+    seen = []
+    runtime.handlers[good.topic] = lambda ctx: seen.append(ctx.envelope.claim_id)
+    for number, mutation in enumerate((
+        lambda v: v["payload"].update(external_reference="A" * 300),
+        lambda v: v.update(versions={"intake": ""}),
+        lambda v: v.update(versions={"intake": {"invalid": "nested"}}),
+        lambda v: v["payload"].update(external_reference="text " * 60000),
+    )):
+        bad = deepcopy(good.value)
+        mutation(bad)
+        message = Message(good.topic, good.key, bad, 0, 900 + number)
+        assert runtime.process(message) == "dead_lettered"
+        assert runtime.process(message) == "duplicate"
+    consumer = next(c for r, c in pipeline.consumers if r is runtime)
+    assert consume_batch(runtime, consumer) == 1
+    assert seen == [good.value["claim_id"]]
+    pipeline.relay()
+    letters = pipeline.broker.messages(DLQ_TOPIC)
+    assert len(letters) == 4
+    for letter in letters:
+        assert validate_message(DLQ_TOPIC, letter.value)
+    with database.session() as db:
+        assert db.execute(select(func.count()).select_from(dead_letters)).scalar() == 4

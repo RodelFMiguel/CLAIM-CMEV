@@ -55,7 +55,7 @@ def test_standard_page_yields_validated_line_items_and_a_complete_declaration():
     assert (bumper.effective_price, bumper.effective_price_source, bumper.effective_price_reason) == (
         "980.00", "printed", None)
     assert (bumper.currency, bumper.cost_basis) == ("SGD", "single_part_pre_tax_no_discount_v1")
-    assert (bumper.side, bumper.side_source) == ("unknown", "absent")
+    assert (bumper.side, bumper.side_source) == ("not_applicable", "absent")
     assert bumper.field_uncertainty == []  # an unsided part without a printed side is not flagged
     door = items["FRT DOOR LH/REPAIR"]
     assert (door.part_code, door.side, door.side_source) == ("front-door", "left", "document_text")
@@ -80,7 +80,7 @@ def test_boxes_are_normalised_on_the_corrected_render_for_m6_linking():
 
 def test_versions_record_every_rule_that_produced_a_row():
     result = parse([make_page(estimate_cells(ROWS))])
-    expected = {"code": "test", "layout_families": CONFIG.config_version, "vocabulary": "m5-estimate-vocabulary/0.1.0",
+    expected = {"code": "test", "layout_families": CONFIG.config_version, "vocabulary": "m5-estimate-vocabulary/0.2.0",
                 "parser_code": M5_CODE_VERSION, "extraction_method": "parser", "taxonomy": "parts-1.0.0"}
     assert result.versions == expected
     assert all(i.versions == expected for i in result.line_items) and result.completeness.versions == expected
@@ -98,7 +98,7 @@ def test_totals_tax_and_headings_are_excluded_from_line_items():
     cells += [("SUB TOTAL", (640, 290, 740, 310), 0.98), ("980.00", cell_box("amount", "980.00", 290), 0.98),
               ("GST 9%", (640, 330, 700, 350), 0.99), ("88.20", cell_box("amount", "88.20", 330), 0.99)]
     result = parse([make_page(cells)])
-    assert [r.row_kind for r in result.rows] == ["heading", "item", "total"]
+    assert [r.row_kind for r in result.rows] == ["heading", "item", "total", "tax"]
     assert len(result.line_items) == 1 and result.completeness.state == "complete"
 
 

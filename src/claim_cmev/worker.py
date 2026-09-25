@@ -88,6 +88,7 @@ def run(role: str = "combined", local: bool = False) -> None:
     client = f"{role}-{socket.gethostname()}"
     while True:
         consumers = []
+        producer = None
         try:
             created = ensure_topics(servers, TOPICS)
             if created:
@@ -95,7 +96,8 @@ def run(role: str = "combined", local: bool = False) -> None:
             producer = KafkaProducerTransport(servers, client)
             runtimes = build_runtimes(database.session, role, versions=versions, consolidator=consolidator,
                                       profile=settings.profile, source_kind=settings.source_kind)
-            consumers = [(rt, KafkaConsumerTransport(servers, rt.group, rt.topics, client)) for rt in runtimes]
+            for rt in runtimes:
+                consumers.append((rt, KafkaConsumerTransport(servers, rt.group, rt.topics, client)))
             READY_MARKER.write_text(str(info))
             while True:
                 relay_once(database.session, producer, clock=utcnow)
@@ -104,12 +106,18 @@ def run(role: str = "combined", local: bool = False) -> None:
                 _beat()
         except (TransportUnavailable, OSError, RuntimeError, Exception):  # noqa: BLE001
             log.exception("worker transport or database unavailable; uncommitted offsets will be redelivered")
+        finally:
             for _runtime, consumer in consumers:
                 try:
                     consumer.close()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
-            time.sleep(3)
+            if producer is not None:
+                try:
+                    producer.close()
+                except Exception:
+                    pass
+        time.sleep(3)
 
 
 def healthy() -> bool:

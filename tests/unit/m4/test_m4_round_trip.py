@@ -117,12 +117,11 @@ def test_pdf_page_round_trip_to_pdf_points(rotate):
     assert reading["transform"]["source_frame"] == "pdf_points"
     assert page.transform.render_scale == pytest.approx(150 / 72, rel=2e-3)
     _check(rendered, page, reading, transform, page_to_render, page_to_points)
-    if not rotate:  # contract helper: corrected pixel to top-left PDF points
-        box = page.text_boxes[0]
-        x, y = box.quad_rectified[0]
-        px, py = page.transform.corrected_to_pdf_points(x, y)
-        ux, uy = map_points(rendered.source.render_to_source, [page.transform.corrected_to_source(x, y)])[0]
-        assert (px, height_pt - py) == pytest.approx((ux, uy), abs=0.5)
+    box = page.text_boxes[0]
+    x, y = box.quad_rectified[0]
+    px, py = page.transform.corrected_to_pdf_points(x, y)
+    ux, uy = map_points(rendered.source.render_to_source, [page.transform.corrected_to_source(x, y)])[0]
+    assert (px, py) == pytest.approx((ux, uy), abs=0.5)
 
 
 def test_normalised_boxes_are_on_the_corrected_render():

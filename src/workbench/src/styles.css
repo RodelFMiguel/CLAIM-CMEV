@@ -2553,7 +2553,9 @@ h3 {
     background: white;
     font-size: 9pt;
   }
-  .report-versions { display: none; }
+  .report-versions {
+    display: none;
+  }
   .report-basis {
     font-size: 8pt !important;
   }
@@ -2640,10 +2642,39 @@ fieldset:disabled {
 }
 
 @media print {
-  .report-versions p { font-size: inherit; line-height: inherit; margin: 0 0 1mm; }
-  .report-paper h2 { break-after: avoid; }
+  .report-versions p {
+    font-size: inherit;
+    line-height: inherit;
+    margin: 0 0 1mm;
+  }
+  .report-paper h2 {
+    break-after: avoid;
+  }
 }
 
 @media print {
-  html, body, #root, .app-shell, .workspace, .print-report { background: white !important; }
+  html,
+  body,
+  #root,
+  .app-shell,
+  .workspace,
+  .print-report {
+    background: white !important;
+  }
+}
+
+.result-message.result-ok {
+  background: #e7f4ed;
+  color: #195634;
+  border-left: 4px solid #287345;
+}
+.result-message.result-unsupported {
+  background: #fdecea;
+  color: #8c2420;
+  border-left: 4px double #ae342d;
+}
+.result-message.result-cost_outlier {
+  background: #fff1d6;
+  color: #794a00;
+  border-left: 4px dashed #986000;
 }

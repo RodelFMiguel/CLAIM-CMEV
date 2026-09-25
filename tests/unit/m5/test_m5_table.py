@@ -164,13 +164,13 @@ def _kinds(segment):
     return [(row.kind, " ".join(b.text for b in row.boxes)) for row in segment.rows]
 
 
-def test_terminator_ends_the_table_and_later_text_is_outside_it():
+def test_totals_and_tax_are_retained_while_footer_prose_is_not_a_repair():
     cells = estimate_cells([item("FRT BUMPER", amount="980.00")], subtotal="980.00")
     cells += [("GST 9%", (640, 330, 700, 350), 0.99), ("88.20", (850, 330, 900, 350), 0.99),
               ("THANK YOU", (60, 400, 160, 420), 0.99)]
     [segment] = _segments(cells)
     assert segment.terminated
-    assert _kinds(segment) == [("item", "FRT BUMPER REPLACE 1 980.00"), ("total", "SUB TOTAL 980.00")]
+    assert _kinds(segment) == [("item", "FRT BUMPER REPLACE 1 980.00"), ("total", "SUB TOTAL 980.00"), ("tax", "GST 9% 88.20")]
 
 
 def test_wrapped_description_attaches_only_when_unambiguous():

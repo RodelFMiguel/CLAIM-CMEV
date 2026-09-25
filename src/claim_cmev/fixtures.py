@@ -245,9 +245,22 @@ class FixtureProducers:
         bundle, _claim_input, scenario = self._load(ctx, "line_items")
         # M5 output never knows the pen marks: effective prices are derived later, from decided marks.
         items = [with_effective_price(item, []) for item in bundle.line_items]
-        self._store(ctx, "line_items", [("line_item", i) for i in items] +
-                    [("declaration_completeness", bundle.declaration)])
+        from .orchestration import state
+        from .persistence.store import load_records
+        page_jobs = state.effective_jobs(ctx.session, ctx.envelope.claim_id, ctx.envelope.input_revision, "page_read")
+        pages = load_records(ctx.session, ctx.envelope.claim_id, [j["job_key"] for j in page_jobs]).get("document_page", [])
         declaration = bundle.declaration
+        unreadable = [p for p in pages if p.quality.state == "unreadable"]
+        partial = [p for p in pages if p.quality.state == "partial"]
+        if unreadable or partial:
+            data = declaration.model_dump()
+            data.update(state="unreadable" if len(unreadable) == len(pages) else "partial",
+                        reasons=list(dict.fromkeys([*declaration.reasons, "page_unreadable" if unreadable else "page_partial"])),
+                        unparsed_region_count=declaration.unparsed_region_count + len(unreadable) + len(partial),
+                        pages_covered=[p.page_id for p in pages if p.quality.state == "complete"])
+            declaration = type(declaration).model_validate(data)
+        self._store(ctx, "line_items", [("line_item", i) for i in items] +
+                    [("declaration_completeness", declaration)])
         payload = {"line_item_ids": [i.entry_id for i in items], "line_items": [{
             "entry_id": i.entry_id, "page_id": i.page_id, "row_box_norm": list(i.row_box_norm),
             "part_code": i.part_code, "part_mapping_status": i.part_mapping_status, "side": i.side,

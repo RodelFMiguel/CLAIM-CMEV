@@ -12,6 +12,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import {
+  AlertTriangle,
   ArrowLeft,
   Camera,
   CheckCircle2,
@@ -23,7 +24,15 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api, ApiError, money, type Claim } from "./api";
-import { localValue, storeLocal, type PendingAction } from "./pendingActions";
+import {
+  localValue,
+  storeLocal,
+  savePending,
+  removePending,
+  loadPending,
+  reviewTabId,
+  type PendingAction,
+} from "./pendingActions";
 import {
   RowControls,
   CompletenessControl,
@@ -49,6 +58,9 @@ interface LineItem extends ReviewRow {
   side: string;
   operation: string;
   printed_amount: string | null;
+  original_printed_amount?: string | null;
+  printed_amount_corrected?: boolean;
+  original_amount_text?: string | null;
   effective_amount: string | null;
   mark_state: string;
   photo_check: string;
@@ -113,6 +125,7 @@ interface Assessment {
   versions: Record<string, string>;
   declaration_completeness: string;
   fixture_notice: string;
+  invalidated_corrections?: unknown[];
   finalize_preconditions: {
     can_finalize: boolean;
     checks: { code: string; passed: boolean; message: string }[];
@@ -120,7 +133,13 @@ interface Assessment {
 }
 interface Processing {
   state: string;
-  jobs: { job_key: string; state: string; stage?: string; error?: string }[];
+  jobs: {
+    job_key: string;
+    state: string;
+    stage?: string;
+    error?: string;
+    retryable?: boolean;
+  }[];
 }
 interface Snapshot {
   report?: {
@@ -239,15 +258,27 @@ function ReviewOverview({ id }: { id: string }) {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [actor, setActor] = useState("");
   const [localReady, setLocalReady] = useState(false);
+  const [tabId, setTabId] = useState("");
+  useEffect(() => {
+    void reviewTabId()
+      .then(setTabId)
+      .catch(() =>
+        setError(
+          "Local review storage is unavailable. Enable browser storage before saving.",
+        ),
+      );
+  }, []);
+  const [pollError, setPollError] = useState("");
   const queueKey = "pending:" + actor + ":" + id;
   useEffect(() => {
+    if (!tabId) return;
     let active = true;
-    api<{ id: string }>("/auth/me")
-      .then(async (user) => {
+    api<{ user: { id: string } }>("/auth/me")
+      .then(async ({ user }) => {
         const [saved, draft] = await Promise.all([
-          localValue<PendingAction>("pending:" + user.id + ":" + id),
+          loadPending("pending:" + user.id + ":" + id, user.id, id),
           localValue<{ note: string; amounts: Record<string, string> }>(
-            "draft:" + user.id + ":" + id,
+            "draft:" + user.id + ":" + id + ":" + tabId,
           ),
         ]);
         if (!active) return;
@@ -267,15 +298,17 @@ function ReviewOverview({ id }: { id: string }) {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, tabId]);
   useEffect(() => {
     if (localReady)
-      void storeLocal("draft:" + actor + ":" + id, { note, amounts }).catch(
-        () => setError("The draft could not be stored in this browser."),
+      void storeLocal("draft:" + actor + ":" + id + ":" + tabId, {
+        note,
+        amounts,
+      }).catch(() =>
+        setError("The draft could not be stored in this browser."),
       );
-  }, [actor, id, localReady, note, amounts]);
+  }, [actor, id, tabId, localReady, note, amounts]);
   const mounted = useRef(true);
-  const started = useRef(Date.now());
   const base = `/claims/${id}`;
   const load = useCallback(async () => {
     const current = await api<Claim>(base);
@@ -289,10 +322,15 @@ function ReviewOverview({ id }: { id: string }) {
           `${base}/assessments/${current.assessment_revision}/review`,
         ),
       ]);
-    } else if (current.status !== "awaiting_upload") {
+    }
+    if (
+      current.status !== "awaiting_upload" &&
+      current.status !== "finalized"
+    ) {
       nextProcessing = await api<Processing>(`${base}/processing`);
     }
     if (!mounted.current) return;
+    setPollError("");
     setClaim(current);
     setAssessment(nextAssessment);
     setReview(nextReview);
@@ -306,23 +344,28 @@ function ReviewOverview({ id }: { id: string }) {
     };
   }, [load]);
   useEffect(() => {
-    if (claim?.status !== "processing" || error) return;
-    const timer = window.setTimeout(() => {
-      if (Date.now() - started.current > 15 * 60 * 1000) {
-        setError(
-          "Automatic refresh paused. Refresh the claim to check processing again.",
-        );
-      } else {
-        load().catch((e) => setError(`Connection interrupted. ${e.message}`));
+    if (claim?.status !== "processing") return;
+    let loading = false;
+    const timer = window.setInterval(async () => {
+      if (loading) return;
+      loading = true;
+      try {
+        await load();
+      } catch (e) {
+        if (mounted.current)
+          setPollError(
+            `Connection interrupted. Retrying automatically. ${e instanceof Error ? e.message : ""}`,
+          );
+      } finally {
+        loading = false;
       }
     }, 3000);
-    return () => clearTimeout(timer);
-  }, [claim, error, load]);
+    return () => clearInterval(timer);
+  }, [claim?.status, load]);
 
   async function reload() {
     setError("");
     setConflict(false);
-    started.current = Date.now();
     try {
       await load();
     } catch (e) {
@@ -334,7 +377,7 @@ function ReviewOverview({ id }: { id: string }) {
     setError("");
     setNotice("");
     try {
-      await storeLocal(queueKey, action); // durable before transmission
+      await savePending(queueKey, action); // durable before transmission
       setPending(action);
       await api(action.path, {
         method: "POST",
@@ -342,7 +385,7 @@ function ReviewOverview({ id }: { id: string }) {
         headers: { "Idempotency-Key": action.key },
         signal: AbortSignal.timeout(30000),
       });
-      await storeLocal(queueKey);
+      await removePending(queueKey, action.key);
       setPending(null);
       setConflict(false);
       setNotice(action.success);
@@ -356,7 +399,7 @@ function ReviewOverview({ id }: { id: string }) {
     } catch (e) {
       setConflict(e instanceof ApiError && e.status === 409);
       if (e instanceof ApiError && [400, 404, 422].includes(e.status)) {
-        await storeLocal(queueKey);
+        await removePending(queueKey, action.key);
         setPending(null);
       }
       setError(
@@ -439,7 +482,9 @@ function ReviewOverview({ id }: { id: string }) {
       <Loading />
     );
   const files = assessment?.files ?? [];
-  const file = files.find((f) => f.file_id === selectedFile) ?? files[0];
+  const file =
+    files.find((f) => f.file_id === selectedFile) ??
+    (selectedRow ? undefined : files[0]);
   const row = assessment?.line_items.find((r) => r.entry_id === selectedRow);
   const frozen = review?.finalized ?? false;
   const locked = busy || conflict || frozen || !!pending || !localReady;
@@ -496,6 +541,16 @@ function ReviewOverview({ id }: { id: string }) {
         </p>
       </div>
       {error && <ErrorBanner message={error} />}
+      {pollError && <ErrorBanner message={pollError} />}
+      {!!assessment?.invalidated_corrections?.length && (
+        <div className="fixture-banner">
+          <Info size={18} />
+          <p>
+            Earlier decisions need reconfirmation because their source evidence
+            changed. The original decisions remain in the review history.
+          </p>
+        </div>
+      )}
       {pending && (
         <section className="panel" aria-label="Saved pending request">
           <h2>Request awaiting acknowledgement</h2>
@@ -518,7 +573,7 @@ function ReviewOverview({ id }: { id: string }) {
             className="button button-outline button-small"
             disabled={busy}
             onClick={async () => {
-              await storeLocal(queueKey);
+              await removePending(queueKey, pending.key);
               setPending(null);
               await reload();
             }}
@@ -544,6 +599,35 @@ function ReviewOverview({ id }: { id: string }) {
           <CheckCircle2 size={17} />
           {notice}
         </div>
+      )}
+      {processing?.jobs.some((job) => job.retryable) && (
+        <section className="panel" aria-label="Failed processing stages">
+          <h2>Processing needs attention</h2>
+          {processing.jobs
+            .filter((job) => job.retryable)
+            .map((job) => (
+              <div className="job-state" key={job.job_key}>
+                <span>
+                  {label(job.stage ?? "Evidence processing")}:{" "}
+                  {label(job.state)}
+                </span>
+                {job.error && <p>{job.error}</p>}
+                <button
+                  className="button button-outline button-small"
+                  disabled={locked}
+                  onClick={() =>
+                    mutate(
+                      `${base}/jobs/${encodeURIComponent(job.job_key)}/retry`,
+                      {},
+                      "Retry requested.",
+                    )
+                  }
+                >
+                  Retry {label(job.stage ?? "stage")}
+                </button>
+              </div>
+            ))}
+        </section>
       )}
       {!assessment ? (
         <section className="panel processing-panel">
@@ -820,7 +904,22 @@ function ReviewOverview({ id }: { id: string }) {
                       </div>
                       <div className="amount-grid">
                         <div>
-                          <span>Printed amount (current extraction)</span>
+                          <span>
+                            {item.printed_amount_corrected
+                              ? "Corrected printed extraction"
+                              : "Printed amount (current extraction)"}
+                          </span>
+                          {item.printed_amount_corrected && (
+                            <small>
+                              Original extraction:{" "}
+                              {money(
+                                item.original_printed_amount,
+                                claim.currency,
+                              )}
+                              ; original text:{" "}
+                              {item.original_amount_text ?? "Unreadable"}
+                            </small>
+                          )}
                           <strong>
                             {money(item.printed_amount, claim.currency)}
                           </strong>
@@ -843,8 +942,16 @@ function ReviewOverview({ id }: { id: string }) {
                         <span>Cost: {label(item.cost_check)}</span>
                         <span>Single-part basis</span>
                       </div>
-                      <div className="result-message">
-                        <Info size={16} />
+                      <div
+                        className={`result-message result-${item.overall_result}`}
+                      >
+                        {item.overall_result === "ok" ? (
+                          <CheckCircle2 size={16} />
+                        ) : item.overall_result === "insufficient_evidence" ? (
+                          <Info size={16} />
+                        ) : (
+                          <AlertTriangle size={16} />
+                        )}
                         <div>
                           <strong>{resultLabel(item)}</strong>
                           <p>{item.reason}</p>
@@ -1028,8 +1135,14 @@ function ReviewOverview({ id }: { id: string }) {
                     Original file
                     <select
                       value={file?.file_id ?? ""}
-                      onChange={(e) => setSelectedFile(e.target.value)}
+                      onChange={(e) => {
+                        setSelectedRow(null);
+                        setSelectedFile(e.target.value);
+                      }}
                     >
+                      <option value="" disabled>
+                        Select an original file
+                      </option>
                       {files.map((f) => (
                         <option value={f.file_id} key={f.file_id}>
                           {f.original_name}
@@ -1037,6 +1150,13 @@ function ReviewOverview({ id }: { id: string }) {
                       ))}
                     </select>
                   </label>
+                  {!file && (
+                    <p>
+                      No linked original evidence is available for this
+                      selection. Choose an original file to browse it
+                      separately.
+                    </p>
+                  )}
                   {file && (
                     <>
                       <div className="evidence-preview">
@@ -1075,8 +1195,9 @@ function ReviewOverview({ id }: { id: string }) {
                   <Camera size={32} />
                   <h3>No original files</h3>
                   <p>
-                    This seeded example has illustrative counts only. Upload a
-                    new claim to inspect your own evidence here.
+                    No linked original evidence is available for this selection.
+                    Demonstration results do not establish links to uploaded
+                    files.
                   </p>
                 </div>
               )}
@@ -1210,16 +1331,24 @@ function PrintReport({ id }: { id: string }) {
   if (!snapshot) return <Loading />;
   const { claim, assessment, review } = snapshot;
   const footerText = [
-    claim.reference, "Input " + assessment.input_revision, "Assessment " + assessment.assessment_revision,
-    "Review " + review.review_revision, "Demonstration fixtures. Reference costs are synthetic.",
-    ...Object.entries(assessment.versions).map(([key, value]) => key + ": " + value),
+    claim.reference,
+    "Input " + assessment.input_revision,
+    "Assessment " + assessment.assessment_revision,
+    "Review " + review.review_revision,
+    "Demonstration fixtures. Reference costs are synthetic.",
+    ...Object.entries(assessment.versions).map(
+      ([key, value]) => key + ": " + value,
+    ),
   ].join(" / ");
   const footerCssString = JSON.stringify(footerText);
   return (
     <div className="print-report">
-      <style>{'@media print { @page { @bottom-center { content: ' + footerCssString +
-        '; font-family: Arial, sans-serif; font-size: 6.5pt; line-height: 1.25; text-align: left; vertical-align: top; padding-top: 3mm; white-space: normal; overflow-wrap: anywhere; } ' +
-        '@top-right { content: "Page " counter(page) " of " counter(pages); font-family: Arial, sans-serif; font-size: 8pt; color: #555; } } }'}</style>
+      <style>
+        {"@media print { @page { @bottom-center { content: " +
+          footerCssString +
+          "; font-family: Arial, sans-serif; font-size: 6.5pt; line-height: 1.25; text-align: left; vertical-align: top; padding-top: 3mm; white-space: normal; overflow-wrap: anywhere; } " +
+          '@top-right { content: "Page " counter(page) " of " counter(pages); font-family: Arial, sans-serif; font-size: 8pt; color: #555; } } }'}
+      </style>
       <div className="print-toolbar no-print">
         <Link className="back-link" to={`/claims/${id}/review`}>
           <ArrowLeft size={16} /> Back to review
@@ -1281,7 +1410,16 @@ function PrintReport({ id }: { id: string }) {
                     Side: {item.side} / {item.operation}
                   </small>
                 </td>
-                <td>{money(item.printed_amount, claim.currency)}</td>
+                <td>
+                  {money(item.printed_amount, claim.currency)}
+                  {item.printed_amount_corrected && (
+                    <small>
+                      Corrected. Original extraction:{" "}
+                      {money(item.original_printed_amount, claim.currency)};
+                      text: {item.original_amount_text ?? "Unreadable"}
+                    </small>
+                  )}
+                </td>
                 <td>{money(item.effective_amount, claim.currency)}</td>
                 <td>
                   <strong>{resultLabel(item)}</strong>

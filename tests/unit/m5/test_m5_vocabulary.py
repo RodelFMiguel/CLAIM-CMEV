@@ -11,8 +11,8 @@ from m5_support import VOCABULARY as V
 
 
 @pytest.mark.parametrize("text, code, side", [
-    ("FRT BUMPER", "front-bumper", "unknown"),
-    ("Front Bumper Cover Assy.", "front-bumper", "unknown"),
+    ("FRT BUMPER", "front-bumper", "not_applicable"),
+    ("Front Bumper Cover Assy.", "front-bumper", "not_applicable"),
     ("REAR DOOR LH", "back-door", "left"),
     ("FRT DOOR L/H", "front-door", "left"),
     ("FRT DOOR L.H.", "front-door", "left"),
@@ -21,18 +21,18 @@ from m5_support import VOCABULARY as V
     ("FENDER-RH", "fender", "right"),
     ("MIRROR (R)", "mirror", "right"),
     ("DOOR MIRROR RIGHT HAND", "mirror", "right"),
-    ("BONNET", "hood", "unknown"),
-    ("GRILLE", "grille", "unknown"),
+    ("BONNET", "hood", "not_applicable"),
+    ("GRILLE", "grille", "not_applicable"),
     ("TAIL LAMP LH", "tail-light", "left"),
     ("QTR PANEL RH", "quarter-panel", "right"),
-    ("WINDSCREEN", "windshield", "unknown"),
-    (" GRILLE ", "grille", "unknown"),
+    ("WINDSCREEN", "windshield", "not_applicable"),
+    (" GRILLE ", "grille", "not_applicable"),
 ])
 def test_reviewed_aliases_resolve(text, code, side):
     part, stated = V.map_part(text)
     assert (part.code, part.status, part.reason) == (code, "resolved", None)
     assert stated.side == side
-    assert stated.source == ("absent" if side == "unknown" else "document_text")
+    assert stated.source == ("absent" if side in ("unknown", "not_applicable") else "document_text")
 
 
 @pytest.mark.parametrize("text, reason, candidates", [
@@ -101,7 +101,7 @@ def test_vocabulary_codes_are_the_contract_codes():
     assert set(data.operations) <= set(OPERATIONS) and "unknown" not in data.operations
     for entry in data.ambiguous_parts:
         assert len(entry.candidates) >= 1
-    assert V.version == "m5-estimate-vocabulary/0.1.0" and data.status == "proposed"
+    assert V.version == "m5-estimate-vocabulary/0.2.0" and data.status == "proposed"
     assert data.review.state == "proposed" and data.matching.fuzzy_enabled is False
     assert V.is_sided("front-door") and not V.is_sided("front-bumper") and V.is_sided(None)
 

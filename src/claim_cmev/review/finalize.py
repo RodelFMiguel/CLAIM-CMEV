@@ -100,11 +100,19 @@ def _row_label(state: ReviewState, entry_id: str | None) -> str:
     return f"Page {item.page_number}, {item.original_part_text}".strip(", ")
 
 
+def assessment_processing_finished(assessment) -> bool:
+    # A deliberately absent evidence branch is not unfinished processing. Its
+    # insufficient-evidence results and incomplete status remain visible in print.
+    return assessment.state == "ready" or (
+        assessment.state == "incomplete" and bool(assessment.incomplete_reasons)
+        and set(assessment.incomplete_reasons) <= {"image_branch_missing", "document_branch_missing"})
+
+
 def _f1(state: ReviewState, stage_states: Mapping[str, str], config: ReviewConfig) -> list[Blocker]:
     code = CONDITIONS["F1"][1]
     blockers = []
     a = state.assessment
-    if a.state != "ready":
+    if not assessment_processing_finished(a):
         reasons = ", ".join(a.incomplete_reasons) or "not ready"
         blockers.append(Blocker(condition="F1", code=code, stage="consolidate",
                                 message=f"Assessment revision {a.assessment_revision} is incomplete: {reasons}."))
@@ -220,7 +228,9 @@ def evaluate_finalize_preconditions(
         "P2": _p2(state),
     }
     enforced = {"P1": config.finalize.enforce_p1_assessment_not_superseded,
-                "P2": config.finalize.enforce_p2_completeness_confirmed}
+                "P2": config.finalize.enforce_p2_completeness_confirmed or bool(
+                    state.completeness and (state.completeness.state == "unreadable" or
+                    "page_unreadable" in state.completeness.reasons))}
     conditions = tuple(
         ConditionResult(condition=cid, precondition=CONDITIONS[cid][0], reason_code=CONDITIONS[cid][1],
                         passed=not found[cid], enforced=enforced.get(cid, True), blockers=tuple(found[cid]))

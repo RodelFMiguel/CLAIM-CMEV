@@ -18,7 +18,7 @@
 # Aliases must stay unique after normalisation across every section; the loader refuses
 # duplicates. Quote every string.
 schema_version: "0.1.0"
-vocabulary_version: "m5-estimate-vocabulary/0.1.0"
+vocabulary_version: "m5-estimate-vocabulary/0.2.0"
 status: proposed
 review:
   state: proposed

@@ -89,6 +89,9 @@ class LineItemRow(_Frozen):
     operation: str | None
     quantity: str | None
     printed_line_amount: str | None
+    original_printed_line_amount: str | None = None
+    printed_amount_corrected: bool = False
+    original_amount_text: str | None = None
     effective_price: str | None
     effective_price_source: str | None
     effective_price_reason: str | None
@@ -335,7 +338,8 @@ def _refuse_mismatch(claim: ClaimInput, assessment: Assessment, review: ReviewSt
                            "The claim snapshot is not the input revision this assessment was built from.", 409)
     if assessment.superseded:
         raise PrintRefused("assessment_superseded", "A superseded assessment is never printed.", 409)
-    if assessment.state != "ready":
+    from .finalize import assessment_processing_finished
+    if not assessment_processing_finished(assessment):
         raise PrintRefused("assessment_incomplete", "An incomplete assessment is never printed as finished.", 409)
 
 
@@ -357,6 +361,9 @@ def _row(texts: _Texts, entry_id: str, item: Any, finding: AssessmentFinding | N
         part_code=item.part_code if item else None, side=item.side if item else None,
         operation=item.operation if item else None, quantity=item.quantity if item else None,
         printed_line_amount=item.printed_line_amount if item else None,
+        original_printed_line_amount=item.original_printed_line_amount if item else None,
+        printed_amount_corrected=item.printed_amount_corrected if item else False,
+        original_amount_text=item.original_amount_text if item else None,
         effective_price=item.effective_price if item else None,
         effective_price_source=item.effective_price_source if item else None,
         effective_price_reason=item.effective_price_reason if item else None,

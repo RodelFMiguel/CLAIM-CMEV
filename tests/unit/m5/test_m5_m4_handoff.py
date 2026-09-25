@@ -20,9 +20,9 @@ from claim_cmev.documents.line_items import TASK
 from m5_support import CLAIM_ID, PAGE_PROVENANCE, artifact, parse, uncertainty
 
 DATA = Path(__file__).parent / "data" / "paddleocr_synthetic_pages.json"
-EXPECTED = [("front-bumper", "unknown", "replace", "980.00"), ("front-bumper", "unknown", "paint", "420.00"),
-            ("headlight", "left", "replace", "640.00"), ("hood", "unknown", "repair", "350.00"),
-            ("grille", "unknown", "replace", "180.00"), ("fender", "right", "repair", "260.00")]
+EXPECTED = [("front-bumper", "not_applicable", "replace", "980.00"), ("front-bumper", "not_applicable", "paint", "420.00"),
+            ("headlight", "left", "replace", "640.00"), ("hood", "not_applicable", "repair", "350.00"),
+            ("grille", "not_applicable", "replace", "180.00"), ("fender", "right", "repair", "260.00")]
 SYNTHETIC = Provenance(source_kind="synthetic", runtime_profile="lean", producer_service="cmev-worker-lineitems")
 
 
@@ -68,7 +68,7 @@ def test_m4_synthetic_page_through_run_page_reading_parses_every_row():
     assert all(i.quantity == "1" for i in result.line_items)
     assert all(uncertainty(i).get("unit_price") == ["column_not_located"] for i in result.line_items)
     assert (result.completeness.state, result.completeness.reasons) == ("complete", [])
-    assert "subtotal_matched" in result.rows[-1].flags  # SUB TOTAL 2830.00, then GST and TOTAL ignored
+    assert any("subtotal_matched" in row.flags for row in result.rows)
     box_ids = {b.box_id for b in document_page.text_boxes}
     assert all(set(i.source_box_ids) <= box_ids for i in result.line_items)  # every field traces to M4 boxes
 
@@ -104,8 +104,11 @@ def test_real_paddleocr_boxes_on_the_flat_page_keep_a_confident_misread_visible(
 
 def test_real_paddleocr_boxes_on_the_perspective_photo():
     result = parse([_paddle_page("perspective_photo")], provenance=SYNTHETIC)
-    assert _summary(result) == EXPECTED  # includes the engine's leading-space ' REPLACE'
-    assert result.completeness.state == "complete" and "subtotal_matched" in result.rows[-1].flags
+    assert _summary(result)[:6] == EXPECTED
+    # Unclassified spanning footer text is retained as uncertain, never silently omitted.
+    assert result.line_items[-1].part_code is None
+    assert result.completeness.state == "partial"
+    assert any("subtotal_matched" in row.flags for row in result.rows)
 
 
 def test_real_paddleocr_boxes_under_pen_strokes():
@@ -116,7 +119,7 @@ def test_real_paddleocr_boxes_under_pen_strokes():
     # 420.00 -> 20.00 and 640.00 -> 40.0 were read with confidence 0.99: the parser cannot
     # know, and the uncertain first row prevents the subtotal comparison that would show it.
     assert [i.printed_line_amount for i in result.line_items[1:3]] == ["20.00", "40.0"]
-    assert "subtotal_not_checked" in result.rows[-1].flags
+    assert any("subtotal_not_checked" in row.flags for row in result.rows)
     assert (result.completeness.state, result.completeness.reasons) == ("partial", ["uncertain_required_field"])
 
 
