@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.evt.pen-marks-detected.v1.schema.json",
+  "title": "cmev.evt.pen-marks-detected.v1",
+  "description": "Pending marks exist. Document branch complete. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "mark_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "marks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "mark_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "page_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "mark_type": {
+                "enum": [
+                  "exclusion",
+                  "price_change"
+                ]
+              },
+              "box_norm": {
+                "$ref": "envelope.v1.schema.json#/$defs/boxNorm"
+              },
+              "detection_confidence": {
+                "$ref": "envelope.v1.schema.json#/$defs/confidence"
+              },
+              "entry_id": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "candidate_entry_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "envelope.v1.schema.json#/$defs/id"
+                }
+              },
+              "link_reason": {
+                "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+              },
+              "state": {
+                "const": "pending"
+              },
+              "trocr_suggestion": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "$ref": "envelope.v1.schema.json#/$defs/text"
+                      },
+                      "confidence": {
+                        "anyOf": [
+                          {
+                            "$ref": "envelope.v1.schema.json#/$defs/confidence"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "mark_id",
+              "page_id",
+              "mark_type",
+              "box_norm",
+              "detection_confidence",
+              "entry_id",
+              "candidate_entry_ids",
+              "link_reason",
+              "state",
+              "trocr_suggestion"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "unlinked_count": {
+          "$ref": "envelope.v1.schema.json#/$defs/count"
+        },
+        "conflicting_count": {
+          "$ref": "envelope.v1.schema.json#/$defs/count"
+        },
+        "branch": {
+          "const": "document"
+        }
+      },
+      "required": [
+        "mark_ids",
+        "marks",
+        "unlinked_count",
+        "conflicting_count",
+        "branch"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

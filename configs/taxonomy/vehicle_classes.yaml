@@ -1,0 +1,8 @@
+# Vehicle classes for cost lookup (data contracts section 3.4, M7). The four class
+# names are PROPOSED and must be frozen by the team at day 2, together with the lookup
+# from make, model and year (an open decision owned by Lane 4). unknown receives no
+# cost comparison. Model year is display metadata only and never a cost feature.
+taxonomy_version: vehicle-classes-0.1.0
+status: proposed
+classes: [hatchback_small, sedan_standard, suv_crossover, van_commercial]
+unknown: unknown

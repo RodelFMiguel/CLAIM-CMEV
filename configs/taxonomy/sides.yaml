@@ -1,0 +1,8 @@
+# Side vocabulary (data contracts section 3.1). Left and right are from the vehicle
+# occupant facing forward. M1 and M2 always emit unknown; only a recorded
+# IdentityConfirmation attaches a side.
+taxonomy_version: sides-1.0.0
+status: frozen
+values: [left, right, centre, not_applicable, unknown]
+resolved: [left, right, centre, not_applicable]
+model_output: unknown

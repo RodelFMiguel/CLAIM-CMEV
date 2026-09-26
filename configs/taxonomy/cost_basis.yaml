@@ -1,0 +1,17 @@
+# The one fixed v2 cost basis (data contracts section 8.1, M7). PROPOSED until the team
+# records the freeze (M7 implementation task). Any amount that does not match it
+# receives no cost comparison; M8 enforces that and M7 publishes the basis version.
+taxonomy_version: cost-basis-1.0.0
+status: proposed
+cost_basis: single_part_pre_tax_no_discount_v1
+currency: SGD
+quantity: "1"            # exactly one; a missing quantity is never read as one
+tax: excluded            # before tax
+discounts: excluded      # no discounts
+operations:
+  replace: part supply only
+  repair: repair labour only
+  paint: paint materials and labour
+pooling: none            # repair, replacement and paint never share a range
+cost_key_fields: [part_code, operation, vehicle_class, currency]
+excluded_from_key: [side, damage_type, model_year]

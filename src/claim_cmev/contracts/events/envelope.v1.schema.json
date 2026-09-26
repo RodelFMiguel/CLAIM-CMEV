@@ -1,0 +1,593 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/envelope.v1.schema.json",
+  "title": "CLAIM-CMEV message envelope, schema 0.2.0",
+  "description": "Integration contracts section 5.2. Topic schemas $ref this file and add payload.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "claim_id",
+    "input_revision",
+    "job_key",
+    "versions",
+    "provenance",
+    "occurred_at",
+    "dedup_key",
+    "trace_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.2.0"
+    },
+    "claim_id": {
+      "$ref": "#/$defs/ulid"
+    },
+    "input_revision": {
+      "$ref": "#/$defs/revision"
+    },
+    "job_key": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}:[1-9][0-9]*:(intake|parts_segment|damage_segment|part_summary|page_read|line_items_extract|pen_marks_detect|consolidate):[A-Za-z0-9_.\\-]+:[0-9a-f]{8}$"
+    },
+    "versions": {
+      "$ref": "#/$defs/versions"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "occurred_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "dedup_key": {
+      "$ref": "#/$defs/sha256"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "assessment_revision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "causation_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:\\-]*$"
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "shortText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 80
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.\\-]*$",
+      "maxLength": 128
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.+/\\-]*$"
+    },
+    "money": {
+      "type": "string",
+      "pattern": "^\\d{1,12}(\\.\\d{1,6})?$",
+      "description": "Exact nonnegative decimal string. Never a JSON number."
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+\\-]\\d{2}:\\d{2})$"
+    },
+    "uri": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(s3|file|https?)://[^\\s]+$"
+    },
+    "mediaType": {
+      "type": "string",
+      "pattern": "^[a-z]+/[a-z0-9.+\\-]+$",
+      "maxLength": 128
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "boxNorm": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "partCode": {
+      "enum": [
+        "windshield",
+        "back-windshield",
+        "front-window",
+        "back-window",
+        "front-door",
+        "back-door",
+        "front-wheel",
+        "back-wheel",
+        "front-bumper",
+        "back-bumper",
+        "headlight",
+        "tail-light",
+        "hood",
+        "trunk",
+        "licence-plate",
+        "mirror",
+        "roof",
+        "grille",
+        "rocker-panel",
+        "quarter-panel",
+        "fender"
+      ]
+    },
+    "side": {
+      "enum": [
+        "left",
+        "right",
+        "centre",
+        "not_applicable",
+        "unknown"
+      ]
+    },
+    "damageCode": {
+      "enum": [
+        "dent",
+        "scratch",
+        "crack",
+        "glass-shatter",
+        "lamp-broken",
+        "tire-flat"
+      ]
+    },
+    "operation": {
+      "enum": [
+        "repair",
+        "replace",
+        "paint",
+        "other",
+        "unknown"
+      ]
+    },
+    "mappingStatus": {
+      "enum": [
+        "resolved",
+        "ambiguous",
+        "unmapped"
+      ]
+    },
+    "versions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source_kind": {
+          "enum": [
+            "real",
+            "synthetic",
+            "fixture",
+            "explainer"
+          ]
+        },
+        "runtime_profile": {
+          "enum": [
+            "lean",
+            "full"
+          ]
+        },
+        "producer_service": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_dataset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "derivation_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "source_kind",
+        "runtime_profile",
+        "producer_service"
+      ],
+      "additionalProperties": false
+    },
+    "artifactRef": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/id"
+        },
+        "object_uri": {
+          "$ref": "#/$defs/uri"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "media_type": {
+          "$ref": "#/$defs/mediaType"
+        },
+        "byte_count": {
+          "$ref": "#/$defs/count"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "object_uri",
+        "sha256",
+        "media_type"
+      ],
+      "additionalProperties": false
+    },
+    "maskRef": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/id"
+        },
+        "object_uri": {
+          "$ref": "#/$defs/uri"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "encoding": {
+          "$ref": "#/$defs/identifier"
+        },
+        "component_index": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "artifact_id",
+        "object_uri",
+        "sha256",
+        "width",
+        "height",
+        "encoding"
+      ],
+      "additionalProperties": false
+    },
+    "partialArtifactRef": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/id"
+        },
+        "object_uri": {
+          "$ref": "#/$defs/uri"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "media_type": {
+          "$ref": "#/$defs/mediaType"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "encoding": {
+          "$ref": "#/$defs/identifier"
+        },
+        "component_index": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "artifact_id"
+      ],
+      "additionalProperties": false
+    },
+    "fileRef": {
+      "type": "object",
+      "properties": {
+        "file_id": {
+          "$ref": "#/$defs/id"
+        },
+        "object_uri": {
+          "$ref": "#/$defs/uri"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "media_type": {
+          "$ref": "#/$defs/mediaType"
+        },
+        "byte_count": {
+          "$ref": "#/$defs/count"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "page_number": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exif_orientation": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "file_id",
+        "object_uri",
+        "sha256",
+        "media_type",
+        "byte_count",
+        "width",
+        "height",
+        "page_number",
+        "exif_orientation"
+      ],
+      "additionalProperties": false
+    },
+    "matrix3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "array",
+        "minItems": 3,
+        "maxItems": 3,
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "pageTransform": {
+      "type": "object",
+      "properties": {
+        "source_width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "corrected_width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "corrected_height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rotation_degrees": {
+          "type": "number"
+        },
+        "exif_orientation": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "render_scale": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "geometry_correction": {
+          "enum": [
+            "perspective",
+            "rotation",
+            "none"
+          ]
+        },
+        "correction_reason": {
+          "$ref": "#/$defs/reasonCode"
+        },
+        "homography": {
+          "$ref": "#/$defs/matrix3"
+        },
+        "homography_inverse": {
+          "$ref": "#/$defs/matrix3"
+        },
+        "render_to_pdf": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/matrix3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "source_width",
+        "source_height",
+        "corrected_width",
+        "corrected_height",
+        "geometry_correction",
+        "correction_reason",
+        "homography",
+        "homography_inverse"
+      ],
+      "additionalProperties": false
+    },
+    "imageTransform": {
+      "type": "object",
+      "properties": {
+        "stored_width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "stored_height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exif_orientation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "model_width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "model_height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pad_left": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pad_top": {
+          "type": "number",
+          "minimum": 0
+        },
+        "mask_frame": {
+          "const": "model"
+        }
+      },
+      "required": [
+        "stored_width",
+        "stored_height",
+        "exif_orientation",
+        "model_width",
+        "model_height",
+        "scale",
+        "pad_left",
+        "pad_top"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

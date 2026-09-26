@@ -1,0 +1,33 @@
+# Reference-table build policy (M7 "Configuration and thresholds"). Proposed values.
+config_version: cost-table-config-2026.09.1
+status: proposed
+method: empirical_percentile   # LightGBM comparison not run in this pass; see lightgbm_status
+lightgbm_status: not_run       # learned comparator missing; RQ4 conclusions limited to the empirical method
+nominal_coverage: "0.90"
+quantiles: ["0.05", "0.95"]
+percentile_definition: linear  # type 7 linear interpolation over per-base-case values
+base_case_aggregation: median  # one value per base case first, so repeated quotes cannot dominate
+min_independent_base_cases: 8   # frozen from the validation sweep below; null = select in the build
+support_selection_evidence:
+  status: frozen (proposed policy, synthetic evidence only)
+  selected_on: validation partition, generator gen-2026.09.1 seed 20260924, split split-2026.09.1
+  result: >-
+    Uncalibrated validation coverage 3:0.7454 (974 rec), 5:0.7482 (953), 8:0.7630 (882),
+    12:0.7588 (680); 20 not selectable (26 rec). 8 is closest to nominal 0.90.
+  sweep_file: support_sweep.json in each published table
+support_sweep:
+  candidates: [3, 5, 8, 12, 20]
+  selected_on: validation
+  criterion: validation coverage closest to nominal_coverage
+  tie_break: larger threshold
+  min_evaluated_records: 50    # a candidate with fewer validation records is not selectable
+support_group_edges: [3, 5, 8, 12, 16, 20]
+conformal: cqr                 # none | cqr; null = select on validation in the build
+conformal_decision: >-
+  Selected on validation and frozen. cqr_log_ratio fits one log-scale offset on the
+  calibration partition only (seed 20260924: Q = 0.080044 from 578 scores); validation
+  coverage 0.7630 without it (673/882) and 0.9059 with it (799/882). The offset is refitted
+  on the calibration partition of every build and recorded in calibration.json.
+rounding: {places: 2, mode: ROUND_HALF_UP}   # applied once at publication
+zero_width_allowed: true
+target_coverage_band: ["0.85", "0.95"]

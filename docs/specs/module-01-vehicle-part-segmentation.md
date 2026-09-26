@@ -2,7 +2,7 @@
 
 Owner lane: 1 (Vision). Runtime container: `cmev-worker-parts`. Code: `src/claim_cmev/vision/parts/`. Training pipeline: `pipelines/vision/`. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 8.1, 9.3, 9.4, 10 (M1), 11.1, 11.2, 11.8, 12.1, 13.1. Status: specified for v2; not implemented, not measured.
 
-> **Runtime note.** The user has directed containerised modules with Kafka as the transport between them. This replaces proposal v2 section 9.1 (one API process plus one worker, a jobs table, no broker). Every v2 domain rule is unchanged: the decision rules in section 8, the exchanged records in section 9.3, module scope in section 10, datasets in section 11 and targets in section 13.1.
+> **Runtime note.** The user directed containerised modules with Kafka as the transport between them on 2026-09-22. Proposal v2 section 9.1 has since been rewritten to describe this same runtime directly; it originally specified one API process plus one worker, a jobs table and no broker. Every v2 domain rule is unchanged: the decision rules in section 8, the exchanged records in section 9.3, module scope in section 10, datasets in section 11 and targets in section 13.1.
 
 > **No large language model sits in the decision path.** Part and damage integration is deterministic mask overlap in [M2](module-02-damage-segmentation.md). Vision and document integration is the deterministic rule set in [M8](module-08-consolidation-checks.md). An optional stretch service `cmev-explainer` may turn an already computed finding into a readable sentence. It is off by default and never changes a result.
 

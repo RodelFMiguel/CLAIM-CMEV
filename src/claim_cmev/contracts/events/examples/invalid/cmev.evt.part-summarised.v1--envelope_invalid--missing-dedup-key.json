@@ -1,0 +1,58 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:part_summary:all:3c5e7a90",
+  "versions": {
+    "summary_config": "summary-1.0.0",
+    "taxonomy": "parts-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-worker-summary"
+  },
+  "occurred_at": "2026-09-22T03:14:42Z",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "5bc0a04dc37205606a1b91d2bd1aac240478943add3f849c63205142b7b0619b",
+  "payload": {
+    "summary_ids": [
+      "ps_01JAX9B1",
+      "ps_01JAX9B2"
+    ],
+    "coverage_ids": [
+      "pc_01JAX9C01",
+      "pc_01JAX9C02",
+      "pc_01JAX9C03",
+      "pc_01JAX9C04",
+      "pc_01JAX9C05",
+      "pc_01JAX9C06",
+      "pc_01JAX9C07",
+      "pc_01JAX9C08",
+      "pc_01JAX9C09",
+      "pc_01JAX9C10",
+      "pc_01JAX9C11",
+      "pc_01JAX9C12",
+      "pc_01JAX9C13",
+      "pc_01JAX9C14",
+      "pc_01JAX9C15",
+      "pc_01JAX9C16",
+      "pc_01JAX9C17",
+      "pc_01JAX9C18",
+      "pc_01JAX9C19",
+      "pc_01JAX9C20",
+      "pc_01JAX9C21"
+    ],
+    "unresolved_observation_ids": [
+      "ob_01JAX8R5B"
+    ],
+    "coverage_counts": {
+      "adequate": 1,
+      "inadequate": 0,
+      "not_visible": 0,
+      "unresolved": 20
+    },
+    "branch": "image"
+  }
+}

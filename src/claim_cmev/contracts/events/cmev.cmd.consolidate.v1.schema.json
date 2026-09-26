@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.cmd.consolidate.v1.schema.json",
+  "title": "cmev.cmd.consolidate.v1",
+  "description": "Build an assessment from the stored branch results. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "trigger": {
+          "enum": [
+            "branches_complete",
+            "reassessment",
+            "retry"
+          ]
+        },
+        "image_branch_state": {
+          "enum": [
+            "complete",
+            "failed",
+            "skipped_no_photos"
+          ]
+        },
+        "document_branch_state": {
+          "enum": [
+            "complete",
+            "failed",
+            "skipped_no_pages"
+          ]
+        },
+        "summary_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "coverage_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "line_item_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "mark_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "review_revision": {
+          "anyOf": [
+            {
+              "$ref": "envelope.v1.schema.json#/$defs/revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cost_table_version": {
+          "$ref": "envelope.v1.schema.json#/$defs/version"
+        },
+        "rules_config_version": {
+          "$ref": "envelope.v1.schema.json#/$defs/version"
+        },
+        "pinned_versions": {
+          "$ref": "envelope.v1.schema.json#/$defs/versions"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "envelope.v1.schema.json#/$defs/shortText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "trigger",
+        "image_branch_state",
+        "document_branch_state",
+        "summary_ids",
+        "coverage_ids",
+        "line_item_ids",
+        "mark_ids",
+        "review_revision",
+        "cost_table_version",
+        "rules_config_version",
+        "pinned_versions"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

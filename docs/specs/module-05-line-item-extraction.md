@@ -2,7 +2,7 @@
 
 Owner lane: 2 (Document extraction), with Lane 4 owning the vocabulary and cost basis. Runtime container: `cmev-worker-lineitems`. Code: `src/claim_cmev/documents/line_items/`. Training pipeline: none in the core plan; `pipelines/documents/` is used only if stretch S1 starts. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 8.1, 8.2, 8.3, 9.3, 9.4, 10 (M5), 11.1, 11.3, 12.1, 12.3, 12.4, 13.1. Status: specified for v2; not implemented, not measured.
 
-> **Runtime note.** The user has directed containerised modules with Kafka as the transport between them. This replaces proposal v2 section 9.1 (one API process plus one worker, a jobs table, no broker). Every v2 domain rule is unchanged: the decision rules in section 8, the exchanged records in section 9.3, module scope in section 10, datasets in section 11 and targets in section 13.1.
+> **Runtime note.** The user directed containerised modules with Kafka as the transport between them on 2026-09-22. Proposal v2 section 9.1 has since been rewritten to describe this same runtime directly; it originally specified one API process plus one worker, a jobs table and no broker. Every v2 domain rule is unchanged: the decision rules in section 8, the exchanged records in section 9.3, module scope in section 10, datasets in section 11 and targets in section 13.1.
 
 > **No large language model sits in the decision path.** Part and damage integration is deterministic mask overlap in [M2](module-02-damage-segmentation.md). Vision and document integration is the deterministic rule set in [M8](module-08-consolidation-checks.md). An optional stretch service `cmev-explainer` may turn an already computed finding into a readable sentence. It is off by default and never changes a result.
 
@@ -174,7 +174,7 @@ The seven steps below are v2 section 10 M5 written as implementable rules.
 
 11. Map the description and operation text through the reviewed aliases in `configs/taxonomy/estimate_vocabulary.yaml`. Record `mapping_status` as `resolved`, `ambiguous` or `unmapped`, plus the original text.
 12. Fuzzy matching is **off by default**. When enabled, a fuzzy hit above `fuzzy_min_ratio` is a **suggestion** with `mapping_status = ambiguous`. It never becomes `resolved` without a human correction.
-13. Side comes from the document only. An explicit reviewed alias such as `LH`, `L/H` or `LEFT` sets `side` with `side_source = document_text`. Otherwise `side = unknown` with `side_source = not_stated`. No side is ever inferred from an image, and a document stated side is a declaration, not photographic confirmation.
+13. Side comes from the document only. An explicit reviewed alias such as `LH`, `L/H` or `LEFT` sets `side` with `side_source = document_text`. If the resolved part is explicitly unsided in the pinned taxonomy and side text is absent, set `side = not_applicable` with `side_source = absent`. Otherwise absent or ambiguous side text remains `unknown` with `side_source = absent`. No side is ever inferred from an image, and a document stated side is a declaration, not photographic confirmation.
 
 ### 5. Parse values
 
@@ -299,3 +299,10 @@ Targets are hypotheses from v2 section 13.1. Complete entry scoring requires the
 | Whether fuzzy vocabulary matching is ever enabled, and at what ratio | Lanes 2 and 4 | Day 4, suggestions only |
 | Currency and cost basis precedence between the document and the claim input | Lane 4 | Day 2 |
 | Whether stretch S1 starts at all, under the v2 section 12.3 gate | Lane 2 | Day 5 checkpoint |
+
+
+### Parser defect remediation (2026-09-25)
+
+A subtotal terminates a section, not the document scan. Inspect subsequent bands for new declared rows and retain later totals/taxes. Numeric regions before a repeated header on a continuation page are preserved as unparsed regions when no reliable column binding exists; the declaration is partial, never silently complete. This conservative fallback requires review rather than guessing cross-page column positions.
+
+The unsided-part policy is recorded as `m5-estimate-vocabulary/0.2.0`. Existing vocabulary 0.1.0 outputs and stored unknown-side rows are not rewritten. The 21 part codes and their taxonomy version are unchanged.

@@ -1,0 +1,62 @@
+# Synthetic base prices (SGD) for the eligible part/operation pairs, stated for the
+# reference class `sedan_standard` under single_part_pre_tax_no_discount_v1.
+# A key's base price is `pair_price x class_multiplier`, rounded once to 2 places
+# ROUND_HALF_UP; the expanded per-key table is written into every generator manifest.
+# Status: proposed. These are documented synthetic assumptions, not market prices.
+version: base-prices-2026.09.1
+status: proposed
+currency: SGD
+cost_basis: single_part_pre_tax_no_discount_v1
+reference_class: sedan_standard
+class_multipliers:
+  hatchback_small: {multiplier: "0.85", note: smaller panels and cheaper part supply}
+  sedan_standard: {multiplier: "1.00", note: reference class}
+  suv_crossover: {multiplier: "1.20", note: larger panels, more paint area, dearer parts}
+  van_commercial: {multiplier: "1.30", note: largest panels and commercial part supply}
+pairs:
+  front-bumper:
+    repair: {price: "280.00", note: plastic bumper crack or dent repair labour}
+    replace: {price: "800.00", note: bumper cover supply only}
+    paint: {price: "380.00", note: full bumper refinish, materials and labour}
+  back-bumper:
+    repair: {price: "260.00", note: plastic bumper repair labour}
+    replace: {price: "720.00", note: rear bumper cover supply only}
+    paint: {price: "360.00", note: full bumper refinish}
+  hood:
+    repair: {price: "320.00", note: steel panel dent repair labour}
+    replace: {price: "900.00", note: bonnet panel supply only}
+    paint: {price: "450.00", note: large horizontal panel refinish}
+  trunk:
+    repair: {price: "300.00", note: boot lid dent repair labour}
+    replace: {price: "850.00", note: boot lid supply only}
+    paint: {price: "420.00", note: boot lid refinish}
+  fender:
+    repair: {price: "250.00", note: front wing dent repair labour}
+    replace: {price: "480.00", note: bolt-on wing supply only}
+    paint: {price: "320.00", note: wing refinish}
+  quarter-panel:
+    repair: {price: "380.00", note: welded rear quarter repair labour}
+    replace: {price: "1400.00", note: welded quarter section supply only}
+    paint: {price: "400.00", note: rear quarter refinish}
+  front-door:
+    repair: {price: "350.00", note: door skin dent repair labour}
+    replace: {price: "1200.00", note: door shell supply only}
+    paint: {price: "420.00", note: door refinish}
+  back-door:
+    repair: {price: "330.00", note: rear door skin repair labour}
+    replace: {price: "1100.00", note: rear door shell supply only}
+    paint: {price: "400.00", note: rear door refinish}
+  headlight:
+    replace: {price: "550.00", note: halogen or basic LED headlamp unit supply}
+  tail-light:
+    replace: {price: "320.00", note: rear lamp cluster supply}
+  mirror:
+    replace: {price: "280.00", note: powered wing mirror assembly supply}
+    paint: {price: "150.00", note: mirror cap refinish}
+  grille:
+    replace: {price: "260.00", note: front grille supply}
+  windshield:
+    repair: {price: "120.00", note: resin chip repair labour}
+    replace: {price: "750.00", note: laminated windscreen glass supply}
+  back-windshield:
+    replace: {price: "520.00", note: tempered rear screen supply}

@@ -1,0 +1,56 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:part_summary:all:3c5e7a90",
+  "versions": {
+    "summary_config": "summary-1.0.0",
+    "taxonomy": "parts-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-orchestrator"
+  },
+  "occurred_at": "2026-09-22T03:14:40Z",
+  "dedup_key": "5bc0a04dc37205606a1b91d2bd1aac240478943add3f849c63205142b7b0619b",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "51ea03c7b98d2f461a0c3e5d7b9f1a2c4e608b1d3f5a7c9e0b2d4f6a8c1e3057",
+  "payload": {
+    "observation_ids": [
+      "ob_01JAX8R5A",
+      "ob_01JAX8R5B"
+    ],
+    "part_prediction_ids": [
+      "pp_01JAX8Q9A",
+      "pp_01JAX8Q9B",
+      "pp_01JAX8Q9C"
+    ],
+    "identity_confirmations": [
+      {
+        "confirmation_id": "ic_01JAXB01",
+        "photo_id": "ph_01JAX7Q1A",
+        "part_code": "front-bumper",
+        "side": "not_applicable",
+        "actor": "surveyor:rmiguel",
+        "recorded_at": "2026-09-22T03:30:11Z",
+        "review_revision": 1
+      }
+    ],
+    "coverage_confirmations": [
+      {
+        "confirmation_id": "cc_01JAXB02",
+        "photo_id": "ph_01JAX7Q1A",
+        "part_code": "front-bumper",
+        "side": "not_applicable",
+        "actor": "surveyor:rmiguel",
+        "recorded_at": "2026-09-22T03:30:40Z",
+        "review_revision": 2,
+        "covers_enough": true
+      }
+    ],
+    "summary_config_version": "summary-1.0.0",
+    "taxonomy_version": "parts-1.0.0"
+  }
+}

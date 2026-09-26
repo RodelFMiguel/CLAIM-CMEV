@@ -496,3 +496,8 @@ Assessment header: `assessment_revision = 4`, `input_revision = 3`, `cost_table_
 - Whether a confirmed exclusion should suppress a possible addition when the side is unresolved on the excluded row. The current rule does not suppress, which means more additions to dismiss but no hidden damage.
 - Whether `additions.min_observation_confidence` should really be stricter than `damage.min_observation_confidence`. Both are placeholders until validation data exists.
 - The exact identity of a "required" branch for R1 when the surveyor uploads photographs only. Proposal section 9.2 allows that case and shows the damage summary, so the document branch is `absent` rather than required. The team should confirm that a photo-only claim can be finalized at all.
+
+
+### Accepted scope input (2026-09-25)
+
+Consolidation consumes prior validated `accept_addition` review events for the same claim. A physical part/side already accepted into human-agreed scope is not proposed again; the missing-scope check recomputes over remaining candidates. Accepted operation, quantity and optional amount remain separate human inputs in the review/report and assessment input snapshot. They never become a workshop-declared row, printed price, model prediction or final approval.

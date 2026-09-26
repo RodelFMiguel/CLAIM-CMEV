@@ -4,7 +4,7 @@ Evidence-led motor own-damage claim review: vehicle photographs, marked workshop
 
 ## Working baseline
 
-The baseline provides a public information page, session login, searchable claim dashboard, claim intake, review and browser print views. React/TypeScript calls real FastAPI endpoints. Persistence and review actions are real; the separate worker supplies clearly labelled fixture processing results. No trained model analyses uploaded evidence, and synthetic costs do not validate real prices or final claim approval.
+The baseline provides a public information page, session login, searchable claim dashboard, claim intake, review and browser print views. React/TypeScript calls real FastAPI endpoints. Persistence, orchestration, deterministic M8 checks and review actions are real; stage producers supply clearly labelled fixture evidence records. Corrections trigger versioned reassessment, and finalization freezes the reviewed report. No trained model analyses uploaded evidence, and synthetic costs do not validate real prices or final claim approval.
 
 Application code lives under `src`, as recorded in [ADR 0003](docs/adr/0003-fixture-ui-api-baseline.md). The [current handoff](CONTEXT.md) records checks actually run and remaining work.
 
@@ -20,7 +20,7 @@ docker compose --env-file infra/compose/.env -f infra/compose/docker-compose.yml
 
 Open **http://localhost:8080**. Sign in with `surveyor@claim-cmev.demo` and the `CMEV_DEMO_PASSWORD` configured above. The login page includes a default demo credential suggestion; replace its password if you configured a different value. API documentation is at **http://localhost:8080/api/v1/docs**; the OpenAPI schema is at `/api/v1/openapi.json`.
 
-The lean baseline contains the web app, API, fixture worker, Kafka-compatible broker, PostgreSQL and S3-compatible object storage. Infrastructure services are private; only the web port is published to loopback. See [infra/README.md](infra/README.md) for configuration, persistent volumes, image dependencies and validation limitations. A complete per-module `full` runtime is not implemented by this baseline.
+The lean baseline contains the web app, API, fixture worker, Kafka-compatible broker, PostgreSQL and S3-compatible object storage. Infrastructure services are private; only the web port is published to loopback. See [infra/README.md](infra/README.md) for configuration, persistent volumes, image dependencies and validation limitations. The `full` profile separates the orchestrator, fixture producers and consolidator. It is verified fixture packaging, not the final six inference services or GPU runtime.
 
 ## Local development without containers
 
@@ -30,6 +30,8 @@ Requires Python 3.12+ and Node.js 22+. From the repository root:
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e '.[dev]'
+# Offline synthetic reference build, required before starting the app:
+python -m claim_cmev.costs.reference.build --seed 20260924 --promote
 uvicorn claim_cmev.api.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -52,7 +54,7 @@ Open **http://localhost:5173**. The Vite proxy forwards `/api` to port 8000. Def
 ## Checks
 
 ```sh
-.venv/bin/python -m pytest tests/backend -q
+.venv/bin/python -m pytest -q
 cd src/workbench
 npm run build
 # With the local API, worker and frontend already running:
@@ -60,7 +62,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The browser check uses the running application and synthetic fixtures. Generated screenshots and runtime data stay in ignored locations. Linux browser installations may need the Playwright system libraries.
+See [test instructions](tests/README.md) for additional review controls and print checks. The browser check uses the running application and synthetic fixtures. Generated screenshots and runtime data stay in ignored locations. Linux browser installations may need the Playwright system libraries.
 
 ## Source map
 
@@ -68,8 +70,9 @@ The browser check uses the running application and synthetic fixtures. Generated
 | --- | --- |
 | `src/workbench/` | React UI, API client and local decorative assets |
 | `src/claim_cmev/api/` | FastAPI HTTP and session boundary |
-| `src/claim_cmev/worker.py` | Separate fixture worker and transactional outbox delivery |
-| `src/claim_cmev/runtime.py` | Baseline persistence/configuration |
+| `src/claim_cmev/worker.py`, `orchestration/`, `messaging/` | Worker roles, persisted stage join, fixture producers and transactional delivery |
+| `src/claim_cmev/runtime.py`, `persistence/` | Runtime configuration, SQL records and migrations |
+| `src/claim_cmev/contracts/`, `comparison/`, `review/` | Typed records, M8 checks and M9 review/report rules |
 | `src/claim_cmev/storage.py` | Local/S3 evidence adapter; bytes served through the API |
 | `src/claim_cmev/fixtures.py` | Explicit synthetic seed records and mocked results |
 | `infra/` | Container build/proxy/Compose configuration |

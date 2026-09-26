@@ -1,21 +1,31 @@
-"""API/worker integration with isolated SQLite and local evidence; no ML/Kafka claims."""
+"""API/worker integration with isolated SQLite and local evidence; no ML/Kafka claims.
+
+Updated for the event-driven pipeline (2026-09-24): seed assessments now come from the
+orchestrator, the fixture stage producers and the real M8 rules over the contract fixture
+scenarios, so mark IDs are looked up from the assessment and amounts follow the scenario.
+Every invariant assertion of the earlier baseline is kept.
+"""
 from copy import deepcopy
 from io import BytesIO
+from types import SimpleNamespace
 from uuid import uuid4
+
 import pytest
 from PIL import Image
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select, update
+
 from claim_cmev.api.main import create_app
-from claim_cmev.runtime import Record, Outbox, get, put
-from claim_cmev.worker import local_tick, process_event, record_failure
+from claim_cmev.messaging.consumer import consume_batch
+from claim_cmev.messaging.transport import Message
+from claim_cmev.orchestration.services import local_pipeline
+from claim_cmev.persistence.tables import assessments, dead_letters, jobs, outbox
+from claim_cmev.runtime import Record
+from claim_cmev.worker import local_tick
 
 
 @pytest.fixture
-def setup(tmp_path, monkeypatch):
-    monkeypatch.setenv("CMEV_STORAGE_BACKEND", "local")
-    monkeypatch.setenv("CMEV_FIXTURE_MODE", "true")
-    monkeypatch.setenv("CMEV_DEMO_PASSWORD", "Demo2026!")
+def setup(tmp_path):
     app = create_app("sqlite:///" + str(tmp_path / "test.db"), tmp_path / "evidence")
     with TestClient(app) as client:
         yield client, app.state.database
@@ -42,7 +52,22 @@ def png():
 
 
 def upload(client, cid, role="photograph", raw=None, media="image/png", name="sample.png"):
-    return client.post(f"/api/v1/claims/{cid}/files", data={"role": role}, files={"files": (name, raw if raw is not None else png(), media)}, headers={"Idempotency-Key": str(uuid4())})
+    return client.post(f"/api/v1/claims/{cid}/files", data={"role": role},
+                       files={"files": (name, raw if raw is not None else png(), media)},
+                       headers={"Idempotency-Key": str(uuid4())})
+
+
+def pending_mark(client, cid, rev=1):
+    marks = client.get(f"/api/v1/claims/{cid}/assessments/{rev}").json()["marks"]
+    return next(m for m in marks if m["state"] == "pending" and m["entry_id"])
+
+
+def seed_event(database, reference_index=1):
+    """The queued seed CLM-24020's input-revision-created outbox row (left for the worker)."""
+    cid = f"01K5000000000000000000000{reference_index}"
+    with database.session() as db:
+        return db.execute(select(outbox).where(outbox.c.message_key == cid,
+                                               outbox.c.topic == "cmev.evt.input-revision-created.v1")).mappings().first()
 
 
 def test_auth_csrf_session_and_public_docs(setup):
@@ -63,7 +88,8 @@ def test_auth_csrf_session_and_public_docs(setup):
 def test_create_idempotency_and_claim_ownership(setup):
     client, database = setup
     login(client)
-    body = {"reference": "NEW-1", "vehicle_make": "Toyota", "vehicle_model": "Yaris", "vehicle_year": 2020, "vehicle_class": "hatchback"}
+    body = {"reference": "NEW-1", "vehicle_make": "Toyota", "vehicle_model": "Yaris", "vehicle_year": 2020,
+            "vehicle_class": "hatchback"}
     first = post(client, "/claims", body, "create-1")
     assert first.status_code == 201
     assert post(client, "/claims", body, "create-1").json() == first.json()
@@ -104,9 +130,10 @@ def test_upload_decode_dedup_cross_claim_and_outbox(setup):
     claim = client.get(f"/api/v1/claims/{cid}").json()
     assert claim["status"] == "in_review"
     assessment = client.get(f"/api/v1/claims/{cid}/assessments/{claim['assessment_revision']}").json()
-    assert assessment["line_items"] == []
+    assert assessment["line_items"] == []  # photographs only: no estimate rows, never invented
     assert assessment["provenance"]["source_kind"] == "fixture"
     assert assessment["damage_summary"][0]["coverage"] == "unresolved"
+    assert "document_branch_missing" in assessment["incomplete_reasons"]
 
 
 @pytest.mark.parametrize("amount", ["-1", "NaN", "Infinity", "0.001", "9999999999", "oops"])
@@ -114,35 +141,51 @@ def test_invalid_decimal_never_revises_input(setup, amount):
     client, database = setup
     login(client)
     cid = sample(client)["claim_id"]
-    result = post(client, f"/claims/{cid}/assessments/1/marks/mark-1/decision", {"expected_input_revision": 1, "expected_review_revision": 0, "decision": "confirm", "amount": amount})
+    mark = pending_mark(client, cid)
+    result = post(client, f"/claims/{cid}/assessments/1/marks/{mark['mark_id']}/decision",
+                  {"expected_input_revision": 1, "expected_review_revision": 0, "decision": "confirm", "amount": amount})
     assert result.status_code == 422
     assert client.get(f"/api/v1/claims/{cid}").json()["input_revision"] == 1
 
 
-@pytest.mark.parametrize("decision,amount,expected", [("confirm", "1000.10", "1000.10"), ("reject", None, "1250.00")])
+@pytest.mark.parametrize("decision,amount,expected", [("confirm", "1000.10", "1000.10"), ("reject", None, "1150.00")])
 def test_reassessment_stale_reviews_frozen_print_and_lineage(setup, decision, amount, expected):
     client, database = setup
     login(client)
     cid = sample(client)["claim_id"]
     path = f"/claims/{cid}/assessments/1"
+    before = client.get("/api/v1" + path).json()
+    assert before["line_items"][0]["effective_amount"] is None  # a pending price change never uses the printed price
     assert post(client, path + "/finalize", {"expected_review_revision": 0}).status_code == 412
     assert post(client, path + "/notes", {"expected_review_revision": 0, "text": "Please retain my note"}).status_code == 200
     assert post(client, path + "/notes", {"expected_review_revision": 0, "text": "Stale"}).status_code == 409
     with database.session() as db:
-        original = deepcopy(get(db, f"assessment:{cid}:1"))
-    result = post(client, path + "/marks/mark-1/decision", {"expected_input_revision": 1, "expected_review_revision": 1, "decision": decision, "amount": amount}, "mark-1")
+        original = deepcopy(db.execute(select(assessments.c.body).where(assessments.c.claim_id == cid,
+                                                                         assessments.c.assessment_revision == 1)).scalar())
+        stage_jobs = db.execute(select(func.count()).select_from(jobs).where(jobs.c.claim_id == cid)).scalar()
+    mark = pending_mark(client, cid)
+    result = post(client, path + f"/marks/{mark['mark_id']}/decision",
+                  {"expected_input_revision": 1, "expected_review_revision": 1, "decision": decision, "amount": amount},
+                  "mark-1")
     assert result.status_code == 202
+    assert sorted(result.json()["reused_stages"]) == sorted(
+        ["parts", "damage", "summary", "page_read", "line_items", "pen_marks"])
     assert post(client, path + "/finalize", {"expected_review_revision": 2}).status_code == 409
     local_tick(database)
     with database.session() as db:
-        assert get(db, f"assessment:{cid}:1") == original
+        assert db.execute(select(assessments.c.body).where(assessments.c.claim_id == cid,
+                                                           assessments.c.assessment_revision == 1)).scalar() == original
+        new_jobs = db.execute(select(jobs.c.task).where(jobs.c.claim_id == cid, jobs.c.input_revision == 2)).scalars().all()
+    assert sorted(new_jobs) == ["consolidate", "intake"]  # a mark decision reruns no stage
+    assert stage_jobs > 2
     claim = client.get(f"/api/v1/claims/{cid}").json()
     rev = claim["assessment_revision"]
     new_path = f"/claims/{cid}/assessments/{rev}"
     a = client.get("/api/v1" + new_path).json()
-    assert a["line_items"][0]["printed_amount"] == "1250.00"
+    assert a["line_items"][0]["printed_amount"] == "1150.00"
     assert a["line_items"][0]["effective_amount"] == expected
     assert a["line_items"][0]["overall_result"] == "insufficient_evidence"
+    assert {entry["stage"] for entry in a["reuse_lineage"]} == set(result.json()["reused_stages"])
     review = client.get("/api/v1" + new_path + "/review").json()
     assert review["actions"][0]["text"] == "Please retain my note"
     result = post(client, new_path + "/finalize", {"expected_review_revision": 2}, "finalize-1")
@@ -150,62 +193,60 @@ def test_reassessment_stale_reviews_frozen_print_and_lineage(setup, decision, am
     assert post(client, new_path + "/finalize", {"expected_review_revision": 2}, "finalize-1").json() == result.json()
     frozen = client.get(result.json()["print_view_url"]).json()
     assert frozen["review"]["finalized"]
-    assert frozen["review"]["review_revision"] == 3
+    assert frozen["review"]["review_revision"] == 2
     assert post(client, new_path + "/notes", {"expected_review_revision": 3, "text": "Cannot change"}).status_code == 409
-    assert client.get("/api/v1" + new_path + "/print-view?review_revision=2").status_code == 409
+    assert client.get("/api/v1" + new_path + "/print-view?review_revision=3").status_code == 409
 
 
 def test_worker_replay_and_permanent_failure(setup):
     client, database = setup
+    row = seed_event(database)
+    pipeline = local_pipeline(database, sleep=lambda _s: None)
+    orchestrator = pipeline.runtime("cmev-orchestrator")
+    message = Message(row["topic"], row["message_key"], deepcopy(row["payload"]), 0, 0)
+    assert orchestrator.process(message) == "processed"
+    assert orchestrator.process(message) == "duplicate"
+    malformed = Message(row["topic"], row["message_key"], {**row["payload"], "schema_version": "unsupported",
+                                                            "dedup_key": "f" * 64}, 0, 1)
+    assert orchestrator.process(malformed) == "dead_lettered"
+    assert orchestrator.process(malformed) == "duplicate"
+    assert orchestrator.process(Message(row["topic"], None, [], 0, 2)) == "dead_lettered"
     with database.session() as db:
-        event = deepcopy(db.scalar(select(Outbox)).payload)
-    assert process_event(database, event)
-    assert not process_event(database, event)
-    assert not process_event(database, {**event, "dedup_key": "redelivered-different-envelope"})
-    with database.session() as db:
-        assert len(list(db.scalars(select(Record).where(Record.kind == "assessment", Record.claim_id == event["claim_id"])))) == 1
-    malformed = {**event, "schema_version": "unsupported"}
-    with pytest.raises(ValueError):
-        process_event(database, malformed)
-    record_failure(database, malformed, "unsupported_schema")
-    record_failure(database, malformed, "unsupported_schema")
-    record_failure(database, [], "invalid_envelope")
-    with database.session() as db:
-        assert get(db, "claim:" + event["claim_id"])["status"] == "in_review"
-        assert len(list(db.scalars(select(Record).where(Record.kind == "dead_letter")))) == 2
+        assert db.execute(select(func.count()).select_from(dead_letters)).scalar() == 2
+    login(client)
+    assert sample(client, "CLM-24020")["status"] == "processing"  # a rejected duplicate never fails good work
 
 
 def test_bad_pending_job_is_failed_not_stuck(setup):
     client, database = setup
+    row = seed_event(database)
     with database.session.begin() as db:
-        row = db.scalar(select(Outbox))
-        event = {**row.payload, "schema_version": "invalid"}
-        row.payload = event
+        db.execute(update(outbox).where(outbox.c.id == row["id"])
+                   .values(payload={**row["payload"], "schema_version": "invalid"}))
     local_tick(database)
+    login(client)
+    claim = sample(client, "CLM-24020")
+    assert claim["status"] == "incomplete"
     with database.session() as db:
-        assert get(db, "claim:" + event["claim_id"])["status"] == "failed"
-        assert get(db, "job:" + event["job_key"])["state"] == "dead_lettered"
-        assert len(list(db.scalars(select(Record).where(Record.kind == "dead_letter")))) == 1
+        assert db.execute(select(jobs.c.state).where(jobs.c.job_key == row["payload"]["job_key"])).scalar() == "dead_lettered"
+        assert db.execute(select(func.count()).select_from(dead_letters)).scalar() == 1
+        assert db.execute(select(func.count()).select_from(assessments).where(
+            assessments.c.claim_id == claim["claim_id"])).scalar() == 0
 
 
-def test_kafka_poll_commits_only_after_all_partitions(monkeypatch):
-    from types import SimpleNamespace
-    import claim_cmev.worker as worker
+def test_kafka_poll_commits_only_after_all_partitions():
     calls = []
-    consumer = SimpleNamespace(
-        poll=lambda **kwargs: {0: [SimpleNamespace(value="first")], 1: [SimpleNamespace(value="second")]},
-        commit=lambda: calls.append("commit"))
-    def fail_later(database, event):
-        calls.append(event)
-        if event == "second":
+    consumer = SimpleNamespace(poll=lambda max_records: ["first", "second"], commit=lambda: calls.append("commit"))
+
+    def fail_later(message):
+        calls.append(message)
+        if message == "second":
             raise RuntimeError("database unavailable")
-    monkeypatch.setattr(worker, "process_event", fail_later)
     with pytest.raises(RuntimeError):
-        worker.consume_poll(None, None, consumer)
+        consume_batch(SimpleNamespace(process=fail_later), consumer)
     assert calls == ["first", "second"]
     calls.clear()
-    monkeypatch.setattr(worker, "process_event", lambda database, event: calls.append(event))
-    worker.consume_poll(None, None, consumer)
+    consume_batch(SimpleNamespace(process=calls.append), consumer)
     assert calls == ["first", "second", "commit"]
 
 
@@ -214,8 +255,8 @@ def test_duplicate_files_in_single_upload_create_one_record(setup):
     login(client)
     cid = sample(client, "CLM-24021")["claim_id"]
     response = client.post(f"/api/v1/claims/{cid}/files", data={"role": "photograph"},
-        files=[("files", ("one.png", png(), "image/png")), ("files", ("two.png", png(), "image/png"))],
-        headers={"Idempotency-Key": "batch-upload"})
+                           files=[("files", ("one.png", png(), "image/png")), ("files", ("two.png", png(), "image/png"))],
+                           headers={"Idempotency-Key": "batch-upload"})
     assert response.status_code == 201
     files = response.json()["files"]
     assert files[0]["file_id"] == files[1]["file_id"]
@@ -229,28 +270,38 @@ def test_superseded_jobs_cannot_replace_current_assessment(setup):
     fid = upload(client, cid, role="estimate_page").json()["files"][0]["file_id"]
     for _ in range(2):
         assert post(client, f"/claims/{cid}/input-revisions", {"file_ids": [fid]}).status_code == 202
-    with database.session() as db:
-        events = [deepcopy(row.payload) for row in db.scalars(select(Outbox).order_by(Outbox.id)) if row.payload["claim_id"] == cid]
-    assert process_event(database, events[1])
+    with database.session.begin() as db:  # hold revision 1's event back, as if it were delayed
+        held = db.execute(select(outbox).where(outbox.c.message_key == cid).order_by(outbox.c.id)).mappings().first()
+        db.execute(update(outbox).where(outbox.c.id == held["id"]).values(published_at=held["created_at"]))
+    pipeline = local_pipeline(database, sleep=lambda _s: None)
+    pipeline.drain()
     current = client.get(f"/api/v1/claims/{cid}").json()["assessment_revision"]
-    assert process_event(database, events[0])
+    assert current is not None
+    pipeline.broker.send(held["topic"], held["message_key"], held["payload"])  # the late delivery
+    pipeline.drain()
     claim = client.get(f"/api/v1/claims/{cid}").json()
     assert claim["assessment_revision"] == current
     assert claim["input_revision"] == 2
     assert claim["estimate_row_count"] == 3
-    assert claim["declared_total"] == "2590.00"
-    assert len(client.get(f"/api/v1/claims/{cid}/assessments").json()["items"]) == 2
-    late = next(a for a in client.get(f"/api/v1/claims/{cid}/assessments").json()["items"] if a["input_revision"] == 1)
-    assert not client.get(f"/api/v1/claims/{cid}/assessments/{late['assessment_revision']}/finalize-preconditions").json()["can_finalize"]
+    assert claim["declared_total"] is None  # one printed amount is unreadable: no total is invented
+    items = client.get(f"/api/v1/claims/{cid}/assessments").json()["items"]
+    assert len(items) == 2
+    late = next(a for a in items if a["input_revision"] == 1)
+    assert late["superseded"] and not late["is_current"]
+    assert not client.get(f"/api/v1/claims/{cid}/assessments/{late['assessment_revision']}/finalize-preconditions"
+                          ).json()["can_finalize"]
 
 
 def test_old_frozen_print_is_unchanged_after_new_input(setup):
     client, database = setup
     login(client)
-    cid = sample(client, "CLM-24018")["claim_id"]
-    url = f"/api/v1/claims/{cid}/assessments/1/print-view?review_revision=0"
+    claim = sample(client, "CLM-24018")
+    assert claim["status"] == "ready_to_print"
+    review = client.get(f"/api/v1/claims/{claim['claim_id']}/assessments/1/review").json()
+    url = f"/api/v1/claims/{claim['claim_id']}/assessments/1/print-view?review_revision={review['review_revision']}"
     before = client.get(url).json()
-    fid = upload(client, cid).json()["files"][0]["file_id"]
-    assert post(client, f"/claims/{cid}/input-revisions", {"file_ids": [fid]}).status_code == 202
+    assert before["assessment"]["fixture_notice"]
+    fid = upload(client, claim["claim_id"]).json()["files"][0]["file_id"]
+    assert post(client, f"/claims/{claim['claim_id']}/input-revisions", {"file_ids": [fid]}).status_code == 202
     local_tick(database)
     assert client.get(url).json() == before

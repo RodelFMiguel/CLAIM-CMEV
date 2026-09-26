@@ -1,0 +1,40 @@
+# Part vocabulary for v2 (data contracts section 3.1). Part identity is part_code + side.
+# The 21 codes are the HITL part categories, unchanged from v1. Background is a
+# segmentation label, not a repairable part. Codes are a contract: changing one is a
+# contract change (integration contracts section 10.2), not a settings edit.
+taxonomy_version: parts-1.0.0
+status: frozen  # the 21 codes are fixed by data contracts section 3.1
+background_label: background
+# hitl_title: the class title exactly as it appears in the Supervisely meta.json.
+#   Loaders map inspected titles to codes, never folder names (note the US spelling
+#   "License-plate" for the licence-plate code).
+# sided: Whether a left/right side exists for this part. M5 vocabulary 0.2.0 uses
+#   false to produce not_applicable when side text is absent. Sided parts stay unknown
+#   without explicit text. Image side still requires an IdentityConfirmation.
+# cost_eligible: PROPOSED (M7). The 21 codes minus front-wheel, back-wheel and
+#   licence-plate; the frozen grid lives in configs/costs/eligible_keys.yaml.
+parts:
+  - {code: windshield, hitl_title: Windshield, sided: false, cost_eligible: true}
+  - {code: back-windshield, hitl_title: Back-windshield, sided: false, cost_eligible: true}
+  - {code: front-window, hitl_title: Front-window, sided: true, cost_eligible: true}
+  - {code: back-window, hitl_title: Back-window, sided: true, cost_eligible: true}
+  - {code: front-door, hitl_title: Front-door, sided: true, cost_eligible: true}
+  - {code: back-door, hitl_title: Back-door, sided: true, cost_eligible: true}
+  - {code: front-wheel, hitl_title: Front-wheel, sided: true, cost_eligible: false}
+  - {code: back-wheel, hitl_title: Back-wheel, sided: true, cost_eligible: false}
+  - {code: front-bumper, hitl_title: Front-bumper, sided: false, cost_eligible: true}
+  - {code: back-bumper, hitl_title: Back-bumper, sided: false, cost_eligible: true}
+  - {code: headlight, hitl_title: Headlight, sided: true, cost_eligible: true}
+  - {code: tail-light, hitl_title: Tail-light, sided: true, cost_eligible: true}
+  - {code: hood, hitl_title: Hood, sided: false, cost_eligible: true}
+  - {code: trunk, hitl_title: Trunk, sided: false, cost_eligible: true}
+  - {code: licence-plate, hitl_title: License-plate, sided: false, cost_eligible: false}
+  - {code: mirror, hitl_title: Mirror, sided: true, cost_eligible: true}
+  - {code: roof, hitl_title: Roof, sided: false, cost_eligible: true}
+  - {code: grille, hitl_title: Grille, sided: false, cost_eligible: true}
+  - {code: rocker-panel, hitl_title: Rocker-panel, sided: true, cost_eligible: true}
+  - {code: quarter-panel, hitl_title: Quarter-panel, sided: true, cost_eligible: true}
+  - {code: fender, hitl_title: Fender, sided: true, cost_eligible: true}
+# PROPOSED (M3 open decision): the supported panel list that always gets a coverage
+# slot. Default is the full 21 classes until the team agrees a smaller subset.
+supported_panel_list: all

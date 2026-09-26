@@ -1,0 +1,36 @@
+# M2 damage-region extraction and damage-to-part assignment configuration.
+# See docs/specs/module-02-damage-segmentation.md ("Configuration and thresholds") and
+# docs/specs/integration_contracts.md sections 3.2 and 3.5.
+#
+# Status: every threshold below is PROPOSED (the specification defaults). None has been
+# selected on validation data: the jointly labelled damage-to-part validation sample does
+# not exist yet. Select on the validation partition, record the sweep and freeze at the
+# day 6 checkpoint; never tune against final test images. Any change bumps
+# config_version, which changes the job key and produces a new result; an existing
+# observation is never rewritten.
+#
+# File name follows this directory's m<N>_<name>.yaml convention; the specifications
+# call the same file configs/pipeline/damage_assignment.yaml.
+config_version: "m2-assignment/0.1.0"
+status: proposed
+
+regions:
+  # Per-pixel softmax floor; lower pixels become background (count recorded).
+  min_damage_confidence: 0.50
+  # Components below this pixel count are dropped with reason below_min_pixels.
+  min_damage_pixels: 256
+  # 4 or 8 connectivity for per-class connected components.
+  connectivity: 8
+  # Excess components are dropped by ascending area with reason max_components_exceeded.
+  max_components_per_photo: 50
+
+assignment:
+  # Fraction of the damage component inside the primary part.
+  assign_min_containment: 0.60
+  # Primary minus runner-up containment.
+  assign_ambiguity_margin: 0.20
+  # Above this background containment the component is mostly off the vehicle.
+  assign_background_max: 0.50
+  # Boundary-crossing components stay whole and ambiguous. Enabling a split needs a
+  # recorded policy and evidence; the loader rejects true.
+  split_components: false

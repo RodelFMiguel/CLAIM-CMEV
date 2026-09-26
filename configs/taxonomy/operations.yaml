@@ -1,0 +1,8 @@
+# Operation vocabulary (data contracts section 3.4). Only repair, replace and paint are
+# eligible for a cost range; other and unknown never inherit one, and repair, replace
+# and paint never share a range. Whether paint is a separate document operation is an
+# open decision (data contracts section 15); it is kept here, PROPOSED.
+taxonomy_version: operations-1.0.0
+status: proposed
+values: [repair, replace, paint, other, unknown]
+cost_eligible: [repair, replace, paint]

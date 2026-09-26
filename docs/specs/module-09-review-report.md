@@ -321,18 +321,30 @@ Finalize passes F1 to F6. If the team adopts proposed condition P2, it is still 
 
 They finalize. Review revision 12 is frozen against assessment 5. The print view opens with a footer reading `input 5 / assessment 5 / review 12`, parts `segformer-parts 0.3.1`, damage `segformer-damage 0.2.4`, penmarks `frcnn-penmarks 0.2.0`, OCR `paddleocr 2.7.0`, parser `parser-0.4.2`, rules `rc-0.1.0`, cost table `2026.09.1`, basis `cb-sgd-single-part-v1`, and the line "Reference costs are synthetic and do not represent real repair prices". `e-007` still reads "More information needed" in the printed report, with its reason, and it is not a pass. Final approval prints as "not recorded". The surveyor prints to PDF from the browser.
 
+## Implementation status (2026-09-24)
+
+The pure review service is connected to the API and workbench through the typed
+review-actions endpoint. Identity/coverage rerun M3 over reused records; other
+decision-changing corrections rerun consolidation. IndexedDB stores one unresolved
+request per actor/claim with its original idempotency key, plus note/amount drafts.
+Explicit retry survives reload and lost acknowledgements. Generic form values are
+retained once submitted; unsent generic form drafts are not all persisted yet.
+Frozen reports retain human scope and notes across reassessments. This is a fixture-backed
+integration, with [validation evidence and limitations](../verification/model-independent-2026-09-24.md).
+Unticked compound tasks retain their unverified or model-dependent requirements.
+
 ## Implementation tasks
 
 - [ ] Agree the API surface and the record shapes with the [application platform](application_platform.md) and [integration contracts](integration_contracts.md) on day 1.
 - [ ] Build the upload page with the five claim states and explicit per-file rejection reasons.
 - [ ] Build the review overview with all four sections against clearly labelled fixtures by day 2, then swap in real records.
 - [ ] Build the evidence panel with server-rendered overlays, one-tap original access and the row and mark box highlight.
-- [ ] Implement `classify_review_action` and `apply_review_action` as pure functions with their unit tests.
+- [x] Implement `classify_review_action` and `apply_review_action` as pure functions with their unit tests.
 - [ ] Implement idempotency keys, `expected_review_revision` conflict handling and durable pending-edit storage with retry.
 - [ ] Implement `evaluate_finalize_preconditions` for F1 to F6, and for P1 and P2 if the team adopts them, with a blocker list that links to the offending row.
-- [ ] Implement the reassessment publish path with `reuse_lineage`, and verify that a price correction reruns no neural model.
+- [x] Implement the reassessment publish path with `reuse_lineage`, and verify that a price correction reruns no neural model.
 - [ ] Implement the print view from a frozen revision only, with the full footer, the synthetic-cost label and the final-approval status.
-- [ ] Build the reason-code to display-text catalogue from M8's table, with no free composition.
+- [x] Build the reason-code to display-text catalogue from M8's table, with no free composition.
 - [ ] Verify the tablet layout, large controls, keyboard focus, greyscale distinguishability and bright and dim presentation.
 - [ ] Run the service checks: container kill, broker stop and restart, duplicate delivery, stale edit, replayed save.
 - [ ] Run the section 13.5 usability sessions and publish the measures with their sample limits.
@@ -348,3 +360,10 @@ They finalize. Review revision 12 is frozen against assessment 5. The print view
 - How a carried-forward dismissal is presented so it is clearly carried and not freshly made.
 - Whether `usability_event` telemetry is stored at all, or whether the section 13.5 measures are captured on paper. Storing them is simpler to analyse and adds a table nobody else needs.
 - The durable pending-edit storage choice, IndexedDB versus `localStorage`, and its quota behaviour with several open claims.
+
+
+### Review recovery corrections (2026-09-25)
+
+Absent image/document branches may finalize an explicitly incomplete-evidence report once all supplied-input processing and required review gates have completed. Failed processing remains blocking. An unreadable uploaded page/declaration requires a human completeness confirmation before finalization (P2 is enforced for this case); an explicit human acknowledgement of partial scope preserves that partial state and withholds additions. Explicitly-empty is invalid while declared rows exist.
+
+Printed-amount corrections retain the first extraction and original text beside the corrected reading, including in the frozen report. New uploads preserve review audit history and replay corrections only for unchanged source branches. Changed-source corrections remain in input `invalidated_corrections` with a reason and require reconfirmation; they are never blindly applied to newly extracted row/mark identities.

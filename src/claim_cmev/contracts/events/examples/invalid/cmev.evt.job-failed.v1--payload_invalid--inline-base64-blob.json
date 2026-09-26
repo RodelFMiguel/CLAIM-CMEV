@@ -1,0 +1,35 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:page_read:pg_01JAX7Q2A:6d3f01ab",
+  "versions": {
+    "ocr": "paddleocr/2.7.3",
+    "preprocess_config": "doc-pre-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-worker-ocr"
+  },
+  "occurred_at": "2026-09-22T03:15:44Z",
+  "dedup_key": "0c9a27e4b1d38f56a0c2e4b6d8f1032547698badcfe0213456789abcdef01234",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "attempt": 3,
+  "causation_id": "f1a2...",
+  "payload": {
+    "stage": "page_read",
+    "target_ref": "pg_01JAX7Q2A",
+    "reason_code": "ocr_engine_error",
+    "reason_text": "PaddleOCR predictor raised RuntimeError during recognition on page 1",
+    "attempt": 3,
+    "retryable": false,
+    "partial_artifacts": [
+      {
+        "artifact_id": "dr_01JAX8S0",
+        "object_uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkiVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkiVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkiVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkiVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkiVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+      }
+    ]
+  }
+}

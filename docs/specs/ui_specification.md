@@ -531,8 +531,8 @@ ADD TO SCOPE
 |  (i) 3 rows are "More information needed". Their reasons are printed with them.            |
 |  (i) 1 finding was dismissed with the reason "parts price change".                         |
 |                                                                                            |
-|  Finalizing freezes review revision 7 against assessment revision 3. Later edits create a  |
-|  new review revision and you would finalize again.                                         |
+|  Finalizing freezes review revision 7 against assessment revision 3. Decision changes need a  |
+|  new input/assessment and review; the frozen report remains unchanged.                                         |
 |                                                                                            |
 |                                      [ Keep reviewing ]   [ Finalize (disabled) ]          |
 +--------------------------------------------------------------------------------------------+
@@ -832,7 +832,7 @@ Row-level rules:
 | `awaiting_estimate` | Photographs only | "Waiting for the estimate" | informational | document outline | Show an empty line-item table with no explanation |
 | `failed` | Required processing cannot produce a usable result | "Processing failed" | negative | cross in a circle | Ever render result badges or a finalize button |
 | `recomputing` | A decision-changing action created a new assessment that is not committed | "Recomputing after your change" | neutral, animated | rotating arc | Show the new result before it exists |
-| `finalized` | A review revision is frozen | "Finalized, review revision 7" | positive outline | lock | Allow silent edits. Editing starts a new review revision and unfreezes the finalize gate |
+| `finalized` | A review revision is frozen | "Finalized, review revision 7" | positive outline | lock | Allow silent edits. Further decision changes require a new input/assessment and review; the frozen pairing stays immutable |
 
 ### 7.2 Row states
 
@@ -912,7 +912,7 @@ Required distinctions:
 | Add photographs or pages | Any time before finalize | `POST /claims/{id}/files` then `POST /claims/{id}/input-revisions` | Routes to the processing page. The review overview is not updated in place | A concurrent input revision makes the client reload the newest revision | New input revision. Image or document stages rerun. New assessment revision |
 | Retry a failed stage | Stage state is `failed` and attempts remain | `POST /claims/{id}/jobs/{job_id}/retry` | Stage returns to `queued`. No result is invented | A completed stage returns the existing result instead of rerunning | No new revision. The same job key is reused |
 | Request reassessment | An assessment exists and no recomputation is in flight | `POST /claims/{id}/assessments` with the input revision and an idempotency key | Header state becomes `recomputing` | A repeat with the same key returns the same assessment revision | New assessment revision from the same input revision |
-| Finalize | No pending mark, no unlinked mark, no unfinished or failed required job, no recomputation in flight | `POST /claims/{id}/assessments/{rev}/finalize` with `expected_review_revision` | Nothing is applied optimistically. The dialog waits for the server | 409 with the list of blockers, refreshed from the server | New review revision, marked frozen. No new assessment |
+| Finalize | No pending mark, no unlinked mark, no unfinished or failed required job, no recomputation in flight | `POST /claims/{id}/assessments/{rev}/finalize` with `expected_review_revision` | Nothing is applied optimistically. The dialog waits for the server | 409 for stale revisions; 412 with the list of blockers | Presented review revision is frozen without incrementing it. No new assessment |
 | Print | A frozen review revision exists | `GET /claims/{id}/assessments/{rev}/report?review_revision=` then `window.print()` | None | If the frozen revision no longer matches, the print route refuses and explains | None |
 | Open evidence, toggle overlay, open original | A row or summary part is selected | `GET /claims/{id}/files/{file_id}` with render parameters | Image swap only | Load failure shows a retry and keeps the review context | None |
 
@@ -924,7 +924,7 @@ Cross-cutting rules:
 4. **Idempotency.** The same client action id and payload always return the original committed result. The same key with a different payload is a conflict, not an overwrite.
 5. **Stale review.** A rejected stale write never overwrites a newer decision. Local work is preserved and shown.
 6. **Finalize is a gate, not a cleanup.** It does not confirm marks for the surveyor, does not resolve identities, and does not turn "More information needed" into a pass.
-7. **Editing after finalize** is allowed. It creates a new review revision, clears the frozen flag and requires finalizing again before printing.
+7. **Editing after finalize** must preserve the original frozen pairing. The current implementation refuses edits to that review; new evidence starts a new input/assessment and a separate review. A dedicated reopen/edit flow remains unimplemented.
 
 ---
 
@@ -1093,7 +1093,7 @@ apps/workbench/
 | Item | Decision |
 | --- | --- |
 | Primary | `GET /api/v1/claims/{id}/events` returns `text/event-stream`. `cmev-api` consumes the Kafka status topics and pushes `stage_changed`, `assessment_ready` and `review_revision_changed` events |
-| Fallback | If the stream fails to open or drops twice, fall back to `GET /claims/{id}/processing` every 3 seconds, backing off to 10 seconds after 2 minutes, and stop after 15 minutes with a manual refresh control |
+| Fallback | If the stream fails to open or drops twice, fall back to `GET /claims/{id}/processing` every 3 seconds, backing off to 10 seconds after 2 minutes, and continue while processing remains active, including after transient connection failures; retain a manual refresh control |
 | Build order | Implement polling first because it is simple to test and needs no proxy tuning. Add the stream behind the `sse_enabled` flag once `cmev-api` publishes it |
 | Correctness | Every event carries the claim id and the revision it refers to. An event for an older revision is ignored. The client always reconciles by refetching the named resource rather than trusting the event payload as state |
 | Honesty | A dropped stream shows "Reconnecting" and a last-updated time. It never freezes an old state while looking live |
@@ -1214,3 +1214,8 @@ These need a team decision before or during day 2. None of them is settled by th
 | [Evaluation plan](evaluation_plan.md) | Where the usability measurements in section 11 are reported |
 | [Mockups README](../mockups/README.md) | The described-only views and their required fields |
 | [Proposal v2](../CLAIM-CMEV_project_proposal_v2.md) | The governing plan for scope, rules and budget |
+
+
+### Implemented recovery safeguards (2026-09-25)
+
+Pending requests are keyed by the authenticated actor and claim. IndexedDB compare-and-update transactions prevent a second tab from replacing or deleting a different unacknowledged request. A conflicting tab keeps its form values and reloads to resolve the existing request. Note/amount drafts are stored per tab. Stage retry controls remain visible for retryable failed jobs even when an assessment exists. Selecting a row with no linked original shows missing evidence rather than defaulting to an unrelated upload. Unsupported, cost-outlier, insufficient and OK results use distinct text, icons/borders and styling. Unknown operations remain unknown in the correction form.

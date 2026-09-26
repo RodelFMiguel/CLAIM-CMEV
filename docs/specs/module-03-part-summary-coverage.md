@@ -2,7 +2,7 @@
 
 Owner lane: 1 (Vision). Runtime container: `cmev-worker-summary`. Code: `src/claim_cmev/vision/multiview/`. Training pipeline: none, this module has no neural weights. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 8.1, 8.4, 9.3, 9.4, 10 (M3), 11.2, 11.5, 12.1, 13.1. Status: specified for v2; not implemented, not measured. RQ3 is exploratory.
 
-> **Runtime note.** The user has directed containerised modules with Kafka as the transport between them. This replaces proposal v2 section 9.1 (one API process plus one worker, a jobs table, no broker). Every v2 domain rule is unchanged: the decision rules in section 8, the exchanged records in section 9.3, module scope in section 10, datasets in section 11 and targets in section 13.1.
+> **Runtime note.** The user directed containerised modules with Kafka as the transport between them on 2026-09-22. Proposal v2 section 9.1 has since been rewritten to describe this same runtime directly; it originally specified one API process plus one worker, a jobs table and no broker. Every v2 domain rule is unchanged: the decision rules in section 8, the exchanged records in section 9.3, module scope in section 10, datasets in section 11 and targets in section 13.1.
 
 > **No large language model sits in the decision path.** Part and damage integration is deterministic mask overlap in [M2](module-02-damage-segmentation.md). Vision and document integration is the deterministic rule set in [M8](module-08-consolidation-checks.md). An optional stretch service `cmev-explainer` may turn an already computed finding into a readable sentence. It is off by default and never changes a result.
 
@@ -252,3 +252,8 @@ Targets are hypotheses from v2 section 13.1. RQ3 is an exploratory case study wi
 | Whether unresolved observations get one group each or one shared bucket per photograph | Lane 1 | Day 3, affects the M9 overview layout |
 | Whether the supported panel list is the full 21 classes or a smaller agreed subset | Lane 1 with Lane 4 | Day 2 |
 | Team vehicle group availability, and which required scenarios are missing | Lane 1 | Day 4, gaps reported not silently dropped |
+
+
+### Confirmation conflict handling (2026-09-25)
+
+The current identity record names a photo and part, without an instance-region selector. Confirmations for different sides of the same part on one photo are retained and withhold photo-level assignment; the last confirmation must not assign every observation to its side. Repeated same-side statements may supersede earlier same-side statements. To resolve a photo that genuinely shows both sides requires instance-level identity evidence, which remains outside this photo-level adapter. Unaffected measured view-quality signals are reused during confirmation reassessment, never replaced with missing/default signals.

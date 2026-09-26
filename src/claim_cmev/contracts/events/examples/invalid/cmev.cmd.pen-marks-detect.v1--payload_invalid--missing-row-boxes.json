@@ -1,0 +1,84 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:pen_marks_detect:all:9ef10d35",
+  "versions": {
+    "penmark_model": "penmarks-frcnn-r50/0.7.0",
+    "link_config": "marklink-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-orchestrator"
+  },
+  "occurred_at": "2026-09-22T03:14:58Z",
+  "dedup_key": "4619438f4a75217397f4bd4311ad54bf70ae7d6661827a5e6135f8db51d2a1d9",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "7c2d40be1a935f68c0e2a4b6d8f0135792bd4e6a8c0f2b4d6e8a0c2e4f60813b",
+  "payload": {
+    "pages": [
+      {
+        "page_id": "dp_01JAX8S1",
+        "page_number": 1,
+        "corrected_render_ref": {
+          "artifact_id": "dr_01JAX8S0",
+          "object_uri": "s3://cmev-derived/01JAX.../corrected_pg_01JAX7Q2A.png",
+          "sha256": "a7b896e96a175bfa278ea7fdfa0ef98890a7a60f4062ebee2c6f2b9dddffdbb6",
+          "media_type": "image/png",
+          "byte_count": 5120934
+        },
+        "transform": {
+          "source_width": 3024,
+          "source_height": 4032,
+          "corrected_width": 2480,
+          "corrected_height": 3508,
+          "rotation_degrees": 0.0,
+          "exif_orientation": 1,
+          "render_scale": null,
+          "geometry_correction": "perspective",
+          "correction_reason": "boundary_reliable",
+          "homography": [
+            [
+              0.8421,
+              0.0213,
+              -118.4
+            ],
+            [
+              -0.0162,
+              0.8537,
+              -207.9
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "homography_inverse": [
+            [
+              1.187,
+              -0.0296,
+              134.4
+            ],
+            [
+              0.0225,
+              1.1709,
+              246.1
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ]
+          ]
+        }
+      }
+    ],
+    "model_id": "penmarks-frcnn-r50",
+    "model_version": "0.7.0",
+    "link_config_version": "marklink-1.0.0",
+    "trocr_enabled": false
+  }
+}

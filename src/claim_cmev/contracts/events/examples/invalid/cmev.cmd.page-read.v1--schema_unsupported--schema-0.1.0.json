@@ -1,0 +1,36 @@
+{
+  "schema_version": "0.1.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:page_read:pg_01JAX7Q2A:6d3f01ab",
+  "versions": {
+    "ocr": "paddleocr/2.7.3",
+    "preprocess_config": "doc-pre-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-orchestrator"
+  },
+  "occurred_at": "2026-09-22T03:14:08Z",
+  "dedup_key": "2dc8cae0a5c2de280b34a8e2246c31a679f4a33e410024875c3d5850fd896a4b",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "3f7c9a1b4e2d8c60a5f1b3d7e9c2a4867b0d5e1f3a9c7b2d4e6f8a0c1b3d5e7f",
+  "payload": {
+    "page": {
+      "file_id": "pg_01JAX7Q2A",
+      "object_uri": "s3://cmev-originals/01JAX.../pg_01JAX7Q2A.jpg",
+      "sha256": "d4e50b534512ac9cf0f14d6df4d3b10cbb1900be9ff648accd720b47f5d2c390",
+      "media_type": "image/jpeg",
+      "byte_count": 2214480,
+      "width": 3024,
+      "height": 4032,
+      "page_number": 1,
+      "exif_orientation": 1
+    },
+    "ocr_engine": "paddleocr",
+    "ocr_version": "2.7.3",
+    "preprocess_config_version": "doc-pre-1.0.0"
+  }
+}

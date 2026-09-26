@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.dlq.v1.schema.json",
+  "title": "cmev.dlq.v1",
+  "description": "Retries exhausted, or the message was unprocessable. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "original_topic": {
+          "type": "string",
+          "pattern": "^cmev\\.(cmd|evt)\\.[a-z0-9\\-]+\\.v[0-9]+$"
+        },
+        "original_envelope": {
+          "type": "object"
+        },
+        "original_payload": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "string",
+              "maxLength": 65536
+            }
+          ]
+        },
+        "failure_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "attempt": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "occurred_at": {
+                "$ref": "envelope.v1.schema.json#/$defs/timestamp"
+              },
+              "reason_code": {
+                "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+              },
+              "reason_text": {
+                "$ref": "envelope.v1.schema.json#/$defs/text"
+              }
+            },
+            "required": [
+              "attempt",
+              "occurred_at",
+              "reason_code",
+              "reason_text"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "dlq_reason": {
+          "enum": [
+            "retries_exhausted",
+            "envelope_invalid",
+            "schema_invalid",
+            "not_retryable",
+            "poison_message"
+          ]
+        },
+        "first_failed_at": {
+          "$ref": "envelope.v1.schema.json#/$defs/timestamp"
+        },
+        "last_failed_at": {
+          "$ref": "envelope.v1.schema.json#/$defs/timestamp"
+        },
+        "replayable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "original_topic",
+        "original_envelope",
+        "original_payload",
+        "failure_history",
+        "dlq_reason",
+        "first_failed_at",
+        "last_failed_at",
+        "replayable"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

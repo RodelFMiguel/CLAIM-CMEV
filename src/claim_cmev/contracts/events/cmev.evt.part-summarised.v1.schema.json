@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.evt.part-summarised.v1.schema.json",
+  "title": "cmev.evt.part-summarised.v1",
+  "description": "Part summary and coverage exist. Image branch complete. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "summary_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "coverage_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "unresolved_observation_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "coverage_counts": {
+          "type": "object",
+          "properties": {
+            "adequate": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            },
+            "inadequate": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            },
+            "not_visible": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            },
+            "unresolved": {
+              "$ref": "envelope.v1.schema.json#/$defs/count"
+            }
+          },
+          "required": [
+            "adequate",
+            "inadequate",
+            "not_visible",
+            "unresolved"
+          ],
+          "additionalProperties": false
+        },
+        "branch": {
+          "const": "image"
+        }
+      },
+      "required": [
+        "summary_ids",
+        "coverage_ids",
+        "unresolved_observation_ids",
+        "coverage_counts",
+        "branch"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

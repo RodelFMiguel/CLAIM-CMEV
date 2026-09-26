@@ -2,11 +2,11 @@
 
 Status: **proposed** integration baseline for v2, target schema version `0.2.0`. Nothing here is implemented or measured. Owner: Lane 5 coordinates; each module owner owns its own adapter and topic payloads; Lane 4 owns taxonomy, cost and finding semantics. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 8 (decision rules), 9.2 to 9.6 (sequence, records, serving, registry, failure handling), 10 (modules), 11 (datasets) and 16 (transition). Shared records: [data contracts](data_contracts.md). Behavioural detail for the HTTP surface: [application platform](application_platform.md). Training recipes: [model training specification](model_training_specification.md). Screens: [UI specification](ui_specification.md).
 
-## Runtime change from proposal v2 section 9.1
+## Runtime change from the original proposal v2 section 9.1
 
-Proposal v2 section 9.1 specifies two processes built from one code base, a database jobs table, "no message broker", SQLite and local files. **The team has since directed a different runtime: one container per module, with Kafka as the main transport between modules.** This document targets that containerised, event-driven runtime. Proposal v2 has not been rewritten, so the two documents differ on this point, and only on this point.
+Proposal v2 section 9.1 originally specified two processes built from one code base, a database jobs table, "no message broker", SQLite and local files. **The team directed a different runtime on 2026-09-22: one container per module, with Kafka as the main transport between modules.** This document targets that containerised, event-driven runtime. Proposal v2 section 9.1 has since been rewritten to describe this same runtime directly, so the table below is a historical record of the change, not a live discrepancy between the two documents.
 
-| Item | Proposal v2 section 9.1 | This specification | Consequence |
+| Item | Original proposal v2 section 9.1 | This specification | Consequence |
 |---|---|---|---|
 | Processes | API process plus one worker | One container per module plus infrastructure containers | More build, configuration and startup work |
 | Transport | Database jobs table, no broker | Kafka topics, Redpanda in development, plus direct HTTP for the browser only | New topic contracts, consumer groups, retry and dead-letter design |
@@ -687,8 +687,8 @@ A zero-length `line_items` array with `declaration_completeness = "unreadable"` 
 | Field | Type | R | Meaning |
 |---|---|---|---|
 | `original_topic` | string | yes | |
-| `original_envelope` | object | yes | The full envelope, verbatim |
-| `original_payload` | object or string | yes | Verbatim. A string when the payload could not be parsed |
+| `original_envelope` | object | yes | New emissions contain a bounded `record_ref` to `ops.dead_letters`, with consumer group, topic, partition, offset and content hash. Historical inline envelopes remain readable |
+| `original_payload` | object or string | yes | New emissions use the same bounded `record_ref`. Original message content stays in the dead-letter database record, including malformed/oversized payloads; it is not resubmitted to the transport validator |
 | `failure_history` | array | yes | `{attempt, occurred_at, reason_code, reason_text}` |
 | `dlq_reason` | enum | yes | `retries_exhausted`, `envelope_invalid`, `schema_invalid`, `not_retryable`, `poison_message` |
 | `first_failed_at`, `last_failed_at` | RFC 3339 UTC | yes | |
@@ -1685,3 +1685,10 @@ These belong in `tests/contracts/`. None of them exist yet.
 | 11 | Settled, no longer open. The JSON Schema files live under `src/claim_cmev/contracts/events/`, matching the [technical specification](technical_specification.md). Section 6.1 records the reason | The path is baked into every producer and consumer validator, so one location is required | Closed on 2026-09-22 during specification consolidation. Reopen only through the section 6.2 change process |
 | 12 | Whether `job_key` has four parts or five | This document adds `target` because commands fan out per photo and per page. The technical specification states the four-part form from v2 section 9.6. A mismatch means two workers compute different keys for the same work | Adopt the five-part form and amend the technical specification, or fold `target` into `task`. Either way, one definition, in one document |
 | 13 | Whether the `cmev-api` result consumer and the outbox relay run in the API process or as a sidecar | A relay inside a replicated API process needs leader election or an advisory lock | Advisory lock inside the API process. Simplest, and testable |
+
+
+### Remediation compatibility notes (2026-09-25)
+
+The persisted record additions for original extracted amounts and PDF source matrices are optional under schema 0.2.0; historical assessments/reports are immutable. New `render_to_pdf` is allowed by the page-transform event schema. Event summaries remain projections, not complete copies of document records. Shared decimal, box and version constraints are reflected in generated record schemas; version values must be nonempty. Provenance/version string bounds agree with typed records, under the existing overall message-size limit.
+
+Malformed envelope deduplication uses transport coordinates and content rather than an untrusted incoming key. Sanitized dead-letter routing versions cannot repeat malformed version values. Dead-letter notices contain reason codes rather than echoing invalid payload fragments; full diagnostics remain in the database. This avoids recursively rejecting the dead-letter message under the same binary/size validation.

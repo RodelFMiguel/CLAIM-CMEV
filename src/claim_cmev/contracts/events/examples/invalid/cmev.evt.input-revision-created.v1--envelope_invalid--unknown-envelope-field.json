@@ -1,0 +1,70 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:intake:all:a91c4f2e",
+  "versions": {
+    "taxonomy": "parts-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-api"
+  },
+  "occurred_at": "2026-09-22T03:14:07Z",
+  "dedup_key": "3f7c9a1b4e2d8c60a5f1b3d7e9c2a4867b0d5e1f3a9c7b2d4e6f8a0c1b3d5e7f",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": null,
+  "payload": {
+    "previous_input_revision": null,
+    "external_reference": "OD-2026-004417",
+    "vehicle": {
+      "make": "Toyota",
+      "model": "Corolla Altis",
+      "year": 2019,
+      "vehicle_class": "sedan_standard",
+      "class_reason": null
+    },
+    "currency": "SGD",
+    "photos": [
+      {
+        "file_id": "ph_01JAX7Q1A",
+        "object_uri": "s3://cmev-originals/01JAX.../ph_01JAX7Q1A.jpg",
+        "sha256": "b2c395aaf4cc3c62b77345938cbdca34d921267bf39f8cc7fa3232e2737a12eb",
+        "media_type": "image/jpeg",
+        "byte_count": 3874112,
+        "width": 4032,
+        "height": 3024,
+        "page_number": null,
+        "exif_orientation": 6
+      },
+      {
+        "file_id": "ph_01JAX7Q1B",
+        "object_uri": "s3://cmev-originals/01JAX.../ph_01JAX7Q1B.jpg",
+        "sha256": "c3d48488614221f7e1a63e39e97098b2576d88a08cd4f23440ba446f27a6800d",
+        "media_type": "image/jpeg",
+        "byte_count": 3551904,
+        "width": 4032,
+        "height": 3024,
+        "page_number": null,
+        "exif_orientation": 1
+      }
+    ],
+    "pages": [
+      {
+        "file_id": "pg_01JAX7Q2A",
+        "object_uri": "s3://cmev-originals/01JAX.../pg_01JAX7Q2A.jpg",
+        "sha256": "d4e50b534512ac9cf0f14d6df4d3b10cbb1900be9ff648accd720b47f5d2c390",
+        "media_type": "image/jpeg",
+        "byte_count": 2214480,
+        "width": 3024,
+        "height": 4032,
+        "page_number": 1,
+        "exif_orientation": 1
+      }
+    ],
+    "reused_artifacts": []
+  },
+  "topic": "cmev.evt.input-revision-created.v1"
+}

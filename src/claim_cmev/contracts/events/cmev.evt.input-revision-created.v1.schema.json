@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.evt.input-revision-created.v1.schema.json",
+  "title": "cmev.evt.input-revision-created.v1",
+  "description": "A new input revision is committed and its files are stored. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "causation_id": {
+      "type": "null"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "previous_input_revision": {
+          "anyOf": [
+            {
+              "$ref": "envelope.v1.schema.json#/$defs/revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "external_reference": {
+          "anyOf": [
+            {
+              "$ref": "envelope.v1.schema.json#/$defs/shortText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vehicle": {
+          "type": "object",
+          "properties": {
+            "make": {
+              "$ref": "envelope.v1.schema.json#/$defs/shortText"
+            },
+            "model": {
+              "$ref": "envelope.v1.schema.json#/$defs/shortText"
+            },
+            "year": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1900,
+                  "maximum": 2100
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "vehicle_class": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "hatchback_small",
+                    "sedan_standard",
+                    "suv_crossover",
+                    "van_commercial",
+                    "unknown"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "class_reason": {
+              "anyOf": [
+                {
+                  "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "make",
+            "model",
+            "year",
+            "vehicle_class",
+            "class_reason"
+          ],
+          "additionalProperties": false
+        },
+        "currency": {
+          "$ref": "envelope.v1.schema.json#/$defs/currency"
+        },
+        "photos": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/fileRef"
+          }
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/fileRef"
+          }
+        },
+        "reused_artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "artifact_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "kind": {
+                "$ref": "envelope.v1.schema.json#/$defs/identifier"
+              },
+              "source_input_revision": {
+                "$ref": "envelope.v1.schema.json#/$defs/revision"
+              },
+              "producing_job_key": {
+                "$ref": "envelope.v1.schema.json#/$defs/shortText"
+              }
+            },
+            "required": [
+              "artifact_id",
+              "kind",
+              "source_input_revision",
+              "producing_job_key"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "previous_input_revision",
+        "external_reference",
+        "vehicle",
+        "currency",
+        "photos",
+        "pages"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

@@ -1,0 +1,114 @@
+{
+  "schema_version": "0.2.0",
+  "claim_id": "01JAX7Q0VN4Z3K9F2M8R6T1C5D",
+  "input_revision": 1,
+  "job_key": "01JAX7Q0VN4Z3K9F2M8R6T1C5D:1:line_items_extract:all:2b6f74ac",
+  "versions": {
+    "parser_config": "parser-1.0.0",
+    "taxonomy": "parts-1.0.0",
+    "code": "0.2.0"
+  },
+  "provenance": {
+    "source_kind": "real",
+    "runtime_profile": "full",
+    "producer_service": "cmev-worker-lineitems"
+  },
+  "occurred_at": "2026-09-22T03:14:55Z",
+  "dedup_key": "7c2d40be1a935f68c0e2a4b6d8f0135792bd4e6a8c0f2b4d6e8a0c2e4f60813b",
+  "trace_id": "9d1f0c2a7b3e4f58",
+  "causation_id": "e0b3...",
+  "payload": {
+    "line_item_ids": [
+      "li_01JAX9T1A",
+      "li_01JAX9T1B",
+      "li_01JAX9T1C"
+    ],
+    "line_items": [
+      {
+        "entry_id": "li_01JAX9T1A",
+        "page_id": "dp_01JAX8S1",
+        "row_box_norm": [
+          0.08,
+          0.318,
+          0.95,
+          0.346
+        ],
+        "part_code": "front-bumper",
+        "part_mapping_status": "resolved",
+        "side": "lh",
+        "operation": "replace",
+        "operation_mapping_status": "resolved",
+        "quantity": "1",
+        "unit_price": "980.00",
+        "printed_line_amount": "980.00",
+        "currency": "SGD",
+        "cost_basis": "single_part_pre_tax_no_discount_v1",
+        "field_uncertainty": []
+      },
+      {
+        "entry_id": "li_01JAX9T1B",
+        "page_id": "dp_01JAX8S1",
+        "row_box_norm": [
+          0.08,
+          0.351,
+          0.95,
+          0.379
+        ],
+        "part_code": "back-door",
+        "part_mapping_status": "resolved",
+        "side": "unknown",
+        "operation": "repair",
+        "operation_mapping_status": "resolved",
+        "quantity": "1",
+        "unit_price": "480.00",
+        "printed_line_amount": "480.00",
+        "currency": "SGD",
+        "cost_basis": "single_part_pre_tax_no_discount_v1",
+        "field_uncertainty": [
+          {
+            "field": "side",
+            "reason": "side_absent_in_text"
+          }
+        ]
+      },
+      {
+        "entry_id": "li_01JAX9T1C",
+        "page_id": "dp_01JAX8S1",
+        "row_box_norm": [
+          0.08,
+          0.384,
+          0.95,
+          0.412
+        ],
+        "part_code": null,
+        "part_mapping_status": "ambiguous",
+        "side": "unknown",
+        "operation": null,
+        "operation_mapping_status": "unmapped",
+        "quantity": null,
+        "unit_price": null,
+        "printed_line_amount": "135.00",
+        "currency": "SGD",
+        "cost_basis": "single_part_pre_tax_no_discount_v1",
+        "field_uncertainty": [
+          {
+            "field": "part_code",
+            "reason": "ocr_low_confidence"
+          },
+          {
+            "field": "operation",
+            "reason": "column_not_located"
+          }
+        ]
+      }
+    ],
+    "layout_family": "family_a_bordered_table",
+    "declaration_completeness": "partial",
+    "completeness_reasons": [
+      "unreadable_row_present"
+    ],
+    "unparsed_region_count": 1,
+    "engine": "parser",
+    "branch_stage": "line_items"
+  }
+}

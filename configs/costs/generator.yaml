@@ -1,0 +1,30 @@
+# Synthetic price generator (M7 build task 1, training specification section 9.3).
+# Values are proposed. Model year, side and damage type never enter the generator.
+generator_version: gen-2026.09.1
+status: proposed
+seed: 20260922                 # overridden by --seed; the seed used is always recorded
+total_records: 8000            # target; the manifest records the actual count
+quotes_per_base_case: {min: 1, max: 5}   # uniform, mean 3
+workshop_count: 6
+noise_model:
+  distribution: lognormal
+  base_case_sigma: "0.12"      # one multiplier per independent base case
+  workshop_sigma: "0.06"       # one fixed factor per workshop
+  quote_noise_sigma: "0.03"    # per-quote noise on top of the workshop factor
+  factor_places: 6             # multipliers are rounded to Decimal before touching money
+base_cases_per_key_spread: "0.5"   # ordinary keys draw uniformly within +/-50% of the mean
+sparsity:
+  sparse_key_fraction: "0.20"  # these keys get fewer base cases than the support threshold
+  sparse_base_cases: {min: 2, max: 6}
+  empty_key_fraction: "0.05"   # these keys get no records at all
+dates:
+  start: 2025-07-01
+  end: 2026-08-31              # extends past the split cutoff so the cutoff rule is exercised
+  as_of_date: 2026-09-22
+# Separate run, separate manifest, separate base cases (experiment C hook only).
+injected_anomaly:
+  seed_offset: 1               # injected seed = ordinary seed + offset
+  base_cases_per_key: 3
+  quotes_per_base_case: 1
+  prevalence: "0.10"
+  magnitudes: ["0.25", "0.50", "-0.30"]   # relative change applied to a labelled amount

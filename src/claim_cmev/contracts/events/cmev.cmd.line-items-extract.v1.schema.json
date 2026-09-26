@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.cmd.line-items-extract.v1.schema.json",
+  "title": "cmev.cmd.line-items-extract.v1",
+  "description": "Parse rows from every page of the input revision. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "page_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "page_number": {
+                "$ref": "envelope.v1.schema.json#/$defs/revision"
+              },
+              "corrected_render_ref": {
+                "$ref": "envelope.v1.schema.json#/$defs/artifactRef"
+              },
+              "page_reading_ref": {
+                "$ref": "envelope.v1.schema.json#/$defs/artifactRef"
+              },
+              "transform": {
+                "$ref": "envelope.v1.schema.json#/$defs/pageTransform"
+              }
+            },
+            "required": [
+              "page_id",
+              "page_number",
+              "corrected_render_ref",
+              "page_reading_ref",
+              "transform"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "parser_config_version": {
+          "$ref": "envelope.v1.schema.json#/$defs/version"
+        },
+        "taxonomy_version": {
+          "type": "string",
+          "pattern": "^parts-\\d+\\.\\d+\\.\\d+$"
+        },
+        "claim_currency": {
+          "$ref": "envelope.v1.schema.json#/$defs/currency"
+        },
+        "engine": {
+          "enum": [
+            "parser",
+            "layoutlmv3"
+          ]
+        },
+        "model_id": {
+          "anyOf": [
+            {
+              "$ref": "envelope.v1.schema.json#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "$ref": "envelope.v1.schema.json#/$defs/version"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pages",
+        "parser_config_version",
+        "taxonomy_version",
+        "claim_currency",
+        "engine",
+        "model_id",
+        "model_version"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

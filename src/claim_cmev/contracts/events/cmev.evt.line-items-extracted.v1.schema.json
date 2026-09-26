@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claim-cmev.local/contracts/events/cmev.evt.line-items-extracted.v1.schema.json",
+  "title": "cmev.evt.line-items-extracted.v1",
+  "description": "Line items and completeness exist. Integration contracts section 5.4.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "required": [
+    "payload"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "line_item_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/id"
+          }
+        },
+        "line_items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "entry_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "page_id": {
+                "$ref": "envelope.v1.schema.json#/$defs/id"
+              },
+              "row_box_norm": {
+                "$ref": "envelope.v1.schema.json#/$defs/boxNorm"
+              },
+              "part_code": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/partCode"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "part_mapping_status": {
+                "$ref": "envelope.v1.schema.json#/$defs/mappingStatus"
+              },
+              "side": {
+                "$ref": "envelope.v1.schema.json#/$defs/side"
+              },
+              "operation": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/operation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "operation_mapping_status": {
+                "$ref": "envelope.v1.schema.json#/$defs/mappingStatus"
+              },
+              "quantity": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/money"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "unit_price": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/money"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "printed_line_amount": {
+                "anyOf": [
+                  {
+                    "$ref": "envelope.v1.schema.json#/$defs/money"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "currency": {
+                "$ref": "envelope.v1.schema.json#/$defs/currency"
+              },
+              "cost_basis": {
+                "$ref": "envelope.v1.schema.json#/$defs/identifier"
+              },
+              "field_uncertainty": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "$ref": "envelope.v1.schema.json#/$defs/identifier"
+                    },
+                    "reason": {
+                      "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "entry_id",
+              "page_id",
+              "row_box_norm",
+              "part_code",
+              "part_mapping_status",
+              "side",
+              "operation",
+              "operation_mapping_status",
+              "quantity",
+              "unit_price",
+              "printed_line_amount",
+              "currency",
+              "cost_basis",
+              "field_uncertainty"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "layout_family": {
+          "anyOf": [
+            {
+              "$ref": "envelope.v1.schema.json#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "declaration_completeness": {
+          "enum": [
+            "complete",
+            "partial",
+            "unreadable",
+            "explicitly_empty"
+          ]
+        },
+        "completeness_reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/reasonCode"
+          }
+        },
+        "unparsed_region_count": {
+          "$ref": "envelope.v1.schema.json#/$defs/count"
+        },
+        "engine": {
+          "enum": [
+            "parser",
+            "layoutlmv3"
+          ]
+        },
+        "branch_stage": {
+          "const": "line_items"
+        }
+      },
+      "required": [
+        "line_item_ids",
+        "line_items",
+        "layout_family",
+        "declaration_completeness",
+        "completeness_reasons",
+        "unparsed_region_count",
+        "engine",
+        "branch_stage"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}
