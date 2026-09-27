@@ -5,6 +5,7 @@ generated, so no user-supplied file name ever forms a storage path.
 """
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -23,6 +24,25 @@ from .common import (
     VehicleClass,
     require_reasons,
 )
+
+
+_GENERATED_ID = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}|[a-z]{2,8}-[0-9a-f]{24}")
+"""The two server-generated identifier forms: ``runtime.uid()`` (ULID) and ``deterministic_id``."""
+_KEY_EXTENSION = re.compile(r"\.[a-z0-9]{1,8}")
+
+
+def generated_object_key(object_uri: str, file_id: str) -> bool:
+    """True when the URI's object name is a generated identifier, never a user file name.
+
+    The final path segment, minus at most one short extension, must be the file's own
+    ``file_id`` or a generated identifier. The user's name is irrelevant to the decision,
+    so ``evidence.jpg`` or ``01J8.jpg`` are accepted exactly like any other name.
+    """
+    name = object_uri.rstrip("/").rsplit("/", 1)[-1]
+    stem, dot, extension = name.rpartition(".")
+    if dot and stem and _KEY_EXTENSION.fullmatch(dot + extension):
+        name = stem
+    return name == file_id or bool(_GENERATED_ID.fullmatch(name))
 
 
 class ReusedArtifact(ContractModel):
@@ -90,8 +110,7 @@ class ClaimFile(ClaimScoped):
             raise ValueError("member_revisions include the revision that stored the file")
         if self.object_ref.sha256 != self.sha256 or self.object_ref.byte_count != self.byte_count:
             raise ValueError("the object reference must describe the same bytes")
-        stem = self.original_name.rsplit(".", 1)[0]
-        if len(stem) >= 4 and stem in self.object_ref.object_uri:
+        if not generated_object_key(self.object_ref.object_uri, self.file_id):
             raise ValueError("object keys are generated; a user-supplied name never forms a storage path")
         if self.upload_status == "stored":
             if self.media_type == "application/pdf":

@@ -2,10 +2,13 @@
 
 An ``IdentityConfirmation`` states that one photo shows one physical part with a side;
 a ``CoverageConfirmation`` states that named views show enough of one physical part.
-They are separate human records and never rewrite a model row. When the surveyor
-repeats a statement for the same photo/part/side, the latest confirmation wins.
-Different sides on the same photo/part are retained as a conflict: the photo-level
-contract cannot assign individual predictions to physical sides. Neither side wins.
+They are separate human records and never rewrite a model row. A surveyor's own record
+(``source_kind = real``) outranks a fixture stand-in; within one tier the later statement
+(review revision) wins, so a surveyor can correct an identity or coverage statement.
+Review revisions are never compared across tiers. Different sides stated together in
+the latest statement for one photo/part are retained as a conflict: the photo-level
+contract cannot assign individual predictions to physical sides, so neither side wins.
+Superseded records stay in ``superseded_ids`` for the audit trail.
 
 The job key includes the set of supplied confirmation IDs, so a new confirmation is a
 genuine recomputation while a plain redelivery is not (M3 "Duplicate delivery").
@@ -55,8 +58,19 @@ class ReuseLineage:
         return refs
 
 
+def _tier(record: IdentityConfirmation | CoverageConfirmation) -> int:
+    """A surveyor's own record (``real``) outranks a fixture stand-in for one."""
+    return 1 if record.provenance.source_kind == "real" else 0
+
+
+def _statement(record: IdentityConfirmation | CoverageConfirmation) -> tuple:
+    """The statement a record belongs to. Review revisions are compared only within one
+    tier: fixture baselines and surveyor actions count revisions independently."""
+    return (_tier(record), record.review_revision)
+
+
 def _latest_key(record: IdentityConfirmation | CoverageConfirmation) -> tuple:
-    return (record.review_revision, record.recorded_at, record.confirmation_id)
+    return (*_statement(record), record.recorded_at, record.confirmation_id)
 
 
 @dataclass(frozen=True)
@@ -135,9 +149,16 @@ def build_confirmation_index(identity_confirmations: Sequence[IdentityConfirmati
 
     identity: dict[tuple[str, str], IdentityConfirmation] = {}
     coverage: dict[tuple[str, str], CoverageConfirmation] = {}
-    identity_sides: dict[tuple[str, str], set[str]] = {}
+    latest: dict[tuple[str, str], tuple] = {}
     for record in by_id.values():
         if isinstance(record, IdentityConfirmation):
+            key = (record.photo_id, record.part_code)
+            latest[key] = max(latest.get(key, _statement(record)), _statement(record))
+    # Only sides stated together in the latest statement conflict; a later statement
+    # supersedes an earlier one (a surveyor correcting their own identity).
+    identity_sides: dict[tuple[str, str], set[str]] = {}
+    for record in by_id.values():
+        if isinstance(record, IdentityConfirmation) and _statement(record) == latest[(record.photo_id, record.part_code)]:
             identity_sides.setdefault((record.photo_id, record.part_code), set()).add(record.side)
     conflicting = {key for key, sides in identity_sides.items() if len(sides) > 1}
     conflict_ids = []
@@ -146,7 +167,10 @@ def build_confirmation_index(identity_confirmations: Sequence[IdentityConfirmati
         if isinstance(record, IdentityConfirmation):
             key, target = (record.photo_id, record.part_code), identity
             if key in conflicting:
-                conflict_ids.append(record.confirmation_id)
+                if _statement(record) == latest[key]:
+                    conflict_ids.append(record.confirmation_id)
+                else:
+                    superseded.add(record.confirmation_id)
                 continue  # photo-level identity cannot choose between physical sides
         else:
             key, target = (record.part_code, record.side), coverage

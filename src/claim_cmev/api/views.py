@@ -71,24 +71,58 @@ def _incomplete(db: Session, claim_id: str, revision: int, bs: Mapping[str, Any]
     return failed
 
 
-def review_for(db: Session, claim: Mapping[str, Any], revision: int) -> dict[str, Any]:
-    """The stored review of an assessment, or the one it starts with (carried actions, not yet saved)."""
-    stored = get(db, f"review:{claim['claim_id']}:{revision}")
+def _base_revision(db: Session, claim_id: str, revision: int, row: Mapping[str, Any] | None = None) -> int | None:
+    row = row if row is not None else assessment_row(db, claim_id, revision)
+    if row is None:
+        return None
+    base = (get(db, f"input:{claim_id}:{row['input_revision']}") or {}).get("base_assessment_revision")
+    return base if base and base < revision else None
+
+
+def review_for(db: Session, claim: Mapping[str, Any], revision: int, *, row: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The stored review of an assessment, or the one it starts with (carried actions, not yet saved).
+
+    The carried history is the latest stored review along the assessment's base lineage:
+    an assessment that was never reviewed (for example one superseded by an upload before
+    any action) passes its predecessor's history on rather than dropping it.
+    """
+    cid = claim["claim_id"]
+    stored = get(db, f"review:{cid}:{revision}")
     if stored is not None:
         return deepcopy(stored)
-    row = assessment_row(db, claim["claim_id"], revision)
-    base = None
-    if row is not None:
-        base_input = get(db, f"input:{claim['claim_id']}:{row['input_revision']}") or {}
-        base = base_input.get("base_assessment_revision")
-    prior = get(db, f"review:{claim['claim_id']}:{base}") if base else None
+    base = _base_revision(db, cid, revision, row)
+    prior, cursor = None, base
+    while cursor is not None and prior is None:  # strictly decreasing, so it ends
+        prior = get(db, f"review:{cid}:{cursor}")
+        if prior is None:
+            cursor = _base_revision(db, cid, cursor)
     return {"review_revision": claim["review_revision"], "assessment_revision": revision,
-            "base_assessment_revision": base, "actions": deepcopy(prior["actions"]) if prior else [],
-            "finalized": False}
+            "base_assessment_revision": base, "history_from_assessment_revision": cursor if prior else None,
+            "actions": deepcopy(prior["actions"]) if prior else [], "finalized": False}
 
 
-def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None) -> dict[str, Any]:
-    """The stored claim plus derived status, current assessment and counts."""
+DISCREPANCY_RESULTS = ("unsupported", "cost_outlier")
+INFORMATION_NEEDED_RESULTS = ("insufficient_evidence",)
+
+
+def result_counts(body: Mapping[str, Any]) -> dict[str, int]:
+    """Queue counts of one assessment: discrepancies (unsupported, cost outlier) and rows
+    that need information (insufficient evidence). Confirmed exclusions count in neither."""
+    results = [f["overall_result"] for f in body["findings"] if f["row_state"] != "excluded"]
+    return {"discrepancy_count": sum(r in DISCREPANCY_RESULTS for r in results),
+            "information_needed_count": sum(r in INFORMATION_NEEDED_RESULTS for r in results)}
+
+
+def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None,
+               current_row: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The stored claim plus derived status, current assessment and counts.
+
+    ``discrepancy_count`` and ``information_needed_count`` come from the current
+    assessment and are ``None`` while the claim has none (awaiting upload, processing,
+    failed): no result exists, so no count is shown as zero. ``finding_count`` keeps its
+    earlier meaning (open results of the current assessment, else 0). ``current_row`` lets
+    a caller that already loaded the current assessment row pass it in.
+    """
     view = deepcopy(dict(claim))
     cid, rev = claim["claim_id"], claim["input_revision"]
     pointer = pointer_row(db, cid) if snapshot is None else snapshot["pointers"].get(cid)
@@ -99,6 +133,7 @@ def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None) -> dict[
     view.update(latest_assessment_revision=pointer["assessment_revision"] if pointer else None,
                 assessment_revision=pointer["assessment_revision"] if current else None,
                 finding_count=pointer["finding_count"] if current else 0,
+                discrepancy_count=None, information_needed_count=None,
                 estimate_row_count=pointer["estimate_row_count"] if current else 0,
                 declared_total=pointer["declared_total"] if current else None,
                 photograph_count=len(claim_input.get("photo_ids", [])) if claim_input else 0)
@@ -110,7 +145,14 @@ def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None) -> dict[
         review_key = f"review:{cid}:{pointer['assessment_revision']}"
         review = (get(db, review_key) if records is None else records.get(review_key)) or {}
         status = "ready_to_print" if review.get("finalized") else "in_review"
-        row = assessment_row(db, cid, pointer["assessment_revision"]) if snapshot is None else snapshot["assessments"].get((cid, pointer["assessment_revision"]))
+        if snapshot is not None:
+            row = snapshot["assessments"].get((cid, pointer["assessment_revision"]))
+        elif current_row is not None and current_row["assessment_revision"] == pointer["assessment_revision"]:
+            row = current_row
+        else:
+            row = assessment_row(db, cid, pointer["assessment_revision"])
+        if row is not None:
+            view.update(result_counts(row["body"]) if "body" in row else row["counts"])
         documents = bool(claim_input and claim_input.get("page_targets"))
         processing = "ready" if documents else "awaiting_declared_entries"
         if row is not None and row["state"] == "incomplete" and documents:
@@ -144,8 +186,9 @@ def claim_views(db: Session, claims: list[Mapping[str, Any]]) -> list[dict[str, 
         f"review:{cid}:{p['assessment_revision']}" for cid, p in pointers.items()]
     records = {r.key: r.data for r in db.scalars(select(Record).where(Record.key.in_(keys)))}
     assessment_keys = [(cid, p["assessment_revision"]) for cid, p in pointers.items()]
-    current_states = {(r.claim_id, r.assessment_revision): {"state": r.state} for r in db.execute(
-        select(assessments.c.claim_id, assessments.c.assessment_revision, assessments.c.state).where(
+    current_states = {(r.claim_id, r.assessment_revision): {"state": r.state, "counts": result_counts(r.body)}
+                      for r in db.execute(select(assessments.c.claim_id, assessments.c.assessment_revision,
+                                                 assessments.c.state, assessments.c.body).where(
             tuple_(assessments.c.claim_id, assessments.c.assessment_revision).in_(assessment_keys)))}
     snapshot = {"pointers": pointers, "branches": branches, "jobs": grouped_jobs,
                 "records": records, "assessments": current_states}
@@ -255,11 +298,26 @@ def preconditions(db: Session, claim_v: Mapping[str, Any], row: Mapping[str, Any
     return gate(db, claim_v, row, review)
 
 
+def _not_current_reason(claim_v: Mapping[str, Any], row: Mapping[str, Any]) -> str | None:
+    """Why a served assessment is read-only history rather than the claim's current result."""
+    if claim_v["assessment_revision"] == row["assessment_revision"]:
+        return None
+    if claim_v["latest_assessment_revision"] != row["assessment_revision"]:
+        return "superseded"
+    return "reassessment_failed" if claim_v["status"] == "incomplete" else "reassessment_pending"
+
+
 def assessment_view(db: Session, claim: Mapping[str, Any], row: Mapping[str, Any]) -> dict[str, Any]:
-    claim_v = claim_view(db, claim)
+    """The assessment view, loading the claim view, review and review state once.
+
+    A non-current assessment (superseded, or the latest one while a reassessment is
+    pending or failed) is still served, flagged ``read_only`` with ``not_current_reason``.
+    """
+    claim_v = claim_view(db, claim, current_row=row)
     body, inputs = deepcopy(row["body"]), row["inputs"]
     cid = claim["claim_id"]
-    review = review_for(db, claim, row["assessment_revision"])
+    review = review_for(db, claim, row["assessment_revision"], row=row)
+    not_current = _not_current_reason(claim_v, row)
     claim_input = get(db, f"input:{cid}:{row['input_revision']}") or {}
     file_ids = claim_input.get("file_ids", [])
     by_id = {r.data["file_id"]: r.data for r in db.scalars(select(Record).where(
@@ -280,7 +338,9 @@ def assessment_view(db: Session, claim: Mapping[str, Any], row: Mapping[str, Any
     declaration = inputs.get("declaration")
     fixture = body["provenance"]["source_kind"] == "fixture"
     view = {**body,
-            "is_current": claim_v["assessment_revision"] == row["assessment_revision"],
+            "is_current": not_current is None,
+            "is_latest": claim_v["latest_assessment_revision"] == row["assessment_revision"],
+            "read_only": not_current is not None, "not_current_reason": not_current,
             "trigger": row["trigger"], "job_key": row["job_key"], "reuse_lineage": row["reuse_lineage"],
             "mark_actions_applied": inputs.get("mark_actions_applied", []),
             "current_review_revision": review["review_revision"],
@@ -300,17 +360,18 @@ def assessment_view(db: Session, claim: Mapping[str, Any], row: Mapping[str, Any
             "reason_texts": {code: text_for(code) for code in codes},
             "cost_notice": SYNTHETIC_COST_NOTICE,
             "fixture_notice": FIXTURE_NOTICE if fixture else None}
-    from .review_service import load
-    domain = load(db, claim, row, review)
+    from .review_service import gate, load
+    domain = load(db, claim, row, review, claim_v=claim_v)
     view["review_overlay"] = {
         "dismissals": {key: {**event.model_dump(mode="json"),
                              "carried_from": event.finding_id if key != event.finding_id else None}
                        for key, event in domain.dismissals().items()},
         "addition_decisions": {key: event.model_dump(mode="json") for key, event in domain.addition_decisions().items()},
+        # Carried acceptances are the ones M8 used for this assessment, plus any recorded on it.
         "accepted_scope": [event.model_dump(mode="json") for event in
                            (*domain.accepted_scope, *domain.events) if event.action_type == "accept_addition"]}
     view["review_photo_ids"] = inputs.get("fixture_photo_ids", [])
-    view["finalize_preconditions"] = preconditions(db, claim_v, row, review)
+    view["finalize_preconditions"] = gate(db, claim_v, row, review, domain=domain)
     return view
 
 

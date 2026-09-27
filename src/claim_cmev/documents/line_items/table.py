@@ -17,7 +17,7 @@ from .config import FamilySpec, LayoutFamilyConfig, ParserSettings
 from .text import normalise_text, starts_with_phrase
 
 AssignmentStatus = Literal["assigned", "spanning", "overlap", "outside"]
-RawKind = Literal["item", "heading", "total", "tax", "repeated_header", "continuation"]
+RawKind = Literal["item", "heading", "total", "tax", "footer", "repeated_header", "continuation"]
 
 
 @dataclass(frozen=True)
@@ -279,6 +279,8 @@ class Segment:
     rows: tuple[RawRow, ...]
     terminated: bool
     outside: tuple[BoxAssignment, ...] = ()  # in-table boxes bound to no column
+    # unrecognised bands reaching a value column after the final total: not rows, not dropped
+    after_total: tuple[tuple[Box, ...], ...] = ()
 
 
 def band_label(band: Band) -> str:
@@ -298,6 +300,26 @@ def is_heading(label: str, family: FamilySpec) -> bool:
     return label in {normalise_text(p) for p in family.row_patterns.get("heading", ())}
 
 
+def is_footer(label: str, family: FamilySpec) -> bool:
+    """Excess, deductible, payable or settlement line: never a declared row."""
+    return any(starts_with_phrase(label, normalise_text(p)) for p in family.row_patterns.get("footer", ()))
+
+
+def is_final_total(label: str, family: FamilySpec) -> bool:
+    """A closing-total label, optionally followed only by numbers or a configured currency marker.
+
+    ``TOTAL S$`` closes the declaration; ``TOTAL PARTS`` does not (a section total).
+    """
+    markers = {normalise_text(m) for m in family.currency_markers}
+    for pattern in family.final_total_labels:
+        key = normalise_text(pattern)
+        if starts_with_phrase(label, key):
+            rest = label[len(key):].split()
+            if all(not any(c.isalpha() for c in t) or t.strip("()") in markers for t in rest):
+                return True
+    return False
+
+
 def segment_page(page_index: int, bands: Sequence[Band], headers: Sequence[HeaderMatch], family: FamilySpec,
                  parser: ParserSettings) -> list[Segment]:
     """Steps 1.4, 2.7 and the row classes of step 20 for one page of a matched family."""
@@ -312,7 +334,8 @@ def segment_page(page_index: int, bands: Sequence[Band], headers: Sequence[Heade
         body = bands[start + 1:end]
         rows: list[RawRow] = []
         outside: list[BoxAssignment] = []
-        terminated = False
+        after_total: list[tuple[Box, ...]] = []
+        terminated = closed = False  # closed: a final total ended the declaration
         for k, band in enumerate(body):
             assignments = tuple(assign_box(b, binding) for b in band.boxes)
             outside.extend(a for a in assignments if a.status == "outside")
@@ -326,13 +349,21 @@ def segment_page(page_index: int, bands: Sequence[Band], headers: Sequence[Heade
             if kind in family.terminator_kinds:
                 rows.append(RawRow(page_index, kind, (band,), placed, binding, flags, label))
                 terminated = True
+                closed = closed or (kind == "total" and is_final_total(label, family))
                 continue
+            if terminated and is_footer(label, family):
+                rows.append(RawRow(page_index, "footer", (band,), placed, binding, flags, label))
+                continue  # excess / payable / settlement: retained, never a declared row
             description_only = all(a.status == "assigned" and a.field == "description" for a in placed)
             if description_only and is_heading(label, family):
                 rows.append(RawRow(page_index, "heading", (band,), placed, binding, flags, label))
+                closed = False  # a new section heading reopens the declaration
                 continue
             if description_only and terminated:
                 continue  # footer prose; later numeric item bands are still inspected
+            if closed:  # text reaching a value column after the final total: an unparsed region, never an item
+                after_total.append(tuple(a.box for a in placed))
+                continue
             if description_only:
                 previous = rows[-1] if rows else None
                 attach = (previous is not None and previous.kind == "item"
@@ -356,7 +387,8 @@ def segment_page(page_index: int, bands: Sequence[Band], headers: Sequence[Heade
                 continue
             terminated = False  # a new item section requires its own terminator
             rows.append(RawRow(page_index, "item", (band,), placed, binding, flags, label))
-        segments.append(Segment(page_index, header, binding, tuple(rows), terminated, tuple(outside)))
+        segments.append(Segment(page_index, header, binding, tuple(rows), terminated, tuple(outside),
+                                tuple(after_total)))
     return segments
 
 

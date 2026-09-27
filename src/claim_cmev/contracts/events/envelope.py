@@ -14,6 +14,7 @@ from pydantic import Field, model_validator
 
 from ..common import (
     SCHEMA_VERSION,
+    JOB_KEY_MAX_LENGTH,
     ClaimId,
     ContractModel,
     Provenance,
@@ -31,7 +32,8 @@ REQUIRED_ENVELOPE_FIELDS = ("schema_version", "claim_id", "input_revision", "job
                             "provenance", "occurred_at", "dedup_key", "trace_id")
 OPTIONAL_ENVELOPE_FIELDS = ("assessment_revision", "attempt", "causation_id")
 JOB_KEY_PATTERN = (r"^[0-9A-HJKMNP-TV-Z]{26}:[1-9][0-9]*:(intake|parts_segment|damage_segment|part_summary|"
-                   r"page_read|line_items_extract|pen_marks_detect|consolidate):[A-Za-z0-9_.\-]+:[0-9a-f]{8}$")
+                   r"page_read|line_items_extract|pen_marks_detect|consolidate):[A-Za-z0-9_.\-]{1,128}:[0-9a-f]{8}$")
+"""Target segment bounded like ``ops.jobs.target``; the whole key is also at most ``JOB_KEY_MAX_LENGTH``."""
 
 compute_dedup_key = dedup_key
 """``sha256(topic|job_key|attempt_epoch)``; see the module docstring."""
@@ -43,7 +45,7 @@ class Envelope(ContractModel):
     schema_version: SchemaVersion = SCHEMA_VERSION
     claim_id: ClaimId
     input_revision: Revision
-    job_key: str = Field(pattern=JOB_KEY_PATTERN)
+    job_key: str = Field(pattern=JOB_KEY_PATTERN, max_length=JOB_KEY_MAX_LENGTH)
     versions: Versions
     provenance: Provenance
     occurred_at: UtcDatetime

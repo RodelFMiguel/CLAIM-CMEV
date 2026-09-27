@@ -27,7 +27,8 @@
     },
     "job_key": {
       "type": "string",
-      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}:[1-9][0-9]*:(intake|parts_segment|damage_segment|part_summary|page_read|line_items_extract|pen_marks_detect|consolidate):[A-Za-z0-9_.\\-]+:[0-9a-f]{8}$"
+      "maxLength": 200,
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}:[1-9][0-9]*:(intake|parts_segment|damage_segment|part_summary|page_read|line_items_extract|pen_marks_detect|consolidate):[A-Za-z0-9_.\\-]{1,128}:[0-9a-f]{8}$"
     },
     "versions": {
       "$ref": "#/$defs/versions"
@@ -154,6 +155,7 @@
       "maximum": 1
     },
     "boxNorm": {
+      "description": "[x_min, y_min, x_max, y_max]. orderedBox (a registry keyword) refuses x_min > x_max or y_min > y_max.",
       "type": "array",
       "items": {
         "type": "number",
@@ -161,7 +163,8 @@
         "maximum": 1
       },
       "minItems": 4,
-      "maxItems": 4
+      "maxItems": 4,
+      "orderedBox": true
     },
     "partCode": {
       "enum": [

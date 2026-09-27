@@ -39,6 +39,8 @@ import {
   LockKeyhole,
   Mail,
   Info,
+  Clock,
+  CircleAlert,
 } from "lucide-react";
 import {
   api,
@@ -487,6 +489,19 @@ function Dashboard() {
     ) : (
       <Loading />
     );
+  // Open findings count discrepancy flags only (unsupported and cost outside
+  // range). Rows needing more information are informational, counted apart.
+  const assessed = data.items.filter((c) => c.assessment_revision != null);
+  const total = (field: "discrepancy_count" | "information_needed_count") =>
+    assessed.every((c) => typeof c[field] === "number")
+      ? assessed.reduce((sum, c) => sum + (c[field] ?? 0), 0)
+      : null;
+  const openDiscrepancies =
+    total("discrepancy_count") ??
+    (typeof data.stats.open_discrepancies === "number"
+      ? data.stats.open_discrepancies
+      : null);
+  const informationNeeded = total("information_needed_count");
   const claims = data.items.filter(
     (c) =>
       (filter === "all" || c.status === filter) &&
@@ -518,8 +533,14 @@ function Dashboard() {
         <Stat
           icon={<AlertTriangle size={23} />}
           label="Open findings"
-          value={data.stats.open_findings}
-          foot="Across your assigned claims"
+          value={openDiscrepancies}
+          foot={
+            openDiscrepancies === null
+              ? "Discrepancy counts unavailable"
+              : informationNeeded === null
+                ? "Discrepancy flags only"
+                : `Discrepancy flags only. More information needed: ${informationNeeded}`
+          }
           amber
         />
         <Stat
@@ -603,7 +624,14 @@ function Dashboard() {
                     <p className="claim-subline">
                       {c.surveyor} <span>&middot;</span> {c.policy_number}
                     </p>
-                    <Status value={c.status} />
+                    <Status
+                      value={
+                        c.status === "processing" &&
+                        c.processing_state === "queued"
+                          ? "queued"
+                          : c.status
+                      }
+                    />
                   </td>
                   <td>
                     <strong className="vehicle-name">
@@ -628,18 +656,7 @@ function Dashboard() {
                     <strong className="estimate-value">
                       {money(c.declared_total)}
                     </strong>
-                    {c.finding_count > 0 ? (
-                      <p className="finding-count">
-                        <span />
-                        {c.finding_count} findings
-                      </p>
-                    ) : (
-                      <p className="subtle">
-                        {c.status === "awaiting_upload"
-                          ? "Awaiting evidence"
-                          : "No open findings"}
-                      </p>
-                    )}
+                    <QueueState claim={c} />
                   </td>
                   <td>
                     <ArrowRight size={20} className="row-arrow" />
@@ -684,6 +701,65 @@ function Dashboard() {
     </>
   );
 }
+const plural = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`;
+// Status-aware queue text. Only an assessed claim can report findings, and a
+// zero count is never shown for a claim that is processing or failed.
+function QueueState({ claim: c }: { claim: Claim }) {
+  if (c.status === "awaiting_upload")
+    return (
+      <p className="queue-state queue-neutral">
+        <UploadCloud size={13} aria-hidden="true" /> Awaiting evidence
+      </p>
+    );
+  if (c.status === "processing" || c.status === "queued")
+    return (
+      <p className="queue-state queue-neutral">
+        <Clock size={13} aria-hidden="true" />
+        {c.processing_state === "queued" || c.status === "queued"
+          ? "Queued. Nothing processed yet"
+          : "Processing evidence"}
+      </p>
+    );
+  if (c.status === "incomplete" || c.status === "failed")
+    return (
+      <p className="queue-state queue-attention">
+        <CircleAlert size={13} aria-hidden="true" /> Processing needs attention
+      </p>
+    );
+  if (c.assessment_revision == null)
+    return <p className="queue-state queue-neutral">No current assessment</p>;
+  const discrepancies = c.discrepancy_count,
+    information = c.information_needed_count;
+  if (typeof discrepancies !== "number" || typeof information !== "number")
+    // Older API: finding_count mixes discrepancies and information needed.
+    return c.finding_count > 0 ? (
+      <p className="queue-state queue-information">
+        <Info size={13} aria-hidden="true" />
+        {plural(c.finding_count, "finding", "findings")} to review
+      </p>
+    ) : (
+      <p className="subtle">No open findings</p>
+    );
+  if (!discrepancies && !information)
+    return <p className="subtle">No open findings</p>;
+  return (
+    <>
+      {discrepancies > 0 && (
+        <p className="queue-state queue-discrepancy">
+          <AlertTriangle size={13} aria-hidden="true" />
+          {plural(discrepancies, "discrepancy", "discrepancies")}
+        </p>
+      )}
+      {information > 0 && (
+        <p className="queue-state queue-information">
+          <Info size={13} aria-hidden="true" />
+          More information needed: {plural(information, "row", "rows")}
+        </p>
+      )}
+    </>
+  );
+}
 function Stat({
   icon,
   label,
@@ -693,7 +769,7 @@ function Stat({
 }: {
   icon: ReactNode;
   label: string;
-  value: number;
+  value: number | null;
   foot: string;
   amber?: boolean;
 }) {
@@ -702,7 +778,9 @@ function Stat({
       <span className={`stat-icon ${amber ? "amber" : ""}`}>{icon}</span>
       <div>
         <span className="stat-label">{label}</span>
-        <strong>{value.toString().padStart(2, "0")}</strong>
+        <strong>
+          {value === null ? "—" : value.toString().padStart(2, "0")}
+        </strong>
         <p>{foot}</p>
       </div>
       <span className="stat-line" />
@@ -876,7 +954,7 @@ function NewClaim() {
                 <option value="sedan_standard">Standard sedan</option>
                 <option value="suv_crossover">SUV / crossover</option>
                 <option value="hatchback_small">Small hatchback</option>
-                  <option value="van_commercial">Van / commercial</option>
+                <option value="van_commercial">Van / commercial</option>
                 <option value="unknown">Not established</option>
               </select>
             </label>

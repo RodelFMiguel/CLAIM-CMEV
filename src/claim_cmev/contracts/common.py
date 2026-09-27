@@ -115,6 +115,14 @@ Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
 Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 ReasonCode = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=80)]
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+OBJECT_URI_PATTERN = r"^(s3|file|https?)://[^\s]+$"
+ObjectUri = Annotated[str, Field(min_length=1, max_length=1024, pattern=OBJECT_URI_PATTERN)]
+"""Logical object URI, identical to the wire ``uri`` definition: a scheme is required."""
+JOB_KEY_MAX_LENGTH = 200
+"""Upper bound of a job key: the wire schema, the envelope model and every ``job_key`` column agree."""
+JOB_TARGET_MAX_LENGTH = 128
+"""Upper bound of the job-key target segment, matching the ``ops.jobs.target`` column."""
+JOB_TARGET_PATTERN = r"^[A-Za-z0-9_.\-]{1,128}$"
 
 
 def _utc(value: datetime) -> datetime:
@@ -169,7 +177,7 @@ class ArtifactRef(ContractModel):
     """Bytes are reached only through the backend, never via a presigned browser URL."""
 
     artifact_id: str = Field(min_length=1)
-    object_uri: str = Field(min_length=1)
+    object_uri: ObjectUri
     sha256: Sha256
     media_type: str = Field(min_length=1)
     byte_count: int = Field(ge=0)
@@ -206,8 +214,17 @@ def version_signature(versions: Mapping[str, str]) -> str:
 
 
 def make_job_key(claim_id: str, input_revision: int, task: str, versions: Mapping[str, str], target: str = "all") -> str:
-    """Canonical job key: claim, input revision, task, target and version signature."""
-    return f"{claim_id}:{input_revision}:{task}:{target}:{version_signature(versions)}"
+    """Canonical job key: claim, input revision, task, target and version signature.
+
+    Raises ``ContractError("job_key_invalid")`` rather than minting a key that the wire
+    schema or the ``job_key``/``target`` columns would refuse.
+    """
+    if not re.fullmatch(JOB_TARGET_PATTERN, target):
+        raise ContractError("job_key_invalid", f"a job target matches {JOB_TARGET_PATTERN}")
+    key = f"{claim_id}:{input_revision}:{task}:{target}:{version_signature(versions)}"
+    if len(key) > JOB_KEY_MAX_LENGTH:
+        raise ContractError("job_key_invalid", f"job key is {len(key)} characters, above {JOB_KEY_MAX_LENGTH}")
+    return key
 
 
 def deterministic_id(prefix: str, job_key: str, *index: object) -> str:

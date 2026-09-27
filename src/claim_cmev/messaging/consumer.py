@@ -35,10 +35,10 @@ from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import insert, select, update
-from sqlalchemy.exc import IntegrityError, InterfaceError, OperationalError
+from sqlalchemy.exc import DataError, IntegrityError, InterfaceError, OperationalError
 from sqlalchemy.orm import Session
 
-from ..contracts.common import ContractError
+from ..contracts.common import JOB_KEY_MAX_LENGTH, ContractError
 from ..contracts.events import Envelope, validate_message
 from ..contracts.events.envelope import JOB_KEY_PATTERN
 from ..persistence.tables import consumed_messages, dead_letters, job_attempts, jobs
@@ -50,6 +50,7 @@ JOB_FAILED_TOPIC = "cmev.evt.job-failed.v1"
 STAGE_TASKS = frozenset({"parts_segment", "damage_segment", "part_summary", "page_read", "line_items_extract",
                          "pen_marks_detect", "consolidate"})
 _ULID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
+_REASON_CODE = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 
 
 class TransientError(RuntimeError):
@@ -125,13 +126,25 @@ def _redact(text: str) -> str:
     return (text.splitlines() or [""])[0][:300]
 
 
+def _code(value: Any, default: str) -> str:
+    """A reason code the ``reason_code`` columns and the DLQ schema accept, else ``default``."""
+    return value if isinstance(value, str) and _REASON_CODE.match(value) else default
+
+
+def _column_key(job_key: str | None) -> str | None:
+    """A job key that fits the ``job_key`` columns: longer ones (never valid) become a digest."""
+    if job_key is None or len(job_key) <= JOB_KEY_MAX_LENGTH:
+        return job_key
+    return "sha256:" + hashlib.sha256(job_key.encode()).hexdigest()
+
+
 def _salvage(value: Any) -> dict[str, Any] | None:
     """Envelope fields good enough to route a dead letter, or None."""
     if not isinstance(value, Mapping):
         return None
     claim, revision, job_key = value.get("claim_id"), value.get("input_revision"), value.get("job_key")
     if not (isinstance(claim, str) and _ULID.match(claim) and type(revision) is int and revision >= 1
-            and isinstance(job_key, str) and re.match(JOB_KEY_PATTERN, job_key)
+            and isinstance(job_key, str) and len(job_key) <= JOB_KEY_MAX_LENGTH and re.match(JOB_KEY_PATTERN, job_key)
             and job_key.startswith(f"{claim}:{revision}:")):
         return None
     trace = value.get("trace_id") if isinstance(value.get("trace_id"), str) and value.get("trace_id") else "untraced"
@@ -191,7 +204,14 @@ class ConsumerRuntime:
                 self.counters["duplicate"] += 1
                 return "duplicate"
             except (PermanentError, ContractError, ValidationError) as exc:
-                code = getattr(exc, "reason_code", None) or "contract_violation"
+                code = _code(getattr(exc, "reason_code", None), "contract_violation")
+                history.append(self._failure(attempt, code, exc))
+                self._record_failed_attempt(message, envelope, attempt, code)
+                return self._dead_letter(message, envelope, code, "not_retryable", history)
+            except DataError as exc:
+                # The database refused a value (PostgreSQL: too long for its column, out of
+                # range, invalid text). The same bytes fail the same way on every retry.
+                code = "database_value_rejected"
                 history.append(self._failure(attempt, code, exc))
                 self._record_failed_attempt(message, envelope, attempt, code)
                 return self._dead_letter(message, envelope, code, "not_retryable", history)
@@ -201,7 +221,7 @@ class ConsumerRuntime:
                 if attempt == self.retry.max_attempts:
                     raise
             except Exception as exc:  # noqa: BLE001 - transient by default, bounded by the policy
-                code = exc.reason_code if isinstance(exc, TransientError) else (
+                code = _code(exc.reason_code, "unexpected_error") if isinstance(exc, TransientError) else (
                     "result_conflict" if isinstance(exc, IntegrityError) else
                     "transport_unavailable" if isinstance(exc, TransportUnavailable) else "unexpected_error")
                 history.append(self._failure(attempt, code, exc))
@@ -281,12 +301,52 @@ class ConsumerRuntime:
     # ------------------------------------------------------------------ dead letters
     def _dead_letter(self, message: Message, envelope: Envelope | None, reason_code: str, dlq_reason: str,
                      history: list[dict[str, Any]]) -> str:
+        """Record the dead letter; if the full record is refused, record a minimal one.
+
+        A dead letter must never fail for the message's own content, or the offset is
+        never committed and the partition stalls. Infrastructure errors still propagate.
+        """
+        try:
+            return self._dead_letter_full(message, envelope, reason_code, dlq_reason, history)
+        except (DataError, ValueError) as exc:  # ContractError and ValidationError are ValueErrors
+            log.error("%s could not write a full dead letter for a %s message (%s); writing a minimal one",
+                      self.group, message.topic, type(exc).__name__)
+            return self._dead_letter_minimal(message, envelope, reason_code, dlq_reason, history, exc)
+
+    def _raw_dedup(self, message: Message) -> str:
+        return hashlib.sha256(json.dumps([message.topic, message.partition, message.offset, _jsonable(message.value)],
+                                         sort_keys=True).encode()).hexdigest()
+
+    def _dead_letter_minimal(self, message: Message, envelope: Envelope | None, reason_code: str, dlq_reason: str,
+                             history: list[dict[str, Any]], error: BaseException) -> str:
+        """Only bounded, content-free columns: no job update, no outbox message, not replayable."""
+        dedup = envelope.dedup_key if envelope else self._raw_dedup(message)
+        with self.session_factory.begin() as session:
+            now = self.clock()
+            if session.execute(select(consumed_messages.c.id).where(
+                    consumed_messages.c.consumer_group == self.group,
+                    consumed_messages.c.dedup_key == dedup)).first():
+                self.counters["duplicate"] += 1
+                return "duplicate"
+            session.execute(insert(consumed_messages).values(
+                dedup_key=dedup, consumer_group=self.group, topic=message.topic, job_key=None,
+                received_at=now, completed_at=now, outcome="dead_lettered"))
+            original = message.value if isinstance(message.value, Mapping) else {"raw": str(message.value)[:4096]}
+            session.execute(insert(dead_letters).values(
+                topic=message.topic, consumer_group=self.group, dedup_key=dedup, job_key=None, claim_id=None,
+                input_revision=None, reason_code=_code(reason_code, "dead_letter_degraded"), dlq_reason=dlq_reason,
+                reason_text=_redact(f"dead letter degraded ({type(error).__name__}): {history[-1]['reason_text']}"),
+                message=_jsonable(original), failure_history=_jsonable(history), replayable=False,
+                dlq_published=False, created_at=now))
+        self.counters["dead_lettered"] += 1
+        return "dead_lettered"
+
+    def _dead_letter_full(self, message: Message, envelope: Envelope | None, reason_code: str, dlq_reason: str,
+                          history: list[dict[str, Any]]) -> str:
         salvaged = None if envelope else _salvage(message.value)
         with self.session_factory.begin() as session:
             now = self.clock()
-            dedup = envelope.dedup_key if envelope else hashlib.sha256(
-                json.dumps([message.topic, message.partition, message.offset, _jsonable(message.value)],
-                           sort_keys=True).encode()).hexdigest()
+            dedup = envelope.dedup_key if envelope else self._raw_dedup(message)
             if salvaged is not None:
                 salvaged["dedup_key"] = dedup
             if dedup:
@@ -297,7 +357,7 @@ class ConsumerRuntime:
                     return "duplicate"
                 session.execute(insert(consumed_messages).values(
                     dedup_key=dedup, consumer_group=self.group, topic=message.topic,
-                    job_key=envelope.job_key if envelope else salvaged["job_key"] if salvaged else None,
+                    job_key=_column_key(envelope.job_key if envelope else salvaged["job_key"] if salvaged else None),
                     received_at=now, completed_at=now, outcome="dead_lettered"))
             ident = ({"claim_id": envelope.claim_id, "input_revision": envelope.input_revision,
                       "job_key": envelope.job_key, "trace_id": envelope.trace_id,
@@ -327,7 +387,7 @@ class ConsumerRuntime:
             original = message.value if isinstance(message.value, Mapping) else {"raw": str(message.value)[:4096]}
             session.execute(insert(dead_letters).values(
                 topic=message.topic, consumer_group=self.group, dedup_key=dedup,
-                job_key=ident["job_key"] if ident else None, claim_id=ident["claim_id"] if ident else None,
+                job_key=_column_key(ident["job_key"]) if ident else None, claim_id=ident["claim_id"] if ident else None,
                 input_revision=ident["input_revision"] if ident else None, reason_code=reason_code,
                 dlq_reason=dlq_reason, reason_text=history[-1]["reason_text"], message=_jsonable(original),
                 failure_history=_jsonable(history), replayable=replayable, dlq_published=published, created_at=now))

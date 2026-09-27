@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError, validators
 from referencing import Registry, Resource
 
 from ..common import SCHEMA_VERSION, ContractError
@@ -48,6 +48,20 @@ _BASE64_RUN = re.compile(r"[A-Za-z0-9+/]{200,}={0,2}")
 _DATA_URI = re.compile(r"^\s*data:[^,]*;base64,", re.IGNORECASE)
 
 
+def _ordered_box(validator: Any, enabled: Any, instance: Any, schema: Mapping[str, Any]):
+    """``orderedBox``: the wire twin of ``common._box``; JSON Schema cannot compare items."""
+    if not (enabled and isinstance(instance, list) and len(instance) == 4
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in instance)):
+        return  # type, length and range errors come from the standard keywords
+    x0, y0, x1, y1 = instance
+    if x0 > x1 or y0 > y1:
+        yield ValidationError(f"{instance!r} is not an ordered box [x_min, y_min, x_max, y_max]")
+
+
+_Validator = validators.extend(Draft202012Validator, {"orderedBox": _ordered_box})
+"""Draft 2020-12 plus the registry's ``orderedBox`` keyword (on ``$defs/boxNorm``)."""
+
+
 def _read(name: str) -> dict[str, Any]:
     return json.loads((SCHEMA_DIR / name).read_text(encoding="utf-8"))
 
@@ -67,18 +81,18 @@ def load_schema(topic: str) -> dict[str, Any]:
 
 
 @cache
-def _validator(topic: str) -> Draft202012Validator:
-    return Draft202012Validator(load_schema(topic), registry=_registry())
+def _validator(topic: str) -> Any:
+    return _Validator(load_schema(topic), registry=_registry())
 
 
 @cache
-def _envelope_validator() -> Draft202012Validator:
+def _envelope_validator() -> Any:
     envelope = _read(ENVELOPE_SCHEMA)
     strict = {"$schema": envelope["$schema"], "$ref": envelope["$id"], "unevaluatedProperties": False}
-    return Draft202012Validator(strict, registry=_registry())
+    return _Validator(strict, registry=_registry())
 
 
-def _first_error(validator: Draft202012Validator, instance: Any) -> str | None:
+def _first_error(validator: Any, instance: Any) -> str | None:
     errors = sorted(validator.iter_errors(instance), key=lambda e: list(e.absolute_path))
     if not errors:
         return None

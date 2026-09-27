@@ -32,6 +32,8 @@ class CompletenessFacts:
     line_item_count: int
     unparsed_table_regions: int
     subtotal_mismatches: int
+    text_before_header: int = 0  # numeric bands above a repeated header after a closed table
+    text_after_final_total: int = 0  # unrecognised value-column text after the final total, not rows
 
 
 def decide_completeness(facts: CompletenessFacts) -> tuple[CompletenessState, tuple[str, ...]]:
@@ -62,6 +64,10 @@ def decide_completeness(facts: CompletenessFacts) -> tuple[CompletenessState, tu
         reasons.append("unparsed_table_text")
     if facts.subtotal_mismatches:
         reasons.append("subtotal_mismatch")
+    if facts.text_before_header:
+        reasons.append("text_before_header")
+    if facts.text_after_final_total:
+        reasons.append("text_after_final_total")
     return ("partial" if reasons else "complete"), tuple(reasons)
 
 

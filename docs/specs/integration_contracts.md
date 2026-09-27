@@ -1104,6 +1104,8 @@ In the core scope a task is dispatched once per input revision, so `target` is t
 | `target` | The photo ID, page ID, or the literal `all` for document-wide and claim-wide tasks |
 | `version_signature` | First 8 hex characters of `sha256` over the `versions` map, serialised with sorted keys |
 
+**Length bound (implementation note, 2026-09-27).** `target` matches `[A-Za-z0-9_.-]{1,128}` and the whole key is at most 200 characters, the same bounds as the `ops.jobs.target` and `job_key` columns. The envelope schema, the `Envelope` model and `make_job_key` enforce them, so a longer key is refused as `envelope_invalid` before any database write. A consumer also treats a database-refused value (`DataError`) as permanent (`database_value_rejected`, `not_retryable`) and, if even the full dead-letter record is refused, writes a minimal, non-replayable `ops.dead_letters` row so the offset is always committed.
+
 This is the uniqueness rule of v2 section 9.6, refined with `target`. V2's single worker took one job per branch, so `(claim, input revision, task, versions)` was already unique. This runtime fans commands out per photo and per page, so two `parts_segment` commands for one input revision would otherwise collide. The [technical specification](technical_specification.md) section 6.5 states the four-part form; treat `target` as part of `task` when reading that document. The two must be reconciled in one place before implementation. See section 12, decision 12.
 
 **Step 2. Insert or ignore into the consumed-messages table.**

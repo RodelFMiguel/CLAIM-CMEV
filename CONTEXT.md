@@ -1,7 +1,9 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-09-25 (Asia/Singapore), architecture and remaining-effort estimate added at the user's request.
-Implementation baseline: commit 1c9ca28 on branch code-skeleton. The accumulated Claude/Codex changes are included in the commit containing this check-in update. No push was requested or performed. Read the current state and [verification record](docs/verification/model-independent-2026-09-24.md); earlier chronological handoffs below retain their original, sometimes superseded status.
+Last updated: 2026-09-27 (Asia/Singapore), status corrected by Claude Code after independent verification.
+- **Implementation baseline:** HEAD `6e59bc2` on branch `code-skeleton`, which sits on top of `f280209`. Both are local commits, and no push has been verified.
+- **Read first:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
+- **Older entries:** the chronological handoffs below keep their original status, which is sometimes superseded.
 
 This file is the team's maintained handoff, not an automatically synchronised chat transcript. Share it with the skills and source changes through the team's normal version-control workflow.
 
@@ -18,13 +20,13 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 
 | Area | Verified state at this handoff |
 | --- | --- |
-| Repository | Claude's changes preserved and extended by Codex; implementation committed as f280209 on code-skeleton; subsequent architecture/effort documentation is recorded in the final section |
-| Specifications | Full target remains broader than the implementation. Only individually verified M9 checklist items are ticked; nine-priority status and gaps are in the verification record |
-| Architecture | Persisted orchestration, outbox/deduplication, fixture producers and real M8 consolidation run in lean and split-service full Compose. Full groups fixture producers in one container; final inference/GPU packaging remains |
-| Application | Typed review actions, M6 correction replay, M3 human-confirmation reruns, pinned cost lookup, review overlays, durable request retry and frozen M9 reports are connected to the API/workbench |
-| Data and models | No trained model loaded/evaluated. Evidence stages still produce labelled fixtures. M7 costs are synthetic and built offline. Prior PaddleOCR smoke used synthetic pages in a private venv; live M4/M5 workers remain unwired |
-| Shared agent workflows | Canonical skills remain under .agents/skills; no workflow changes in this continuation |
-| Validation | Latest full suite: 1287 passed, 1 skipped, two dependency warnings. Final TypeScript/Vite build and whitespace checks passed. Lean/full Docker and browser workflows passed; final two-page Chromium PDF inspected with complete version footers |
+| Repository | The pipeline is in `f280209`. The defect remediation, specification notes and this file are in `6e59bc2`. Both are local commits, and no push has been verified |
+| Specifications | The full target is broader than the implementation. Only three M9 checklist boxes are ticked, and all three are supported by code. The ticking understates progress, because several implemented items are still unticked |
+| Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes |
+| Application | Connected to the API/workbench: typed review actions, M6 decision replay, M3 reruns after human identity/coverage confirmations, pinned cost lookup, review-state overlays (dismissals and accepted scope), durable request retry, stage retry and frozen M9 reports. The evidence image overlays (`review/overlays.py`) are a library only; no endpoint or UI serves them |
+| Data and models | No trained model exists. M1 has **no code**: `vision/parts/` holds only `.gitkeep`. The M2 assignment, M4 raster/geometry/OCR, M5 parser and M6 linker are libraries covered by unit tests only; the pipeline never calls them. Derived masks and pages are placeholder URIs. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
+| Shared agent workflows | Canonical skills remain under `.agents/skills`, with no workflow changes |
+| Validation | At `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. Docker has not been re-run since `6e59bc2`. Independent verification found remaining and new defects; see the 2026-09-27 section |
 | Evaluation | No model accuracy, real price calibration, real claim outcome, usability comparison or financial benefit measured |
 
 
@@ -43,8 +45,9 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 
 ## Immediate next work
 
-1. Before wiring live M5 records, resolve the previously reported unsided-part identity rule across M5/M8 and add producer-to-consumer coverage for uncertain printed amounts and parser version keys. Preserve unknown identity unless the taxonomy explicitly establishes that side does not apply.
-2. Connect the tested M4/M5 document libraries to persisted artifacts and worker commands. Obtain team-reviewed supported layouts/aliases and permitted sample pages for real-page acceptance. Keep fixture mode explicit and fail closed when live prerequisites are unavailable. The current fixture pipeline does not run OCR on uploads.
+0. First, close the remaining and new defects listed in the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27). Its progress log records which ones are fixed.
+1. Before wiring live M5 records, add producer-to-consumer coverage for uncertain printed amounts and parser version keys. The unsided-part identity rule was resolved in `6e59bc2`. Preserve unknown identity unless the taxonomy explicitly establishes that side does not apply.
+2. Connect the tested M4/M5 document libraries, the M6 linker and the M2 assignment library to persisted artifacts and worker commands. The fixture producers currently emit pre-linked marks and pre-assigned observations. Obtain team-reviewed supported layouts/aliases and permitted sample pages for real-page acceptance. Keep fixture mode explicit and fail closed when live prerequisites are unavailable. The current fixture pipeline does not run OCR on uploads.
 3. Extend the evidence panel to actual page/photo artifacts and aligned row/mark/mask overlays, then replace manual fixture-ID/coordinate controls. Complete persistence of unsent generic form drafts and targeted accessibility acceptance; current IndexedDB guarantees cover submitted requests and note/amount drafts.
 4. Complete remaining runtime acceptance: broker interruption/restart, coordinated PostgreSQL/object-store restore, capacity, dedicated migration job and eventual per-model/GPU packaging. Local replay/failure tests and both Compose smoke runs do not substitute for these checks.
 5. Team prerequisites remain CarDD consent/files, HITL access, layouts/marking rules, frozen taxonomy/config choices, grouped evaluation reservations, owners and the runtime effort budget. LightGBM/RQ4 is a separate offline experiment, not an already-measured outcome.
@@ -815,7 +818,7 @@ Changed path: CONTEXT.md only. This section supersedes earlier planning snapshot
 
 ### Architecture: implemented harness and missing real processing
 
-Legend: [I] implemented and exercised; [P] partly implemented; [M] missing.
+Legend: [I] implemented and exercised in the running pipeline; [L] library with unit tests only, not called by the pipeline (tag added 2026-09-27); [F] fixture-only stage; [P] partly implemented; [M] missing.
 [I] describes application behavior, not measured model accuracy. The arrows below show
 the existing stage dependency graph and the intended real processors at each stage.
 
@@ -837,22 +840,22 @@ the existing stage dependency graph and the intended real processors at each sta
  +--------------------------------+  +------------------------------------+
  | IMAGE BRANCH                   |  | DOCUMENT BRANCH                    |
  |                                |  |                                    |
- | [P] M1 part stage              |  | [P] M4 page reading                 |
- | [M] SegFormer-B0 weights,      |  |     Raster/geometry/OCR library [I] |
+ | [F] M1 part stage: no M1 code  |  | [P] M4 page reading                 |
+ | [M] SegFormer-B0 weights,      |  |     Raster/geometry/OCR library [L] |
  |     inference + mask artifacts|  | [M] Live PaddleOCR worker +         |
  |                |               |  |     real-page validation           |
  |                v               |  |                 |                  |
  | [P] M2 damage + assignment     |  |                 v                  |
  | [M] Separate SegFormer-B0      |  | [P] M5 line-item parser             |
- |     weights + inference       |  |     Deterministic parser/tests [I]  |
- | [I] Mask assignment library    |  | [M] Live M4 artifact consumption,   |
+ |     weights + inference       |  |     Deterministic parser/tests [L]  |
+ | [L] Mask assignment library    |  | [M] Live M4 artifact consumption,   |
  |                |               |  |     reviewed layouts + validation |
  |                v               |  |                 |                  |
  | [P] M3 summary + coverage      |  |                 v                  |
- | [I] Rules + human corrections  |  | [P] M6 marks + row linking          |
+ | [P] Rules run on human reruns  |  | [P] M6 marks + row linking          |
  | [M] Real observation/quality   |  | [M] Faster R-CNN weights/inference  |
- |     integration + calibration |  | [I] Linker, confirmation and amount |
- |                |               |  |     correction state machine       |
+ |     integration + calibration |  | [L] Linker; [I] confirmation and   |
+ |                |               |  |     amount-correction state machine|
  +----------------+---------------+  +-----------------+------------------+
                   |                                    |
                   +------------------+-----------------+
@@ -884,7 +887,7 @@ the existing stage dependency graph and the intended real processors at each sta
                              -> real stage workers above
 ~~~
 
-**What runs today:** all six initial evidence stages are supplied by FixtureProducers. M8 runs real deterministic rules on those records. M6 human changes replay through the real state machine; identity/coverage changes can rerun deterministic M3 over stored fixture observations. Uploaded photos and documents are stored, but the runtime does not yet derive model/OCR/parser results from their pixels. Setting CMEV_FIXTURE_MODE=false currently refuses to start; it is not a switch to an available live pipeline.
+**What runs today:** all six initial evidence stages are supplied by FixtureProducers. The M4 raster/OCR, M5 parser, M6 linker and M2 assignment libraries are not called by the pipeline; M1 has no code; the evidence image-overlay renderer is not served. M8 runs real deterministic rules on those records. M6 human changes replay through the real state machine; identity/coverage changes can rerun deterministic M3 over stored fixture observations. Uploaded photos and documents are stored, but the runtime does not yet derive model/OCR/parser results from their pixels. Setting CMEV_FIXTURE_MODE=false currently refuses to start; it is not a switch to an available live pipeline.
 
 **The document dependency matters:** current scheduling is M4 -> M5 -> M6, because linking marks requires the M5 row boxes. M6 detection could later overlap M5, but linked output must wait for rows. The join coordinates completion, failures and version compatibility; M8 decides findings. Missing photos, ambiguous identity and pending marks withhold applicable decisions rather than become passes or unsupported-repair findings.
 
@@ -896,7 +899,7 @@ the existing stage dependency graph and the intended real processors at each sta
  [M] Complete specified domain tables/migrations and integrity constraints
 
  [I] MinIO: original evidence + API-mediated access
- [P] Derived evidence: real masks/pages/overlays and their lineage still needed
+ [M] Derived evidence: masks/pages are placeholder URIs; no derived objects stored
 
  [I] lean: web + API + combined worker + broker + database + object store
  [I] current full: web + API + orchestrator + fixture-producers +
@@ -923,7 +926,7 @@ Dependency IDs indicate required inputs; independent preparation and adapter sca
 
 | ID | Remaining deliverable and completion evidence | Current starting point / model | Main dependencies; suggested owner | Effort (PD) |
 | --- | --- | --- | --- | ---: |
-| R01 | Reconcile M5/M8 unsided-part identity, uncertain printed amounts, parser version keys and remaining producer/consumer gaps; freeze agreed layouts, taxonomy, cost basis and API compatibility decisions with tests. | Typed contracts/rules exist; previously reported cross-module issues still need resolution. No model. | Ready now; domain + backend owners | 2-3 |
+| R01 | Reconcile M5/M8 unsided-part identity, uncertain printed amounts, parser version keys and remaining producer/consumer gaps; freeze agreed layouts, taxonomy, cost basis and API compatibility decisions with tests. | Typed contracts/rules exist. The unsided-part rule was resolved in 6e59bc2; uncertain-amount and version-key producer/consumer coverage are still missing. No model. | Ready now; domain + backend owners | 2-3 |
 | R02 | Build/review vision label conversion and grouped splits; verify data access, duplicate hashes and joint-label holdouts; preserve label provenance and reserve final tests before tuning. | HITL mapping helper/access records exist; full training preparation is absent. CarDD consent/files remain unconfirmed. | Start access audit now; vision/data owner | 4-6 |
 | R03 | Collect and label the team acceptance data: about 60 marked physical pages, assignment sample after checking reusable joint labels, and 5-10 vehicle groups. Record writer/page/template/vehicle partitions and independent intended decisions. | Targets are specified; no verified completed collection was found in the handoff. Includes team annotation effort. | R01/R02 split policy; team + domain reviewer | 5-8 |
 | R04 | Extend smoke-page synthesis into reproducible training generators for 2-3 estimate layouts and marked-page variants, with exact field/mark/row truth and asset licences. | M4 synthetic smoke helper exists; full estimate/mark training generators do not. | R01 and agreed R03 partition design; document/data owner | 3-5 |
@@ -937,7 +940,7 @@ Dependency IDs indicate required inputs; independent preparation and adapter sca
 | R12 | Wire M6 inference to corrected page artifacts and M5 rows; calibrate linking tolerances, preserve unresolved candidates and verify manual add/relink/amount actions against real boxes. | Linker/state machine and review actions exist. Automatic handwritten amount recognition is **not** required. | R09/R10/R11; detection + backend owners | 2-3 |
 | R13 | Implement the bounded LightGBM comparison, calibration decision and RQ4 support-reduction/ordinary-versus-injected anomaly runs; publish reproducible comparison and a selected frozen table. | **M7: lower/upper LightGBM quantile regressors**, fitted offline. Synthetic generator, empirical baseline, splits, support rules and lookup already exist. | R01 eligible keys/basis; cost/ML owner. Can proceed independently of image models | 3-5 |
 | R14 | Exercise M8 with actual branch outputs and partial/failure cases; close adapter defects, verify source references, matching uncertainty, accepted scope and pinned cost behavior. | M8 deterministic engine/join are implemented; this is real-input integration, not rebuilding consolidation or adding an LLM. | R08/R10/R12; backend + domain owners. Empirical M7 table can unblock this before R13 | 2-3 |
-| R15 | Build real evidence overlays/highlights and box interactions: masks, original/corrected pages, row/mark links and photo identity/coverage selection. Verify coordinate round trips and source navigation. | M9 overview/actions exist; current fixture-ID/manual-coordinate controls are prototypes. | R08/R09/R10/R12 artifacts; frontend + imaging owners | 4-6 |
+| R15 | Build real evidence overlays/highlights and box interactions: masks, original/corrected pages, row/mark links and photo identity/coverage selection. Verify coordinate round trips and source navigation. | M9 overview/actions exist. A tested Pillow overlay renderer (review/overlays.py) exists but is not served. The fixture-ID/manual-coordinate controls are prototypes. | R08/R09/R10/R12 artifacts; frontend + imaging owners | 4-6 |
 | R16 | Complete remaining M9 acceptance gaps: all unsent form drafts, conflict/finalize blocker navigation, error/reconnect states, keyboard/tablet/accessibility and real-evidence frozen-print checks. | Submitted-request replay, note/amount drafts, review API and Chromium report already work. Does not include full offline file sync. | R14/R15; frontend + QA owners | 2-4 |
 | R17 | Complete specified claim/review/imaging/document/cost persistence and service-query/API gaps, with migrations from current records, integrity constraints and historical revision preservation. Verify existing demonstrations survive migration. | ops/pipeline/assessment tables exist; claims/reviews remain in generic baseline_records. Avoid replacing completed outbox/join code. | R01; backend/database owner; can proceed alongside model work | 4-6 |
 | R18 | Package six real module workers, CPU/GPU serving configuration and read-only mounts; pin dependencies/images, expose required health/version diagnostics and verify lean/full equality on the same real inputs. | Current full splits orchestration/producers/consolidation but still groups all fixtures in one producer container. | R05 and live adapters R06-R12; platform + module owners | 3-5 |
@@ -949,9 +952,9 @@ Dependency IDs indicate required inputs; independent preparation and adapter sca
 
 This total includes data preparation/annotation, model development, integration, acceptance and reporting. It is not "81-123 days of training": GPU fitting may run for hours while the engineering work spans days. It also does not re-estimate the already implemented harness.
 
-For planning, carry a **20% additional uncertainty reserve**, giving approximately **98-148 PD** including contingency. The reserve is new estimate headroom, not a claim that the original five contingency days remain available. The largest uncertainties are data/label quality, OCR on photographed pages, detector generalization, and GPU/container compatibility.
+For planning, carry a **20% additional uncertainty reserve**, giving approximately **97-148 PD** including contingency. The reserve is new estimate headroom, not a claim that the original five contingency days remain available. The largest uncertainties are data/label quality, OCR on photographed pages, detector generalization, and GPU/container compatibility.
 
-The original proposal budget was **50 PD for the entire project**, including ten report days. The estimate above is **remaining work from f280209**, not a revised 50-PD total; spent effort has not been measured here. Completing every stated target is therefore unlikely to fit the original budget without an explicit scope/budget decision. Do not add the old ADR runtime estimate again: R05/R17/R18/R19 already estimate the remaining infrastructure work. Adding people can parallelize lanes but cannot remove data-access gates, shared-GPU contention or final integration dependencies; person-days are not calendar days.
+The original proposal budget was **50 PD for the entire project**, including ten report days. The estimate above is **remaining work from f280209** (the 6e59bc2 remediation slightly reduces R01), not a revised 50-PD total; spent effort has not been measured here. Completing every stated target is therefore unlikely to fit the original budget without an explicit scope/budget decision. Do not add the old ADR runtime estimate again: R05/R17/R18/R19 already estimate the remaining infrastructure work. Adding people can parallelize lanes but cannot remove data-access gates, shared-GPU contention or final integration dependencies; person-days are not calendar days.
 
 ### Optional work excluded from the core total
 
@@ -978,12 +981,12 @@ Validation for this update: read-only code/specification inspection, estimate-to
 
 ## Defect remediation started (2026-09-25)
 
-Contributor: Codex; baseline f280209. User authorized fixing the reported review findings. Preserve the preceding uncommitted architecture/effort section.
+Contributor: Codex; baseline f280209. User authorized fixing the reported review findings. Preserve the preceding architecture/effort section. (Later committed as 6e59bc2.)
 Confirmed before editing: section-subtotal row loss, continuation-prefix omission with false completeness, and failed dead-letter validation blocking subsequent messages, reproduced using runtime/review-scratch scripts.
 First fixes: messaging/consumer.py now retains malformed messages in ops.dead_letters and emits bounded database references with sanitized routing metadata; parser scans later sections after totals and records unbound continuation-prefix regions, withholding completeness. Added parser and poison-message regressions. Malformed inputs use transport/content-derived deduplication rather than trusting invalid envelope identifiers.
 Validation: tests/unit/m5 plus tests/integration/test_runtime_idempotency.py: 207 passed. Synthetic/local transport only; no Kafka outage/model evaluation claim.
 Status: review operation/coverage/completeness and worker connection cleanup changes are in progress, not yet verified. Remaining reported findings are still open. Prior blanket milestone-complete wording does not establish correctness on the newly reproduced paths.
-Next: verify review reassessment regressions, preserve original values and decisions across uploads, then cover identity, finalization and UI/runtime defects. No commit or push requested for this remediation.
+Next: verify review reassessment regressions, preserve original values and decisions across uploads, then cover identity, finalization and UI/runtime defects. No commit or push was requested at this point. The remediation was later committed as 6e59bc2.
 
 
 ### Review and UI remediation milestone (2026-09-25)
@@ -992,12 +995,12 @@ Changed paths: contracts/documents.py; orchestration/corrections.py and review_s
 Verified: unknown operation reassesses instead of stalling; confirmations preserve measured view signals; conflicting sides on one photo withhold photo-level identity; unsided taxonomy parts parse as not_applicable with absent text source; unreadable uploaded pages withhold declaration completeness; explicitly-empty rejects existing rows; unchanged document decisions and notes survive photo uploads; absent branches can produce a frozen incomplete-evidence report. Failed processing remains blocked. Earlier full checkpoint: 1295 passed, 1 skipped (fixture/synthetic only).
 In progress after that checkpoint: original extracted amount retained through repeated corrections and report export; atomic multi-tab pending-request protection and actor parsing; independent tab drafts; continuous reconnect polling; failed-stage retry controls; result styling and no unrelated evidence fallback; proxy-peer login isolation by account; full PDF crop/rotation transform; accepted human scope passed into consolidation; bounded-query reads. These later changes still require the next regression run and browser verification.
 Compatibility decisions: historical assessments remain immutable. New optional original-amount fields preserve the first extracted value; historical records retain defaults. New PDF render_to_pdf matrix maps to original PDF user space; legacy records without this matrix explicitly refuse PDF-point conversion and require regeneration. No historical coordinates or unknown sides are silently reinterpreted. No trained models were run.
-Next: validate all later changes, exercise browser recovery/printing and update contract/specification notes. No commit or push performed.
+Next: validate all later changes, exercise browser recovery/printing and update contract/specification notes. The work was later committed as 6e59bc2.
 
 
 ### Defect remediation verified (2026-09-25)
 
-Contributor: Codex. Supersedes the in-progress status above. Preserved the existing architecture/effort entry and all preceding changes. No commit or push performed.
+Contributor: Codex. Supersedes the in-progress status above. Preserved the existing architecture/effort entry and all preceding changes. Committed as 6e59bc2; no push verified.
 
 Changed paths: the document parser/vocabulary (now m5-estimate-vocabulary/0.2.0), shared document/event records, M3 confirmation/replay logic, M8 accepted-scope input, review actions/finalization/report, API read/write adapters, dead-letter consumer/worker cleanup, workbench review controls/storage/styles, module/shared specifications, and maintained regression tests. Detailed finding-to-fix evidence: [defect remediation verification](docs/verification/defect-remediation-2026-09-25.md).
 
@@ -1007,4 +1010,230 @@ Validation: **1314 passed, 1 skipped** in the complete Python suite; the skipped
 
 Limits: these are fixture/synthetic and local-transport checks, not model results or a Kafka outage/production performance test. The original individually numbered 32-finding report was not supplied; the verification matrix covers the supplied defect groups and available reproductions. Unbound continuation rows still require review; two physical sides on one photograph require finer identity evidence and remain withheld by the current photo-level adapter. Changed-source corrections require reconfirmation; historical matrix-less PDF records require regenerated transforms. Existing frozen history is preserved.
 
-Next concrete step: review/commit this remediation patch, then resume the remaining model/data/integration work listed above; do not mark those deliverables complete on the strength of fixture tests.
+**Correction (2026-09-27):** independent verification found that several "corrected" outcomes above are only partly fixed, and that the fixes introduced 11 new defects. See the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27).
+
+Next concrete step (superseded): review/commit this remediation patch (done as 6e59bc2), then resume the remaining model/data/integration work listed above; do not mark those deliverables complete on the strength of fixture tests.
+
+
+## Status correction and fix verification (2026-09-27)
+
+Date/time and timezone: 2026-09-27, Asia/Singapore.
+Contributor / coding agent: Claude Code with read-only verification subagents, at the user's request.
+Task: verify the `6e59bc2` remediation independently against the 32-finding review of `f280209`, correct the overstated status in this file, and fix the remaining defects.
+Branch / baseline commit / resulting commit or PR: `code-skeleton` / `6e59bc2` / no commit. The fixes logged below stay uncommitted unless an entry says otherwise.
+
+### Verified implementation status at `6e59bc2`
+
+Evidence:
+- `pytest -q`: 1314 passed, 1 skipped.
+- Code tracing, including grep for call sites.
+- `docs/verification/`.
+- Chromium e2e runs on a local SQLite stack.
+
+All of this is fixture- or synthetic-validated. None of it is a model result.
+
+- **Implemented and working (fixture/synthetic only).**
+  - **Workbench:** login, queue, intake, uploads and original evidence; finalize with a frozen print view; stage retry; and durable replay of submitted requests. The review actions all work: marks, amounts, row corrections, identity/coverage/completeness confirmations, additions, dismissals and notes.
+  - **Platform:**
+    - Transactional outbox, dedup, the persisted orchestrator join, stage-reuse lineage, retry/DLQ and poison-message isolation.
+    - PostgreSQL `ops`, `pipeline` and `assessment` tables, from one Alembic migration.
+    - Compose profiles: `lean` runs a combined worker. `full` runs the orchestrator, one fixture-producers container and the consolidator.
+    - Kafka/Redpanda was exercised only in the 2026-09-24 Docker smoke. The tests use an in-memory transport.
+  - **Modules:**
+    - The M8 consolidation, cost checks and additions run on every assessment.
+    - The M6 decision state machine is wired into the consolidator and the API.
+    - The M3 rules run in the pipeline, but only on reruns after a human identity or coverage confirmation.
+    - M7 serves a synthetic table, built offline, through a pinned read-only lookup.
+- **Partly implemented.** These are libraries with unit tests only; the pipeline does not call them.
+  - **M4:** raster/PDF, geometry, transforms and the PaddleOCR adapter exist. Missing: a live worker, derived page artifacts and real-page validation.
+  - **M5:** the parser exists. Missing: M4 wiring, reviewed layouts and aliases, and accuracy measurement.
+  - **M6:** the linker exists, but fixture marks arrive already linked. There is no detector.
+  - **M2:** region extraction and assignment exist, but fixture observations arrive already assigned. There is no model.
+  - **M3:** first-pass summaries are fixture records. The thresholds are not calibrated.
+  - **M9:**
+    - The evidence overlay renderer is not served.
+    - The box controls are fixture-ID prototypes.
+    - Only note and amount drafts persist.
+    - Accessibility and usability acceptance are not done.
+  - **Persistence:** claims and reviews are still stored in the generic `baseline_records`.
+  - **The `full` profile** has no per-module workers, model mounts or GPU configuration.
+- **Missing.**
+  - M1 code and model.
+  - M2 and M6 models. CarDD files and consent are absent.
+  - Training pipelines, a model registry and stored derived artifacts.
+  - M7: LightGBM, RQ4 and experiment C.
+  - Runtime acceptance: outage, restore and capacity tests, and a runbook.
+  - Data collection, experiment B, RQ1-RQ3 and the usability pilot.
+  - Stretch goals S1-S3 and the explainer.
+  - Team decisions: owners, the effort budget, layouts, the taxonomy freeze, and finalize policies P1/P2.
+
+### Fix verification of `6e59bc2` (32 original findings)
+
+Verdicts come from rerunning the original reproduction scripts in `runtime/review-scratch/` (git-ignored), plus new probes in `runtime/review-scratch/verify/`.
+
+- **Fixed (17):**
+  - Rows after a subtotal are kept.
+  - An operation corrected to `unknown` no longer wedges the review.
+  - Identity and coverage confirmations keep the measured view signals.
+  - Photos-only and pages-only claims can now be finalized.
+  - Accepting an addition changes the missing-scope result.
+  - Identity history records the prior value.
+  - Unsided parts reach M8 without an inferred side.
+  - Two sides on one photo are withheld rather than one being picked.
+  - An unreadable page makes the declaration partial.
+  - The original printed amount is kept in the overview and in the frozen PDF.
+  - Two tabs no longer overwrite each other's saved requests.
+  - Rows with no linked evidence no longer show an unrelated file.
+  - Polling no longer stops after 15 minutes.
+  - `/auth/me` is typed correctly.
+  - The PDF render-to-points matrix is correct in 144 of 144 cases.
+  - The Kafka producer no longer leaks.
+  - `GET /claims` runs 7 queries regardless of the number of claims.
+- **Partly fixed (9):**
+  - The correct-row form still sends `part_code`/`operation` = `unknown` on unmapped rows.
+  - Completeness confirmation still bypasses the M5 helper and zeroes `unparsed_region_count`.
+  - Uploads carry decisions forward only when the source is unchanged; see N3 and N4.
+  - When page 1 ends in a SUB TOTAL or GST line, continuation-page rows are still dropped while the declaration reports complete.
+  - `cost_outlier` keeps the same dashed border as `insufficient_evidence`.
+  - After a failed reassessment, the prior assessment still cannot be opened.
+  - A `job_key` over 200 characters still loops on PostgreSQL.
+  - An attacker can still lock out the surveyor's own account.
+  - The assessment view still loads the same assessment 5 times.
+- **Not fixed (6):**
+  - The fixture baseline confirmation still overrides a human "covers enough: no".
+  - The queue still says "No open findings" for processing or failed claims, and counts insufficient-evidence rows as findings.
+  - Revisions and versions still print only in the `@page` margin.
+  - The unused `review.actions.carryable_dismissals` is unchanged.
+  - The `ClaimFile` filename substring check still refuses valid names.
+  - The JSON Schema and Pydantic still disagree on crossed boxes and on scheme-less URIs.
+
+### New defects introduced by `6e59bc2`
+
+| ID | Severity | Defect |
+| --- | --- | --- |
+| N1 | High, confirmed | Correcting an unsided row's part to a sided part keeps `not_applicable/absent`. `LineItem` validation then fails, the consolidator dead-letters the message and the claim becomes incomplete (`orchestration/corrections.py`) |
+| N2 | Medium, confirmed | Conflicting sides on one photo become permanent, so a surveyor cannot correct their own side mistake (`vision/multiview/confirmations.py`) |
+| N3 | Medium, confirmed | An accepted addition survives replacement of the photos it came from, so the missing-repairs check wrongly passes (upload carry-over in `api/main.py`) |
+| N4 | Medium, confirmed | An upload on top of a reassessment with no stored review loses the audit history, while hidden carried acceptances still change the result (`review_for` in `api/views.py`, and `api/main.py`) |
+| N5 | Medium, confirmed | Footer lines after the final TOTAL (e.g. `LESS EXCESS 500.00`) are parsed as line items and make the declaration partial (`documents/line_items/table.py`) |
+| N6 | Medium, likely | A `job_key` over 200 characters raises a PostgreSQL `DataError` that is not dead-lettered, so the consumer loops. SQLite does not enforce `VARCHAR(200)`, so the tests miss it |
+| N7 | Medium, confirmed | The login-failure map, keyed on (peer, email), grows without bound |
+| N8 | Low | A race between a discard in one tab and a commit in another leaves a tab stuck with an uncaught error |
+| N9 | Low | Drafts saved before the upgrade under `draft:undefined:<claim>` keys are orphaned |
+| N10 | Low | A failure of `/processing` blocks the whole review page |
+| N11 | Cosmetic | Excluded rows show the warning icon |
+
+### Remediation progress log (updated as each lane completes)
+
+Four lanes run in parallel on disjoint paths:
+- **Backend review/API:** N1-N4 and N7; partial items 1-3 and 6-9; not-fixed items 1, 2 (server counts) and 4.
+- **M5 parser:** continuation after a subtotal, and N5.
+- **Platform/contracts:** N6, `ClaimFile`, and schema/validator parity.
+- **Workbench UI:** the correct-row form, result styling, queue text, print revisions, prior-assessment access, and N8-N11.
+
+- 2026-09-27: status corrected and the four fix lanes launched.
+- 2026-09-27, **M5 parser lane done (uncommitted).**
+  - **Continuation rows:** rows above a continuation page's header are never silently dropped. After a closed table they become an unparsed region with reason `text_before_header`, and the declaration is `partial`. Rows after an open table keep the reason `continuation_without_header`.
+  - **Footer lines (N5):** recognised lines after the final TOTAL (excess, deductible, payable, settlement, balance due) become a new non-item row kind, `footer`. Unrecognised numeric lines become `text_after_final_total` regions and make the declaration `partial`. Later sections after a section total, and a mid-table DISCOUNT, still keep their rows.
+  - **Versions:** `m5-line-items/0.2.0`, `m5-layout-families/0.2.0`. Footer and closing-total patterns are proposed.
+  - **Open decision:** bands above a repeated header that contain no digit (letterheads) are still treated as page furniture. The remaining risk is a row whose amount OCR missed entirely.
+  - **Changed paths:** `documents/line_items/{table,parser,config,completeness}.py`, `configs/pipeline/m5_layout_families.yaml`, `tests/unit/m5/*`, and an appended note in `docs/specs/module-05-line-item-extraction.md`.
+  - **Checks:** `pytest -q tests/unit/m5` gave 221 passed. On `6e59bc2`, 17 of the new or changed tests fail. The full suite gave 1390 passed, 1 skipped and 1 failed; the failure (`tests/unit/m3/test_m3_grouping.py::test_conflicting_sides_on_one_photo_withhold_observation_identity`) comes from the backend lane's in-progress N2 edits.
+- 2026-09-27, **Platform/contracts lane done (uncommitted).**
+  - **N6 (long job keys):** job keys are bounded to 200 characters with a 1-128 character target, in the wire schema, the Envelope and `make_job_key`. A longer key is `envelope_invalid` before any database write. A database `DataError` is now permanent (`database_value_rejected`). If a full dead-letter row is refused, a minimal one is written instead, so no message can wedge a partition. No column changed, so there is no migration.
+  - **`ClaimFile`:** the substring filename check is replaced by `generated_object_key`, which requires the key to be the record's `file_id` or a generated ID. `evidence.jpg` and similar names are now accepted.
+  - **Schema/record parity:** the JSON Schema box type gained an `orderedBox` keyword, enforced in `registry.py`, so crossed boxes are refused on the wire as well. `ArtifactRef` and `MaskRef` now use `common.ObjectUri`, which requires an `s3`, `file` or `http(s)` scheme.
+  - **Changed paths:**
+    - `contracts/{common,claims,imaging}.py`
+    - `contracts/events/{envelope.py,envelope.v1.schema.json,registry.py}` and 2 new invalid examples
+    - `messaging/consumer.py`, `persistence/tables.py`
+    - `tests/contracts/*`, new `tests/integration/test_contract_platform_fixes.py`
+    - notes in `docs/specs/data_contracts.md` and `integration_contracts.md`
+  - **Checks:**
+    - The full suite gave 1394 passed, 1 skipped, 0 failed at that moment. Other lanes were still editing.
+    - Every new regression test fails on `6e59bc2`.
+    - The PostgreSQL length limit is emulated on SQLite. No real PostgreSQL run was done; set `CMEV_TEST_POSTGRES_URL` to run one.
+- 2026-09-27, **Workbench UI lane done (uncommitted).** All nine assigned UI items are fixed:
+  - **Correct-row form:** sends only the fields that changed, never `unknown` or `unmapped`.
+  - **Result styling:** the four results now differ in border, colour role, icon and wording, with contrast of at least 4.5:1 and a greyscale screenshot.
+  - **Excluded rows (N11):** use a neutral icon.
+  - **Queue text:** now depends on claim status and uses the split counts `discrepancy_count` and `information_needed_count`. It falls back sensibly when an older API omits them.
+  - **Print:** revisions and versions now appear in the report body, not only in the `@page` margin.
+  - **Prior assessment:** can be opened read-only after a failed reassessment.
+  - **Two-tab discard/commit race (N8):** fixed.
+  - **Legacy drafts (N9):** migrated, and old or empty drafts are pruned.
+  - **Processing failures (N10):** a failed `/processing` fetch no longer blocks the page.
+
+  The regression check is the new `tests/e2e/review-regressions.mjs`. It has 8 checks: all fail on the `6e59bc2` UI and all pass now. `tsc` and the Vite build pass. The baseline, review-controls, print-report and review-defects e2e runs exit 0 on a disposable SQLite stack.
+
+  Changed paths:
+  - `src/workbench/src/{App,ClaimReview,ReviewControls}.tsx`
+  - `src/workbench/src/{api,pendingActions}.ts`
+  - `src/workbench/src/styles.css`
+  - `tests/e2e/review-defects.mjs`, with two assertions updated to the new behaviour
+  - an appended note in `docs/specs/ui_specification.md`
+
+  Limits:
+  - Only Chromium was tested; Firefox and Safari were not.
+  - The queue check mocks the split counts.
+  - A non-default UI port needs `CMEV_ALLOWED_ORIGINS`.
+  - `tests/README.md` should list the new e2e file.
+  - The backend's `stats.open_findings` still includes insufficient-evidence rows. The UI no longer displays it.
+- 2026-09-27, **backend review/orchestration/API lane done (uncommitted).**
+  - **N1 (part correction changes sidedness):** a part-only correction that moves a row from an unsided part to a sided one (or to unknown) now sets the side to `unknown/absent`. No side is inferred. Any correction that cannot form a valid LineItem is refused at the action boundary with 422 `correction_invalid`, so a correction can no longer dead-letter the consolidator.
+  - **N2 and not-fixed 1 (confirmation precedence):**
+    - Human confirmations (`source_kind=real`) outrank fixture records.
+    - Among human records, the later statement wins, so a surveyor can correct their own side choice. Earlier records are kept in `superseded_ids` for the audit trail.
+    - Different sides stated in the same statement still conflict.
+    - A human `covers_enough=false` now overrides the fixture baseline.
+    - **Behaviour change:** a surveyor cannot now say "this photo shows both sides" through two separate actions, because the second replaces the first. This is recorded in the M3 spec.
+  - **N3 (accepted additions):** accepted additions are photo-sourced. They carry over to a new upload only while the photographs are unchanged; otherwise they are invalidated with `invalidation_reason`.
+  - **N4 (history after an unreviewed reassessment):** `review_for` walks back to the latest stored review, so an upload after an unreviewed reassessment keeps the history. `accepted_scope` comes from what M8 actually consumed.
+  - **Completeness confirmation:** follows the M5 helper and preserves `unparsed_region_count`.
+  - **Failed reassessment:** the latest assessment stays readable, with `is_latest`, `read_only` and `not_current_reason` on the assessment response; `can_finalize` is false.
+  - **Login (N7):** the new `api/ratelimit.py` limits failures per client IP and account (case-insensitive) to 10 per 60 s, bounded by LRU and TTL eviction (`LOGIN_FAILURE_MAX_KEYS`, default 10000). A 429 now carries `Retry-After`.
+    - `infra/Dockerfile.api` runs uvicorn with `--proxy-headers --forwarded-allow-ips` (default: the private IP ranges).
+    - `infra/nginx.conf` overwrites `X-Forwarded-For`.
+    - **Tradeoff:** clients behind one NAT share a bucket.
+  - **Assessment view:** loads the assessment row and claim view once per request.
+  - **Claim counts:** claims gain `discrepancy_count` and `information_needed_count`, both null when there is no current assessment. `finding_count` is kept.
+  - **`carryable_dismissals`:** delegates to `lineage.carry_forward_dismissals`.
+  - **`unknown` on an unresolved field:** treated as unchanged, so the parser's status and reason are kept. A request containing only that gets 422 `no_change`.
+  - **Changed paths:**
+    - `orchestration/corrections.py`, `review/actions.py`, `vision/multiview/confirmations.py`
+    - `api/{main,views,review_service}.py`, new `api/ratelimit.py`
+    - `infra/{Dockerfile.api,nginx.conf}`
+    - new `tests/backend/test_review_fixes_0927.py` and `tests/unit/m9/test_m9_row_corrections.py`, updated M3/M9 tests
+    - notes in the M3 and M9 specs
+  - **Limits:**
+    - The Docker image and nginx were not built or run; the proxy settings are covered by config and middleware tests only.
+    - The forwarded-IP trust list is broad until the Compose backend subnet is pinned.
+- 2026-09-27, **combined validation of all four lanes (Claude Code, uncommitted working tree):**
+  - `.venv/bin/python -m pytest -q`: **1413 passed, 1 skipped** (the skip is the optional real-PaddleOCR test), in 110 s.
+  - `npx tsc --noEmit` passes, and `git diff --check` passes.
+  - On a disposable SQLite/local-transport stack (`runtime/ui-lane/stack.sh final0927 8441 5441`), Chromium e2e exit 0 for:
+    - `baseline.mjs`
+    - `review-controls.mjs`
+    - `print-report.mjs`
+    - `review-defects.mjs`
+    - `review-regressions.mjs` (8/8)
+  - All services were stopped afterwards.
+  - Everything is fixture/synthetic validation. Docker, Kafka/Redpanda and PostgreSQL were **not** re-run.
+- **Status of the 2026-09-27 defect list:**
+  - All 9 partly fixed items, all 6 not-fixed items and new defects N1-N11 now have a fix and a regression test in the working tree. N6 was tested with PostgreSQL length emulation only.
+  - Open and not changed by this work:
+    - the "Missing" and "Partly implemented" feature lists at the top of this section;
+    - Firefox/Safari print checks;
+    - a real PostgreSQL run;
+    - the Docker lean/full re-run.
+- **Next concrete step:**
+  1. Commit this working tree.
+  2. Re-run lean/full Docker, including the new proxy settings, and run the integration tests against PostgreSQL with `CMEV_TEST_POSTGRES_URL`.
+  3. Resume the feature work in the 2026-09-25 R01-R22 list.
+
+## Presentation handoff (2026-09-27)
+
+- **Changed paths:** `docs/CLAIM-CMEV_system_design_and_progress.pptx` contains the requested two editable slides: technical architecture/created containers and current project progress, with three placeholders for the next team sync. Private authoring files and PNG renders are in ignored `runtime/presentation-build/`.
+- **Status and sources:** the architecture follows the current Compose services, distinguishing the shared fixture producers from the planned six dedicated module workers. UI/backend progress describes the fixture-backed harness. The user reports that the first car defects model, **SegFormer-B2**, has been trained; this is a newer team-reported milestone than the older no-model/B0 planning notes, not independently verified checkpoint or evaluation evidence. No specifications or runtime model selections were changed.
+- **Validation:** created and rendered both slides with PowerPoint; visually inspected both renders. Native text bounds showed zero overflows. Presentation package and layout validators passed with two slides, 16:9, Aptos, zero findings and zero layout warnings. The bundled artifact authoring runtime was unavailable, so native PowerPoint automation was used. No application code or tests changed in this task.
+- **Limitations and next step:** collect the team's dataset/checkpoint details, measured model results, component updates and next owners/dates, then replace the editable placeholders. Training completion does not establish runtime integration or accuracy. The deck is local and uncommitted; no push was performed.

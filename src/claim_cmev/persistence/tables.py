@@ -27,6 +27,8 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 
+from ..contracts.common import JOB_KEY_MAX_LENGTH
+
 SCHEMAS = ("ops", "pipeline", "assessment")
 SQLITE_SCHEMA_MAP = {schema: None for schema in SCHEMAS}
 STAGE_STATES = ("pending", "running", "done", "failed", "not_required")
@@ -35,7 +37,8 @@ JOB_STATES = ("pending", "dispatched", "running", "succeeded", "failed", "dead_l
 metadata = MetaData()
 Id = BigInteger().with_variant(Integer, "sqlite")
 Ts = DateTime(timezone=True)
-JOB_KEY = 200
+JOB_KEY = JOB_KEY_MAX_LENGTH
+"""200, as in migration 0001; the envelope contract refuses longer keys before any write."""
 
 jobs = Table(
     "jobs", metadata,

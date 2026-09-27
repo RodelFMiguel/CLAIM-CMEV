@@ -1,6 +1,6 @@
 # Reported-defect remediation verification (2026-09-25)
 
-Baseline: f280209. Changes are uncommitted. Existing architecture/effort documentation in CONTEXT.md was preserved. This records the defects identifiable from the supplied summary and ignored review reproductions; the separate individually numbered 32-finding report was not supplied in this conversation.
+Baseline: f280209. Committed as 6e59bc2 (local; push not verified). Existing architecture/effort documentation in CONTEXT.md was preserved. This records the defects identifiable from the supplied summary and ignored review reproductions; the separate individually numbered 32-finding report was not supplied in this conversation.
 
 ## Changes and evidence
 
@@ -49,3 +49,12 @@ Python 3.12/SQLite, local transport, fixture stage producers, deterministic pars
 Disposable browser database: `runtime/review-scratch/remediation-browser.db`. Ignored outputs: `artifacts/evaluation/ui-baseline/`, `artifacts/evaluation/ui-defects/`, `artifacts/evaluation/ui-review/frozen-report.pdf`, and `frozen-report-original-amount.png` in the same directory. Temporary API/worker/Vite processes were stopped after verification; data/artifacts were retained.
 
 Conservative limits are intentional: unbound continuation regions need review; photo-level identity cannot resolve separate left/right instances within one image; corrections referring to replaced evidence require reconfirmation; legacy PDF records need regenerated geometry before original-PDF highlighting. Historical frozen reports are not rewritten. New amount fields and PDF matrices are optional under schema 0.2.0; unsided document mapping is pinned as vocabulary 0.2.0. Model integration/training and the broader remaining-delivery estimate in CONTEXT.md remain outstanding.
+
+## Independent verification (2026-09-27)
+
+Claude Code reran the original 32-finding reproductions against `6e59bc2`. Results:
+
+- 17 findings are fixed, 9 are partly fixed and 6 are not fixed.
+- The fixes introduced 11 new defects, N1 to N11.
+- The per-finding verdicts, the new-defect table and the fix progress are kept in `CONTEXT.md`, section "Status correction and fix verification (2026-09-27)".
+- Several outcomes this note lists as corrected are only partly corrected: evidence styling, login isolation, repeated database reads, continuation pages, the upload carry-over of decisions, and retry of a failed reassessment.

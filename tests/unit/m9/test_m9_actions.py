@@ -331,8 +331,23 @@ def test_batch_is_atomic_and_replays_as_a_whole():
 
 
 def test_dismissal_carries_only_to_an_unchanged_finding():
-    s = apply(state(), request("dismiss_finding", finding_id="f4", reason_code="parts_price_change")).state
-    same = assessment([finding("f4", "li4", "cost_outlier", revision=2)], revision=2)
-    changed = assessment([finding("f4", "li4", "cost_outlier", revision=2, content_hash="0" * 64)], revision=2)
-    assert [fid for fid, _ in carryable_dismissals(s, same)] == ["f4"]
+    """``carryable_dismissals`` is M8's lineage rule: same entry, recomputed content hash."""
+    from claim_cmev.comparison.lineage import with_content_hash
+    hashed = [with_content_hash(f) for f in state().assessment.findings]
+    s = state(assessment=assessment(hashed))
+    s = apply(s, request("dismiss_finding", finding_id="f4", reason_code="parts_price_change")).state
+    same = assessment([with_content_hash(finding("f4-r2", "li4", "cost_outlier", revision=2))], revision=2)
+    changed = assessment([with_content_hash(finding("f4", "li4", "insufficient_evidence", revision=2))], revision=2)
+    carried = carryable_dismissals(s, same)
+    assert [fid for fid, _ in carried] == ["f4-r2"]  # a new finding id for the same entry still carries
+    assert carried[0][1].finding_id == "f4" and carried[0][1].reason_code == "parts_price_change"
     assert carryable_dismissals(s, changed) == ()
+
+
+def test_dismissal_never_carries_on_stored_hashes_that_do_not_match_their_content():
+    """The earlier implementation compared stored hashes; equal but stale hashes carried."""
+    stale = "0" * 64
+    s = state(assessment=assessment([finding("f4", "li4", "cost_outlier", content_hash=stale)]))
+    s = apply(s, request("dismiss_finding", finding_id="f4", reason_code="parts_price_change")).state
+    later = assessment([finding("f4", "li4", "insufficient_evidence", revision=2, content_hash=stale)], revision=2)
+    assert carryable_dismissals(s, later) == ()

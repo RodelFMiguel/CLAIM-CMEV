@@ -103,11 +103,16 @@ def test_real_paddleocr_boxes_on_the_flat_page_keep_a_confident_misread_visible(
 
 
 def test_real_paddleocr_boxes_on_the_perspective_photo():
-    result = parse([_paddle_page("perspective_photo")], provenance=SYNTHETIC)
-    assert _summary(result)[:6] == EXPECTED
-    # Unclassified spanning footer text is retained as uncertain, never silently omitted.
-    assert result.line_items[-1].part_code is None
-    assert result.completeness.state == "partial"
+    page = _paddle_page("perspective_photo")
+    result = parse([page], provenance=SYNTHETIC)
+    assert _summary(result) == EXPECTED
+    # Unclassified spanning footer text after the final TOTAL is never a declared row, and
+    # never silently omitted: it is an unparsed region that withholds completeness.
+    [region] = result.unparsed_regions
+    text = {b.box_id: b.text for b in page.text_boxes}
+    assert region.reason == "text_after_final_total"
+    assert [text[i] for i in region.box_ids] == ["SYNTHETIC FIXTURE PAGE GENERATED FOR TESTING"]
+    assert (result.completeness.state, result.completeness.reasons) == ("partial", ["text_after_final_total"])
     assert any("subtotal_matched" in row.flags for row in result.rows)
 
 
