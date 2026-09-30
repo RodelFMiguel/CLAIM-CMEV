@@ -7,7 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
     CMEV_M3_CONFIG=/srv/configs/pipeline/m3_summary.yaml \
     CMEV_M9_REVIEW_CONFIG=/srv/configs/pipeline/m9_review.yaml \
     CMEV_M8_CONFIG=/srv/configs/pipeline/m8_rules.yaml \
-    CMEV_MIGRATIONS_DIR=/srv/infra/migrations
+    CMEV_MIGRATIONS_DIR=/srv/infra/migrations \
+    FORWARDED_ALLOW_IPS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 WORKDIR /srv
 COPY pyproject.toml README.md ./
 COPY src/claim_cmev ./src/claim_cmev
@@ -18,4 +19,8 @@ RUN pip install . && useradd --uid 10001 --create-home cmev \
     && chown 10001:10001 /srv/artifacts/cost_tables
 USER 10001:10001
 EXPOSE 8000
-CMD ["uvicorn", "claim_cmev.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# The API is reachable only on the internal backend network, where nginx is the one proxy
+# that forwards browser requests. Proxy headers are trusted from the private container
+# ranges (FORWARDED_ALLOW_IPS), so request.client is the browser address nginx writes into
+# X-Forwarded-For; the login limiter keys on it (src/claim_cmev/api/ratelimit.py).
+CMD ["sh", "-c", "exec uvicorn claim_cmev.api.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips \"$FORWARDED_ALLOW_IPS\""]

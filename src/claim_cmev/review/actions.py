@@ -463,11 +463,21 @@ def _v_correct_line_item(state, request, config, action_id):
         old = original[name]
         if name in ("quantity", "printed_line_amount"):
             return old is not None and Decimal(old) == Decimal(value)
-        return old == value or (name == "part_code" and value == "unknown" and old is None)
+        # ``unknown`` on a field that is already unresolved is no correction: the parser's
+        # mapping status and uncertainty reason (for example ``ambiguous``) stay.
+        return old == value or (name in ("part_code", "operation") and value == "unknown" and old is None)
 
     if all(same(name, value) for name, value in fields.items()):
         return [_err("no_change", "The corrected values equal the current values.", 422, "corrections")]
-    new: dict[str, Any] = dict(fields)
+    new: dict[str, Any] = {name: value for name, value in fields.items()
+                           if not (name in ("part_code", "operation") and value == "unknown" and original[name] is None)}
+    from ..orchestration.corrections import correct_line_item
+    try:  # the consolidator replays exactly this; a value set that forms no valid row is refused here
+        correct_line_item(item, new)
+    except (ValidationError, ContractError) as exc:
+        detail = exc.errors()[0]["msg"] if isinstance(exc, ValidationError) and exc.errors() else str(exc)
+        return [_err("correction_invalid", "These values do not form a valid estimate row: " + detail[:200],
+                     422, "corrections")]
     if "side" in fields:
         new["side_source"] = "human_correction"
     original.update(original_part_text=item.original_part_text, original_operation_text=item.original_operation_text,
@@ -846,13 +856,13 @@ def apply_review_batch(
 
 
 def carryable_dismissals(previous: ReviewState, assessment: Assessment) -> tuple[tuple[str, ReviewEvent], ...]:
-    """Dismissals that M8's rule allows to carry into ``assessment``: same finding id and an
-    unchanged, non-null ``content_hash``. The API records each carry as its own event."""
-    findings = {f.finding_id: f for f in assessment.findings}
-    carried = []
-    for finding_id, event in previous.dismissals().items():
-        old = previous.finding(finding_id)
-        new = findings.get(finding_id)
-        if old and new and old.content_hash and old.content_hash == new.content_hash:
-            carried.append((finding_id, event))
-    return tuple(carried)
+    """Dismissals of ``previous`` that carry into ``assessment``, as ``(new finding id, event)``.
+
+    Delegates to M8's single rule, ``comparison.lineage.carry_forward_dismissals``: the same
+    entry in a later assessment with an unchanged, recomputed content hash.
+    """
+    from ..comparison.lineage import carry_forward_dismissals
+    dismissed = previous.dismissals()
+    carried = carry_forward_dismissals(previous.assessment, assessment,
+                                       {fid: event.reason_code or "" for fid, event in dismissed.items()})
+    return tuple((c.finding_id, dismissed[c.carried_from]) for c in carried)

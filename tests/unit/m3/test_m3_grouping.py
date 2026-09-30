@@ -3,10 +3,10 @@ import random
 
 import pytest
 
-from claim_cmev.contracts.common import ContractError
+from claim_cmev.contracts.common import ContractError, Provenance
 from claim_cmev.contracts.imaging import PartSummary
-from claim_cmev.vision.multiview import group_observations
-from m3_support import CFG, context, identity, obs, worked_example
+from claim_cmev.vision.multiview import build_confirmation_index, group_observations
+from m3_support import CFG, context, covers, identity, obs, worked_example
 
 
 def _groups(observations, identities=()):
@@ -78,12 +78,41 @@ def test_same_physical_part_confirmed_on_two_photos_forms_one_group():
     assert group.supporting_photo_ids == ["ph_01", "ph_02"]
 
 
-def test_conflicting_sides_on_one_photo_withhold_observation_identity():
+def test_conflicting_sides_stated_together_on_one_photo_withhold_observation_identity():
     observations = [obs("o_1", "ph_01", "dent", "front-door")]
-    groups = _groups(observations, [identity("ic_old", "ph_01", "front-door", "left", review=1),
-                                    identity("ic_new", "ph_01", "front-door", "right", review=2)])
+    groups = _groups(observations, [identity("ic_left", "ph_01", "front-door", "left", review=2),
+                                    identity("ic_right", "ph_01", "front-door", "right", review=2)])
     assert _shape(groups) == [("part_only", "front-door", "unknown", ("o_1",))]
     assert groups[0].identity_confirmation_ids == []
+
+
+def test_a_later_identity_statement_supersedes_an_earlier_side():
+    observations = [obs("o_1", "ph_01", "dent", "front-door")]
+    old, new = (identity("ic_old", "ph_01", "front-door", "left", review=1),
+                identity("ic_new", "ph_01", "front-door", "right", review=2))
+    groups = _groups(observations, [old, new])
+    assert _shape(groups) == [("resolved", "front-door", "right", ("o_1",))]
+    index = build_confirmation_index([old, new], [])
+    assert index.superseded_ids == ("ic_old",) and index.conflicting_identity_ids == ()
+    # Correcting back again: the latest statement wins, and the history stays superseded.
+    again = identity("ic_back", "ph_01", "front-door", "left", review=3)
+    index = build_confirmation_index([old, new, again], [])
+    assert index.identity_side("ph_01", "front-door") == "left"
+    assert index.superseded_ids == ("ic_new", "ic_old")
+
+
+def test_a_surveyor_record_outranks_a_fixture_baseline_whatever_its_revision_counter():
+    human = Provenance(source_kind="real", runtime_profile="lean", producer_service="cmev-api")
+    baseline = identity("ic_fixture", "ph_01", "front-door", "left", review=9)
+    surveyor = identity("ic_human", "ph_01", "front-door", "right", review=1).model_copy(update={"provenance": human})
+    index = build_confirmation_index([baseline, surveyor], [])
+    assert index.identity_side("ph_01", "front-door") == "right"
+    assert index.superseded_ids == ("ic_fixture",) and index.conflicting_identity_ids == ()
+    declined = covers("cc_human", "front-door", "right", ["ph_01"], enough=False, reason="view_obstructed",
+                      review=1).model_copy(update={"provenance": human})
+    index = build_confirmation_index([], [covers("cc_fixture", "front-door", "right", ["ph_01"], review=9), declined])
+    assert index.coverage_for("front-door", "right").confirmation_id == "cc_human"
+    assert index.superseded_ids == ("cc_fixture",)
 
 
 def test_identity_for_another_part_does_not_resolve():

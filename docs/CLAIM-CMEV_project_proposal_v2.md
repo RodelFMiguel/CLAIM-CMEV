@@ -408,18 +408,18 @@ sequenceDiagram
     participant DW as Document workers (M4-M6)
     participant C as cmev-consolidator (M8)
     S->>A: Upload photos, estimate pages, vehicle details
-    A->>A: Validate; store input revision
+    A->>A: Validate, store input revision
     A->>O: evt.input-revision-created (Kafka)
     A-->>S: Claim ID, revision, state = queued
     O->>IW: cmd.parts-segment, cmd.damage-segment, cmd.part-summary
-    IW-->>O: Observations and coverage saved; image branch complete
+    IW-->>O: Observations and coverage saved, image branch complete
     O->>DW: cmd.page-read, cmd.line-items-extract, cmd.pen-marks-detect
-    DW-->>O: Line items and pen marks saved; document branch complete
+    DW-->>O: Line items and pen marks saved, document branch complete
     O->>C: cmd.consolidate (both branches joined)
-    C-->>A: evt.assessment-ready; provisional assessment with pinned cost table
+    C-->>A: evt.assessment-ready, provisional assessment with pinned cost table
     S->>A: Confirm marks, enter amounts, correct identity/coverage
     A->>C: cmd.consolidate (reassessment)
-    C-->>A: New input/assessment revision; recompute affected checks
+    C-->>A: New input/assessment revision, recompute affected checks
     A-->>S: Updated findings and matching review revision
     S->>A: Dismiss finding with reason or add review note
     A-->>S: Review-only action saved against its finding

@@ -38,7 +38,7 @@ The v1 contract file was `schema_version 0.1.0`. This is `0.2.0`. Identity, vers
 | Timestamp | UTC with timezone, RFC 3339. Source dates from a document are preserved separately from system times |
 | Money | Decimal string in interchange, exact database `numeric` in storage, always with explicit `currency` and `cost_basis`. **Never a JSON number** |
 | Confidence | Number in `[0, 1]` with a documented scoring method. Nullable when the producer supplies none. Never invented |
-| Artifact reference | `{artifact_id, object_uri, sha256, media_type, byte_count}`. Bytes are reached only through the backend, never by a presigned URL handed to the browser |
+| Artifact reference | `{artifact_id, object_uri, sha256, media_type, byte_count}`. Bytes are reached only through the backend, never by a presigned URL handed to the browser. `object_uri` (also on mask references) needs an `s3://`, `file://`, `http://` or `https://` scheme in records as on the wire |
 | Reason | Stable machine reason code plus a readable explanation. Not a free-form error string, and not a bare number |
 
 Claim-scoped records carry `claim_id`, `input_revision`, `schema_version`, `processing_status`, the relevant `versions`, timestamps and `provenance`. Offline datasets, model manifests and cost-table builds instead carry a build or dataset identity; they have no artificial claim ID.
@@ -105,7 +105,7 @@ Every mapped value stores the original source text, the mapped code, the mapping
 
 ## 4. Spatial coordinates
 
-Bounding boxes in interchange are `[x_min, y_min, x_max, y_max]`, normalised to `[0, 1]`, origin top-left, bounds ordered. Report page numbers are one-based.
+Bounding boxes in interchange are `[x_min, y_min, x_max, y_max]`, normalised to `[0, 1]`, origin top-left, bounds ordered. Report page numbers are one-based. The event registry enforces the ordering on the wire through an `orderedBox` keyword on `$defs/boxNorm`, matching the `BoxNorm` record type.
 
 For pages, store page width, height, rotation, rendering scale, whether perspective correction was applied, and the inverse transform back to the uploaded page and to the original PDF. A box is normalised on the **corrected render**; navigating back to the original requires the stored transform. New PDF page records carry optional `render_to_pdf`, a 3x3 matrix from source-render pixels to original PDF user-space points (bottom-left origin), including crop offsets and page rotation. Compose it after `homography_inverse`. Scale alone is insufficient. Image uploads use null. Legacy PDF records lacking the matrix remain readable, but PDF-point conversion refuses until regenerated; their old coordinates are not reinterpreted.
 
@@ -117,7 +117,7 @@ Affected area carries a pixel count, a part pixel count where available, and a f
 
 `ClaimInput`: claim ID, input revision, external reference (nullable with reason), make, model, year, optional trim and ADAS features, resolved `vehicle_class` or `unknown` with a reason, currency, file IDs, creation time, previous input revision, and references to any explicitly reused prior-revision artifacts with their lineage.
 
-`ClaimFile`: file ID, claim and revision membership, original name, media type, SHA-256, byte count, object reference, upload status, photo dimensions and EXIF orientation or page count, and provenance. A file may be referenced by a later revision without rewriting its bytes. Object keys are generated; no user-supplied string ever forms a storage path.
+`ClaimFile`: file ID, claim and revision membership, original name, media type, SHA-256, byte count, object reference, upload status, photo dimensions and EXIF orientation or page count, and provenance. A file may be referenced by a later revision without rewriting its bytes. Object keys are generated; no user-supplied string ever forms a storage path. The record checks this positively: the last segment of `object_uri`, less one short extension, is the file's own `file_id` or a generated identifier (ULID or `<prefix>-<24 hex>`); the original name plays no part in the check.
 
 Model year is claim metadata. It is display only and is excluded from cost generation, cost model features and cost lookup (v2 section 8.3).
 

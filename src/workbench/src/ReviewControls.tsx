@@ -44,23 +44,44 @@ const reasons = [
   "other",
 ];
 const words = (s: string) => s.replaceAll("_", " ");
+// View sentinel for a part or operation the parser could not map.
+const UNMAPPED = "unmapped";
+const correctionFields = [
+  "part_code",
+  "side",
+  "operation",
+  "quantity",
+  "printed_line_amount",
+] as const;
+type CorrectionField = (typeof correctionFields)[number];
+const numericFields: CorrectionField[] = ["quantity", "printed_line_amount"];
+// Numbers compare by value, so "450" does not correct a displayed "450.00".
+function changed(field: CorrectionField, value: string, shown: string) {
+  if (numericFields.includes(field) && shown !== "")
+    return Number(value) !== Number(shown);
+  return value !== shown;
+}
 function Select({
   name,
   values,
   initial,
   title,
+  required = true,
+  placeholder = "Choose...",
 }: {
   name: string;
   values: string[];
   initial?: string;
   title: string;
+  required?: boolean;
+  placeholder?: string;
 }) {
   return (
     <label>
       {title}
-      <select name={name} defaultValue={initial ?? ""} required>
-        <option value="" disabled>
-          Choose...
+      <select name={name} defaultValue={initial ?? ""} required={required}>
+        <option value="" disabled={required}>
+          {placeholder}
         </option>
         {values.map((v) => (
           <option key={v} value={v}>
@@ -118,6 +139,17 @@ export function RowControls({
   locked: boolean;
   dismissed?: Decision;
 }) {
+  const [unchanged, setUnchanged] = useState(false);
+  // The form starts from what it displays. A view sentinel such as "unmapped"
+  // is shown as an empty control, so it is never submitted as a value, and
+  // only the fields the surveyor actually changed are sent.
+  const shown: Record<CorrectionField, string> = {
+    part_code: row.part_code === UNMAPPED ? "" : row.part_code,
+    side: sides.includes(row.side) ? row.side : "",
+    operation: operations.includes(row.operation) ? row.operation : "",
+    quantity: row.quantity ?? "",
+    printed_line_amount: row.printed_amount ?? "",
+  };
   return (
     <div>
       {dismissed && (
@@ -134,20 +166,17 @@ export function RowControls({
               e.preventDefault();
               const f = new FormData(e.currentTarget),
                 corrections: Record<string, string> = {};
-              for (const field of [
-                "part_code",
-                "side",
-                "operation",
-                "quantity",
-                "printed_line_amount",
-              ]) {
+              for (const field of correctionFields) {
                 const value = String(f.get(field) ?? "").trim();
-                const old =
-                  field === "printed_line_amount"
-                    ? row.printed_amount
-                    : row[field as keyof ReviewRow];
-                if (value && value !== old) corrections[field] = value;
+                if (
+                  value &&
+                  value !== UNMAPPED &&
+                  changed(field, value, shown[field])
+                )
+                  corrections[field] = value;
               }
+              setUnchanged(!Object.keys(corrections).length);
+              if (!Object.keys(corrections).length) return;
               void submit({
                 action_type: "correct_line_item",
                 entry_id: row.entry_id,
@@ -159,29 +188,36 @@ export function RowControls({
           >
             <fieldset disabled={locked}>
               <legend>Correct extracted values</legend>
+              <p>Only the values you change are saved.</p>
               <label>
                 Part code
                 <input
                   name="part_code"
-                  defaultValue={
-                    row.part_code === "unmapped" ? "unknown" : row.part_code
+                  defaultValue={shown.part_code}
+                  placeholder={
+                    row.part_code === UNMAPPED ? "Unmapped (unchanged)" : ""
                   }
-                  required
                 />
               </label>
               <Select
                 name="side"
                 values={sides}
-                initial={row.side}
+                initial={shown.side}
                 title="Side"
+                required={false}
+                placeholder="Unchanged"
               />
               <Select
                 name="operation"
                 values={operations}
-                initial={
-                  operations.includes(row.operation) ? row.operation : "unknown"
-                }
+                initial={shown.operation}
                 title="Operation"
+                required={false}
+                placeholder={
+                  row.operation === UNMAPPED
+                    ? "Unmapped (unchanged)"
+                    : "Unchanged"
+                }
               />
               <label>
                 Quantity
@@ -190,7 +226,7 @@ export function RowControls({
                   type="number"
                   min="0.000001"
                   step="any"
-                  defaultValue={row.quantity ?? ""}
+                  defaultValue={shown.quantity}
                 />
               </label>
               <label>
@@ -201,7 +237,7 @@ export function RowControls({
                   min="0"
                   max="999999.99"
                   step=".01"
-                  defaultValue={row.printed_amount ?? ""}
+                  defaultValue={shown.printed_line_amount}
                 />
               </label>
               <Select
@@ -213,6 +249,11 @@ export function RowControls({
                 Correction note
                 <textarea name="note" maxLength={2000} />
               </label>
+              {unchanged && (
+                <p className="field-error" role="alert">
+                  Change at least one value before saving a correction.
+                </p>
+              )}
               <button className="button button-outline button-small">
                 Save correction
               </button>

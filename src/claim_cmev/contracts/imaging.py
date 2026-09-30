@@ -19,6 +19,7 @@ from .common import (
     Confidence,
     ContractModel,
     DamageCode,
+    ObjectUri,
     PartCode,
     ReasonCode,
     RecordId,
@@ -40,7 +41,7 @@ class MaskRef(ContractModel):
     """A raster mask artifact: dimensions, class encoding and the source photo."""
 
     artifact_id: RecordId
-    object_uri: str = Field(min_length=1)
+    object_uri: ObjectUri
     sha256: Sha256
     width: int = Field(gt=0)
     height: int = Field(gt=0)

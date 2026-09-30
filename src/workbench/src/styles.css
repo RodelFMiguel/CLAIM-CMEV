@@ -1578,25 +1578,33 @@ h3 {
   color: #8193a0;
   padding-bottom: 15px;
 }
-.result-message {
+.result-message,
+.row-state-note {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  background: #f3f7fa;
-  border: 1px dashed #c6d4df;
   padding: 12px;
   border-radius: 5px;
   font-size: 10px;
-  color: #7892a5;
+}
+/* Layout only: every result and row state sets its own colour and border. */
+.result-message {
+  border: 2px solid currentColor;
 }
 .result-message svg {
   flex-shrink: 0;
   margin-top: 1px;
 }
-.result-message strong {
+.result-message strong,
+.row-state-note strong {
   font-weight: 600;
-  color: #5c7c93;
+  color: inherit;
 }
+.row-state-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.row-state-note p,
 .result-message p {
   line-height: 1.8;
   margin-top: 3px;
@@ -2553,8 +2561,17 @@ h3 {
     background: white;
     font-size: 9pt;
   }
+  /* Printed in the body as well as the page margin: Firefox and Safari do
+     not render @page margin boxes. */
   .report-versions {
-    display: none;
+    display: block;
+    break-inside: avoid;
+    color: #444;
+    font-size: 7.5pt;
+    margin-top: 8mm;
+  }
+  .report-details dd {
+    overflow-wrap: anywhere;
   }
   .report-basis {
     font-size: 8pt !important;
@@ -2666,15 +2683,92 @@ fieldset:disabled {
 .result-message.result-ok {
   background: #e7f4ed;
   color: #195634;
-  border-left: 4px solid #287345;
+  border-style: solid;
+  border-width: 1px 1px 1px 4px;
 }
+/* Discrepancy flags: warning colour roles and solid borders. */
 .result-message.result-unsupported {
   background: #fdecea;
   color: #8c2420;
-  border-left: 4px double #ae342d;
+  border-style: solid;
 }
 .result-message.result-cost_outlier {
   background: #fff1d6;
-  color: #794a00;
-  border-left: 4px dashed #986000;
+  color: #6e4400;
+  border-style: solid;
+}
+/* Informational, never a warning: blue-grey, dashed border, "i" icon. */
+.result-message.result-insufficient_evidence {
+  background: #eef3f8;
+  color: #2f4b63;
+  border-style: dashed;
+}
+.result-message.result-insufficient_evidence svg {
+  border: 1px dashed currentColor;
+  border-radius: 50%;
+  padding: 1px;
+}
+/* Row states carry no result chip. */
+.row-state-note {
+  background: #f3f4f5;
+  color: #4b5660;
+  border: 1px solid #c3c9ce;
+}
+.row-state-note.row-state-not-evaluated {
+  border-style: dotted;
+}
+.status-incomplete {
+  background: #fff4e0;
+  border-color: #efd29c;
+  color: #875a0c;
+}
+.status-queued {
+  background: #f4f5f6;
+  border-color: #d6dadd;
+  color: #5f6b74;
+}
+.status-awaiting_upload {
+  background: #f4f5f6;
+  color: #5f6b74;
+}
+.claim-table td .queue-state {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 10px;
+  margin-top: 4px;
+}
+.claim-table td .queue-state svg {
+  flex-shrink: 0;
+}
+.claim-table td .queue-state.queue-discrepancy {
+  color: #8c2420;
+}
+.claim-table td .queue-state.queue-information {
+  color: #2f4b63;
+}
+.claim-table td .queue-state.queue-attention {
+  color: #875a0c;
+}
+.claim-table td .queue-state.queue-neutral {
+  color: #5f6b74;
+}
+.not-current-banner {
+  border: 2px dashed #9a6a1c;
+  background: #fffaf0;
+}
+.not-current-banner h2 {
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.not-current-banner p {
+  font-size: 12px;
+  line-height: 1.7;
+  margin-bottom: 12px;
+}
+.prior-assessment {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
 }

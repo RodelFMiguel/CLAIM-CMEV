@@ -25,8 +25,15 @@ export interface Claim {
   declared_total: string | null;
   currency: string;
   finding_count: number;
+  // Discrepancy flags (unsupported plus cost_outlier) and "more information
+  // needed" rows. Optional: an older API returns only finding_count.
+  discrepancy_count?: number | null;
+  information_needed_count?: number | null;
+  processing_state?: string;
   input_revision: number;
   assessment_revision: number | null;
+  // Latest completed assessment, possibly for an earlier input revision.
+  latest_assessment_revision?: number | null;
   review_revision: number;
   source_kind: string;
 }
@@ -36,6 +43,7 @@ export interface ClaimList {
   stats: {
     open_claims: number;
     open_findings: number;
+    open_discrepancies?: number | null;
     photographs_received: number;
   };
 }

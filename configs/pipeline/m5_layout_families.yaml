@@ -17,7 +17,7 @@
 # deleted, parentheses split off, , ; : * # " ' _ = and dashes turned into spaces,
 # whitespace collapsed. Quote every string: unquoted NO, ON, Y... are YAML booleans.
 schema_version: "0.1.0"
-config_version: "m5-layout-families/0.1.0"
+config_version: "m5-layout-families/0.2.0"
 status: proposed
 
 parser:
@@ -70,8 +70,19 @@ families:
       total: ["SUB TOTAL", "SUBTOTAL", "TOTAL", "GRAND TOTAL", "NETT TOTAL", "NET TOTAL", "DISCOUNT", "LESS DISCOUNT"]
       tax: ["GST", "VAT"]
       heading: ["PARTS", "LABOUR", "LABOR", "BODY WORK", "PAINT WORK", "SUNDRIES", "PARTS AND LABOUR"]
+      # footer (proposed, 0.2.0): post-total excess, deductible, payable and settlement
+      # lines. Recognised only after a terminator, never as declared rows.
+      footer: ["LESS EXCESS", "EXCESS", "POLICY EXCESS", "LESS DEDUCTIBLE", "DEDUCTIBLE", "AMOUNT PAYABLE",
+               "NETT PAYABLE", "NET PAYABLE", "BALANCE PAYABLE", "PAYABLE BY", "INSURER TO PAY",
+               "INSURED TO PAY", "SETTLEMENT", "AGREED SETTLEMENT", "AMOUNT DUE", "BALANCE DUE",
+               "LESS DEPOSIT", "DEPOSIT"]
     terminator_kinds: [total, tax]
     subtotal_labels: ["SUB TOTAL", "SUBTOTAL"]
+    # final_total_labels (proposed, 0.2.0): the closing total. After it, footer rows are
+    # retained as non-items and any other band reaching a value column is an unparsed
+    # region (text_after_final_total, declaration partial), never a line item. A section
+    # heading reopens the table. Each label must also match a total pattern.
+    final_total_labels: ["TOTAL", "GRAND TOTAL", "NETT TOTAL", "NET TOTAL"]
 
   - family_id: family-b-numbered-rate
     status: proposed
@@ -100,8 +111,15 @@ families:
       total: ["SUB TOTAL", "SUBTOTAL", "TOTAL", "GRAND TOTAL", "TOTAL AMOUNT", "DISCOUNT", "LESS DISCOUNT"]
       tax: ["GST", "ADD GST"]
       heading: ["PARTS", "LABOUR", "BODY WORK", "PAINT WORK"]
+      # footer (proposed, 0.2.0): post-total excess, deductible, payable and settlement
+      # lines. Recognised only after a terminator, never as declared rows.
+      footer: ["LESS EXCESS", "EXCESS", "POLICY EXCESS", "LESS DEDUCTIBLE", "DEDUCTIBLE", "AMOUNT PAYABLE",
+               "NETT PAYABLE", "NET PAYABLE", "BALANCE PAYABLE", "PAYABLE BY", "INSURER TO PAY",
+               "INSURED TO PAY", "SETTLEMENT", "AGREED SETTLEMENT", "AMOUNT DUE", "BALANCE DUE",
+               "LESS DEPOSIT", "DEPOSIT"]
     terminator_kinds: [total, tax]
     subtotal_labels: ["SUB TOTAL", "SUBTOTAL"]
+    final_total_labels: ["TOTAL", "GRAND TOTAL", "TOTAL AMOUNT"]
 
   # Compact quotation without quantity or unit price. Rows from this family always have
   # quantity null (column_not_located); M8 then withholds the cost check
@@ -130,5 +148,12 @@ families:
       total: ["SUB TOTAL", "SUBTOTAL", "TOTAL", "TOTAL QUOTATION", "DISCOUNT"]
       tax: ["GST"]
       heading: ["BODYWORK", "BODY WORK", "PAINTWORK", "PAINT WORK"]
+      # footer (proposed, 0.2.0): post-total excess, deductible, payable and settlement
+      # lines. Recognised only after a terminator, never as declared rows.
+      footer: ["LESS EXCESS", "EXCESS", "POLICY EXCESS", "LESS DEDUCTIBLE", "DEDUCTIBLE", "AMOUNT PAYABLE",
+               "NETT PAYABLE", "NET PAYABLE", "BALANCE PAYABLE", "PAYABLE BY", "INSURER TO PAY",
+               "INSURED TO PAY", "SETTLEMENT", "AGREED SETTLEMENT", "AMOUNT DUE", "BALANCE DUE",
+               "LESS DEPOSIT", "DEPOSIT"]
     terminator_kinds: [total, tax]
     subtotal_labels: ["SUB TOTAL", "SUBTOTAL"]
+    final_total_labels: ["TOTAL", "TOTAL QUOTATION"]

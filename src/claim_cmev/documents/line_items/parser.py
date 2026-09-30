@@ -44,10 +44,10 @@ from .text import normalise_text, starts_with_phrase
 from .values import ParsedValue, parse_decimal
 from .vocabulary import EstimateVocabulary, MappingResult, SideResult
 
-M5_CODE_VERSION = "m5-line-items/0.1.0"
+M5_CODE_VERSION = "m5-line-items/0.2.0"
 ENGINE = "parser"
 TASK = "line_items_extract"
-RowKind = Literal["item", "heading", "total", "tax", "repeated_header", "uncertain"]
+RowKind = Literal["item", "heading", "total", "tax", "footer", "repeated_header", "uncertain"]
 FieldStatus = Literal["resolved", "uncertain", "missing"]
 LINE_ITEM_KINDS = frozenset({"item", "uncertain"})
 ITEM_FIELD = {"description": "part_code", "operation": "operation", "qty": "quantity",
@@ -246,7 +246,7 @@ class _Builder:
         row_box = (min(x0, bx0), by0, max(x1, bx1), by1)
         flags = set(raw.flags)
 
-        if raw.kind in ("total", "tax", "heading"):
+        if raw.kind in ("total", "tax", "heading", "footer"):
             amount, _ = self.numeric(family, "amount", cells.get("amount", []), located, affected)
             fields = (FieldResult("description", None, raw.label, (), "resolved" if raw.label else "missing", None),
                       amount)
@@ -461,7 +461,8 @@ def parse_pages(
     items: list[LineItem] = []
     table_open = table_found = False
     first_header_seen = False
-    counts = {"continuation_without_header": 0, "page_without_table": 0, "outside": 0, "uncertain": 0}
+    counts = {"continuation_without_header": 0, "page_without_table": 0, "outside": 0, "uncertain": 0,
+              "before_header": 0, "after_total": 0}
     for index, (page, bands, decision) in enumerate(prepared):
         all_ids = tuple(b.box_id for b in page.text_boxes)
         if decision is None:
@@ -484,15 +485,20 @@ def parse_pages(
                                          decision.reason, reasons=(status,), family_scores=dict(decision.scores)))
             continue
         family = config.family(decision.family_id)  # mixed families: each page parses with its own family
-        # A later header cannot account for preceding continuation rows. Keep that
-        # region visible and withhold completeness rather than silently discarding it.
-        if table_open and decision.headers[0].band_index > 0:
+        # A later header cannot account for numeric text above it on a page after the
+        # first table, whether the previous table was still open (continuation rows) or
+        # had ended in a SUB TOTAL, GST or TOTAL row (rows of an unheaded section, or
+        # rows past the total). Keep that region visible and withhold completeness rather
+        # than silently discarding it or guessing a column binding. Digit-free bands
+        # (a repeated letterhead) are page furniture, as on the first page.
+        if table_found and decision.headers[0].band_index > 0:
             prefix = [b for band in bands[:decision.headers[0].band_index]
                       if any(any(c.isdigit() for c in box.text) for box in band.boxes) for b in band.boxes]
             if prefix:
-                regions.append(UnparsedRegion(page.page_id, page.page_number, "continuation_without_header",
+                reason = "continuation_without_header" if table_open else "text_before_header"
+                regions.append(UnparsedRegion(page.page_id, page.page_number, reason,
                                               union_box(prefix), tuple(b.box_id for b in prefix)))
-                counts["continuation_without_header"] += 1
+                counts["continuation_without_header" if table_open else "before_header"] += 1
         segments: list[Segment] = segment_page(index, bands, decision.headers, family, config.parser)
         for segment in segments:
             if first_header_seen:
@@ -503,6 +509,10 @@ def parse_pages(
                 regions.append(UnparsedRegion(page.page_id, page.page_number, "text_outside_columns",
                                               (box.x0, box.y0, box.x1, box.y1), (box.box_id,)))
                 counts["outside"] += 1
+            for boxes in segment.after_total:
+                regions.append(UnparsedRegion(page.page_id, page.page_number, "text_after_final_total",
+                                              union_box(boxes), tuple(b.box_id for b in boxes)))
+                counts["after_total"] += 1
             for raw in segment.rows:
                 parsed, item = builder.row(raw, page, family)
                 rows.append(parsed)
@@ -529,7 +539,8 @@ def parse_pages(
         table_terminated=table_found and not table_open,
         continuation_without_header=counts["continuation_without_header"],
         pages_without_table=counts["page_without_table"], uncertain_required_rows=counts["uncertain"],
-        line_item_count=len(items), unparsed_table_regions=counts["outside"], subtotal_mismatches=mismatches)
+        line_item_count=len(items), unparsed_table_regions=counts["outside"], subtotal_mismatches=mismatches,
+        text_before_header=counts["before_header"], text_after_final_total=counts["after_total"])
     state, reasons = decide_completeness(facts)
     completeness = DeclarationCompleteness(
         claim_id=claim_id, input_revision=input_revision, provenance=provenance, versions=builder.versions,

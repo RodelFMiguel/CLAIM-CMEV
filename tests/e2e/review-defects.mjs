@@ -86,12 +86,14 @@ try {
   await b.reload();
   const card = b.locator(".line-items-panel article").filter({has:b.getByRole("heading",{name:row.description,exact:true})});
   await card.getByText('Correct row or add a missed mark', {exact:true}).click();
-  assert.equal(await card.locator('select[name=operation]').inputValue(), 'unknown');
+  // An unmapped operation stays visibly unmapped: never pre-filled with a vocabulary value.
+  assert.equal(await card.locator('select[name=operation]').inputValue(), '');
   await card.getByRole('button', {name:'View evidence'}).click();
   await b.getByText(/No linked original evidence is available/).waitFor();
   assert.equal(await b.locator('#evidence-panel img').count(),0);
+  // Discrepancy flags use a solid border; only "more information needed" is dashed.
   const style = await card.locator('.result-unsupported').evaluate(e => getComputedStyle(e).borderLeftStyle);
-  assert.equal(style,'double');
+  assert.equal(style,'solid');
   await mkdir('artifacts/evaluation/ui-defects', {recursive:true});
   await b.screenshot({path:'artifacts/evaluation/ui-defects/unlinked-and-unknown.png',fullPage:true});
 

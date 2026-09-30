@@ -12,13 +12,17 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import {
-  AlertTriangle,
+  ArrowDownToLine,
   ArrowLeft,
+  ArrowUpToLine,
   Camera,
   CheckCircle2,
+  CircleDashed,
   FileText,
   Info,
   Loader2,
+  MinusCircle,
+  OctagonAlert,
   Printer,
   RefreshCw,
   ShieldCheck,
@@ -26,10 +30,13 @@ import {
 import { api, ApiError, money, type Claim } from "./api";
 import {
   localValue,
-  storeLocal,
   savePending,
   removePending,
   loadPending,
+  loadDraft,
+  saveDraft,
+  pruneDrafts,
+  draftKey,
   reviewTabId,
   type PendingAction,
 } from "./pendingActions";
@@ -198,6 +205,59 @@ const resultLabel = (item: LineItem) =>
         cost_outlier: "Cost outside reference range",
         insufficient_evidence: "More information needed",
       }[item.overall_result] ?? "Not evaluated");
+const RESULTS = ["ok", "unsupported", "cost_outlier", "insufficient_evidence"];
+// Each result differs in colour role, border style, icon shape and wording
+// (UI specification section 7.3). Excluded and not-evaluated rows are row
+// states, not findings: they get a neutral note and no result chip.
+function ResultDisplay({ item }: { item: LineItem }) {
+  if (item.row_state === "excluded" || !RESULTS.includes(item.overall_result))
+    return (
+      <div
+        className={`row-state-note ${item.row_state === "excluded" ? "row-state-excluded" : "row-state-not-evaluated"}`}
+      >
+        {item.row_state === "excluded" ? (
+          <MinusCircle size={16} aria-hidden="true" />
+        ) : (
+          <CircleDashed size={16} aria-hidden="true" />
+        )}
+        <div>
+          <strong>{resultLabel(item)}</strong>
+          <p>{item.reason}</p>
+        </div>
+      </div>
+    );
+  // Arrow against a bar: below the lower bound points down, otherwise up.
+  const below =
+    item.cost_range != null &&
+    item.effective_amount != null &&
+    Number(item.effective_amount) < Number(item.cost_range.lower);
+  const icon =
+    item.overall_result === "ok" ? (
+      <CheckCircle2 size={16} aria-hidden="true" />
+    ) : item.overall_result === "insufficient_evidence" ? (
+      <Info size={16} aria-hidden="true" />
+    ) : item.overall_result === "cost_outlier" ? (
+      below ? (
+        <ArrowDownToLine size={16} aria-hidden="true" />
+      ) : (
+        <ArrowUpToLine size={16} aria-hidden="true" />
+      )
+    ) : (
+      <OctagonAlert size={16} aria-hidden="true" />
+    );
+  return (
+    <div
+      className={`result-message result-${item.overall_result}`}
+      data-result={item.overall_result}
+    >
+      {icon}
+      <div>
+        <strong>{resultLabel(item)}</strong>
+        <p>{item.reason}</p>
+      </div>
+    </div>
+  );
+}
 const actionText = (a: Action) =>
   a.type === "note"
     ? a.text
@@ -277,10 +337,10 @@ function ReviewOverview({ id }: { id: string }) {
       .then(async ({ user }) => {
         const [saved, draft] = await Promise.all([
           loadPending("pending:" + user.id + ":" + id, user.id, id),
-          localValue<{ note: string; amounts: Record<string, string> }>(
-            "draft:" + user.id + ":" + id + ":" + tabId,
-          ),
+          loadDraft(user.id, id, tabId),
         ]);
+        // Housekeeping only: a pruning failure must not block the review.
+        void pruneDrafts(draftKey(user.id, id, tabId)).catch(() => undefined);
         if (!active) return;
         setActor(user.id);
         setPending(saved ?? null);
@@ -301,7 +361,7 @@ function ReviewOverview({ id }: { id: string }) {
   }, [id, tabId]);
   useEffect(() => {
     if (localReady)
-      void storeLocal("draft:" + actor + ":" + id + ":" + tabId, {
+      void saveDraft(draftKey(actor, id, tabId), {
         note,
         amounts,
       }).catch(() =>
@@ -310,32 +370,48 @@ function ReviewOverview({ id }: { id: string }) {
   }, [actor, id, tabId, localReady, note, amounts]);
   const mounted = useRef(true);
   const base = `/claims/${id}`;
+  // After a failed reassessment the claim has no current assessment. The
+  // surveyor may open the latest one read-only; it is never finalizable.
+  const [showPrior, setShowPrior] = useState(false);
+  const [processingWarning, setProcessingWarning] = useState("");
   const load = useCallback(async () => {
     const current = await api<Claim>(base);
     let nextAssessment: Assessment | null = null;
     let nextReview: Review | null = null;
-    let nextProcessing: Processing | null = null;
-    if (current.assessment_revision !== null) {
+    const revision =
+      current.assessment_revision ??
+      (showPrior ? (current.latest_assessment_revision ?? null) : null);
+    const wantsProcessing =
+      current.status !== "awaiting_upload" && current.status !== "finalized";
+    // Processing status is supplementary: its failure must not block a review
+    // whose assessment and review loaded. The previous status stays shown.
+    let processingFailure = "";
+    const processingRequest = wantsProcessing
+      ? api<Processing>(`${base}/processing`).catch((e) => {
+          processingFailure = e instanceof Error ? e.message : "unavailable";
+          return undefined;
+        })
+      : Promise.resolve(null);
+    if (revision !== null) {
       [nextAssessment, nextReview] = await Promise.all([
-        api<Assessment>(`${base}/assessments/${current.assessment_revision}`),
-        api<Review>(
-          `${base}/assessments/${current.assessment_revision}/review`,
-        ),
+        api<Assessment>(`${base}/assessments/${revision}`),
+        api<Review>(`${base}/assessments/${revision}/review`),
       ]);
     }
-    if (
-      current.status !== "awaiting_upload" &&
-      current.status !== "finalized"
-    ) {
-      nextProcessing = await api<Processing>(`${base}/processing`);
-    }
+    const nextProcessing = await processingRequest;
     if (!mounted.current) return;
     setPollError("");
     setClaim(current);
     setAssessment(nextAssessment);
     setReview(nextReview);
-    setProcessing(nextProcessing);
-  }, [base]);
+    if (nextProcessing !== undefined) setProcessing(nextProcessing);
+    setProcessingWarning(
+      processingFailure
+        ? "Processing status could not be loaded. The review below is still available; stage retry controls may be out of date. " +
+            processingFailure
+        : "",
+    );
+  }, [base, showPrior]);
   useEffect(() => {
     mounted.current = true;
     load().catch((e) => setError(e.message));
@@ -372,10 +448,18 @@ function ReviewOverview({ id }: { id: string }) {
       setError(e instanceof Error ? e.message : "Refresh failed.");
     }
   }
+  // Release this tab's request, then show whatever request (possibly another
+  // tab's) now occupies the slot. Removing a request that is no longer in the
+  // slot is a no-op, so this never throws for a slot held by another request.
+  async function releasePending(actionKey: string) {
+    await removePending(queueKey, actionKey);
+    setPending((await localValue<PendingAction>(queueKey)) ?? null);
+  }
   async function sendPending(action: PendingAction) {
     setBusy(true);
     setError("");
     setNotice("");
+    let committed = false;
     try {
       await savePending(queueKey, action); // durable before transmission
       setPending(action);
@@ -385,22 +469,33 @@ function ReviewOverview({ id }: { id: string }) {
         headers: { "Idempotency-Key": action.key },
         signal: AbortSignal.timeout(30000),
       });
-      await removePending(queueKey, action.key);
-      setPending(null);
-      setConflict(false);
-      setNotice(action.success);
+      committed = true;
+      // The server acknowledged this request. Clear a note draft it carried
+      // before anything else, so the committed text is not submitted twice.
       if (
         action.path.endsWith("/notes") &&
         (action.payload as { text?: string }).text === note.trim()
       )
         setNote("");
-      await load();
+      setConflict(false);
+      setNotice(action.success);
+      try {
+        await releasePending(action.key);
+      } catch {
+        setPending(null);
+        setError(
+          "The action was saved, but this browser could not clear its local copy. Discard the saved request below if it remains.",
+        );
+      }
+      await load().catch((e) =>
+        setError(e instanceof Error ? e.message : "Refresh failed."),
+      );
       return true;
     } catch (e) {
+      if (committed) return true;
       setConflict(e instanceof ApiError && e.status === 409);
       if (e instanceof ApiError && [400, 404, 422].includes(e.status)) {
-        await removePending(queueKey, action.key);
-        setPending(null);
+        await releasePending(action.key).catch(() => setPending(null));
       }
       setError(
         e instanceof Error
@@ -411,6 +506,22 @@ function ReviewOverview({ id }: { id: string }) {
     } finally {
       setBusy(false);
     }
+  }
+  async function discardPending(action: PendingAction) {
+    setBusy(true);
+    try {
+      await releasePending(action.key);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "The saved request could not be discarded.",
+      );
+      return;
+    } finally {
+      setBusy(false);
+    }
+    await reload();
   }
   async function mutate(path: string, payload: unknown, success: string) {
     if (!localReady) return false;
@@ -487,7 +598,13 @@ function ReviewOverview({ id }: { id: string }) {
     (selectedRow ? undefined : files[0]);
   const row = assessment?.line_items.find((r) => r.entry_id === selectedRow);
   const frozen = review?.finalized ?? false;
-  const locked = busy || conflict || frozen || !!pending || !localReady;
+  // A shown assessment that is not the claim's current one is read-only.
+  const notCurrent =
+    !!assessment &&
+    claim.assessment_revision !== assessment.assessment_revision;
+  const saving = busy || conflict || !!pending || !localReady;
+  const locked = saving || frozen || notCurrent;
+  const latestRevision = claim.latest_assessment_revision ?? null;
   const blockers =
     assessment?.finalize_preconditions.checks.filter((c) => !c.passed) ?? [];
   return (
@@ -523,7 +640,14 @@ function ReviewOverview({ id }: { id: string }) {
           Input <b>{claim.input_revision}</b>
         </span>
         <span>
-          Assessment <b>{claim.assessment_revision ?? "Pending"}</b>
+          Assessment{" "}
+          <b>
+            {claim.assessment_revision ??
+              (claim.status === "processing" ? "Pending" : "None current")}
+          </b>
+          {notCurrent && (
+            <> (showing {assessment!.assessment_revision}, not current)</>
+          )}
         </span>
         <span>
           Review <b>{review?.review_revision ?? claim.review_revision}</b>
@@ -542,6 +666,37 @@ function ReviewOverview({ id }: { id: string }) {
       </div>
       {error && <ErrorBanner message={error} />}
       {pollError && <ErrorBanner message={pollError} />}
+      {processingWarning && (
+        <div className="fixture-banner processing-warning" role="status">
+          <Info size={18} />
+          <p>{processingWarning}</p>
+        </div>
+      )}
+      {notCurrent && (
+        <section
+          className="panel not-current-banner"
+          aria-label="Assessment not current"
+        >
+          <h2>Assessment {assessment!.assessment_revision} is not current</h2>
+          <p>
+            It belongs to input revision {assessment!.input_revision}. Input
+            revision {claim.input_revision} has no completed assessment
+            {claim.status === "processing"
+              ? " yet; processing is still running."
+              : " because processing needs attention."}{" "}
+            This view is read-only and cannot be finalized.
+            {claim.status === "processing"
+              ? ""
+              : " Retry the failed stage to produce a current assessment."}
+          </p>
+          <button
+            className="button button-outline button-small"
+            onClick={() => setShowPrior(false)}
+          >
+            Hide earlier assessment
+          </button>
+        </section>
+      )}
       {!!assessment?.invalidated_corrections?.length && (
         <div className="fixture-banner">
           <Info size={18} />
@@ -565,18 +720,14 @@ function ReviewOverview({ id }: { id: string }) {
           <button
             className="button button-dark button-small"
             disabled={busy}
-            onClick={() => sendPending(pending)}
+            onClick={() => void sendPending(pending)}
           >
             Retry saved request
           </button>
           <button
             className="button button-outline button-small"
             disabled={busy}
-            onClick={async () => {
-              await removePending(queueKey, pending.key);
-              setPending(null);
-              await reload();
-            }}
+            onClick={() => void discardPending(pending)}
           >
             Discard local request and refresh
           </button>
@@ -614,7 +765,7 @@ function ReviewOverview({ id }: { id: string }) {
                 {job.error && <p>{job.error}</p>}
                 <button
                   className="button button-outline button-small"
-                  disabled={locked}
+                  disabled={saving}
                   onClick={() =>
                     mutate(
                       `${base}/jobs/${encodeURIComponent(job.job_key)}/retry`,
@@ -661,6 +812,20 @@ function ReviewOverview({ id }: { id: string }) {
             <Link className="button button-dark" to="/claims/new">
               New claim
             </Link>
+          )}
+          {claim.assessment_revision === null && latestRevision !== null && (
+            <div className="prior-assessment">
+              <p>
+                Assessment {latestRevision} was completed for an earlier input
+                revision. It is not current and cannot be finalized.
+              </p>
+              <button
+                className="button button-outline button-small"
+                onClick={() => setShowPrior(true)}
+              >
+                Open assessment {latestRevision} read-only
+              </button>
+            </div>
           )}
           <p className="muted">
             {claim.status === "processing"
@@ -942,21 +1107,7 @@ function ReviewOverview({ id }: { id: string }) {
                         <span>Cost: {label(item.cost_check)}</span>
                         <span>Single-part basis</span>
                       </div>
-                      <div
-                        className={`result-message result-${item.overall_result}`}
-                      >
-                        {item.overall_result === "ok" ? (
-                          <CheckCircle2 size={16} />
-                        ) : item.overall_result === "insufficient_evidence" ? (
-                          <Info size={16} />
-                        ) : (
-                          <AlertTriangle size={16} />
-                        )}
-                        <div>
-                          <strong>{resultLabel(item)}</strong>
-                          <p>{item.reason}</p>
-                        </div>
-                      </div>
+                      <ResultDisplay item={item} />
                       {assessment.marks
                         .filter(
                           (m) =>
@@ -1236,13 +1387,21 @@ function ReviewOverview({ id }: { id: string }) {
           </div>
           <section className="panel finalize-panel">
             <div>
-              <h2>{frozen ? "Review finalized" : "Ready to finalize?"}</h2>
+              <h2>
+                {frozen
+                  ? "Review finalized"
+                  : notCurrent
+                    ? "Not finalizable"
+                    : "Ready to finalize?"}
+              </h2>
               <p>
                 {frozen
                   ? "This review is frozen. The report uses exactly this assessment and review revision."
-                  : "Freeze this completed assessment and review for the printable report."}
+                  : notCurrent
+                    ? "This assessment is not current. Only the current input revision's completed assessment can be finalized."
+                    : "Freeze this completed assessment and review for the printable report."}
               </p>
-              {blockers.length > 0 && !frozen && (
+              {blockers.length > 0 && !frozen && !notCurrent && (
                 <ul className="blocker-list">
                   {blockers.map((check) => (
                     <li key={check.code}>{check.message}</li>
@@ -1261,7 +1420,7 @@ function ReviewOverview({ id }: { id: string }) {
               >
                 <Printer size={17} /> Print report
               </Link>
-            ) : (
+            ) : notCurrent ? null : (
               <button
                 className="button button-dark"
                 disabled={
@@ -1380,6 +1539,18 @@ function PrintReport({ id }: { id: string }) {
           <dt>Final claim approval</dt>
           <dd>
             <strong>NOT RECORDED</strong>
+          </dd>
+          <dt>Revisions</dt>
+          <dd className="report-revisions">
+            Input {assessment.input_revision} &middot; Assessment{" "}
+            {assessment.assessment_revision} &middot; Review{" "}
+            {review.review_revision}
+          </dd>
+          <dt>Pinned versions</dt>
+          <dd className="report-pinned-versions">
+            {Object.entries(assessment.versions)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join(" / ")}
           </dd>
         </dl>
         <div className="fixture-banner">

@@ -41,6 +41,7 @@ from ..persistence.tables import dead_letters, idempotency_keys
 from ..runtime import Database, Record, digest, get, put, setting, uid, utcnow
 from ..storage import Storage
 from . import views, review_service
+from .ratelimit import LoginFailures
 from ..review import apply_review_action
 from ..review.state import ReviewActionRequest
 
@@ -49,6 +50,12 @@ COOKIE = "cmev_session"
 DEMO_USER = {"id": "demo-surveyor", "name": "R. Miguel", "email": setting("DEMO_EMAIL", "surveyor@claim-cmev.demo"),
              "role": "surveyor", "initials": "RM"}
 BACKLOG_LIMIT = int(setting("OUTBOX_BACKLOG_LIMIT", str(DEFAULT_BACKLOG_LIMIT)))
+# The evidence a carried correction rests on. Identity/coverage confirmations and accepted
+# additions (proposed from photographed damage observations) rest on the photographs;
+# row, mark and completeness decisions rest on the estimate pages. A correction carries
+# into a new upload only while its source files are unchanged (so the reused M1-M3 or
+# M4-M6 results, and their observation and row identities, are the same).
+SOURCE_ROLE = {"confirm_identity": "photograph", "confirm_coverage": "photograph", "accept_addition": "photograph"}
 
 
 class StrictModel(BaseModel):
@@ -150,7 +157,7 @@ def create_app(database_url=None, storage_path=None):
     versions = VersionBundle.fixture()
     allowed = [s.strip() for s in setting("ALLOWED_ORIGINS", "http://localhost:8080,http://localhost:5173,"
                                           "http://127.0.0.1:5173").split(",")]
-    failures = {}
+    failures = LoginFailures(max_keys=int(setting("LOGIN_FAILURE_MAX_KEYS", "10000")))
 
     def pinned_table():
         try:
@@ -170,7 +177,7 @@ def create_app(database_url=None, storage_path=None):
         if rev is None:
             return None
         row = views.assessment_row(db, claim_id, rev)
-        review = views.review_for(db, claim, rev)
+        review = views.review_for(db, claim, rev, row=row)
         result, frozen = review_service.freeze(db, claim, row, review, actor=DEMO_USER["name"],
                                               expected=claim["review_revision"])
         if result.http_status != 200:
@@ -207,6 +214,7 @@ def create_app(database_url=None, storage_path=None):
                   description="Persistent APIs over an event-driven pipeline. Stage outputs are labelled fixtures.")
     app.state.database = database
     app.state.settings = settings
+    app.state.login_failures = failures
     app.add_middleware(CORSMiddleware, allow_origins=allowed, allow_credentials=True, allow_methods=["GET", "POST"],
                        allow_headers=["Content-Type", "Idempotency-Key"])
 
@@ -280,17 +288,16 @@ def create_app(database_url=None, storage_path=None):
 
     @app.post("/api/v1/auth/login")
     def login(body: Login, request: Request, response: Response):
-        peer = request.client.host if request.client else "unknown"
-        attempt_key = (peer, body.email.casefold())
-        recent = [t for t in failures.get(attempt_key, []) if time.time() - t < 60]
-        if len(recent) >= 10:
-            fail(429, "login_rate_limited", "Too many attempts. Try again in a minute.")
+        # The real client address: uvicorn resolves it from nginx's X-Forwarded-For (ratelimit.py).
+        client_ip = request.client.host if request.client else "unknown"
+        if failures.blocked(client_ip, body.email):
+            fail(429, "login_rate_limited", "Too many attempts. Try again in a minute.", headers={"Retry-After": "60"})
         valid = secrets.compare_digest(body.email.lower().encode(), DEMO_USER["email"].lower().encode()) & secrets.compare_digest(
             body.password.encode(), setting("DEMO_PASSWORD", "Demo2026!").encode())
         if not valid:
-            failures[attempt_key] = recent + [time.time()]
+            failures.record_failure(client_ip, body.email)
             fail(401, "invalid_credentials", "The email or password is incorrect.")
-        failures.pop(attempt_key, None)
+        failures.clear(client_ip, body.email)
         token = secrets.token_urlsafe(48)
         with database.session.begin() as db:
             old = request.cookies.get(COOKIE)
@@ -470,8 +477,12 @@ def create_app(database_url=None, storage_path=None):
                 corrections, invalidated = [], []
                 for correction in previous.get("corrections", []):
                     action_type = correction.get("event", {}).get("action_type", correction.get("action_type"))
-                    role = "photograph" if action_type in ("confirm_identity", "confirm_coverage") else "estimate_page"
-                    (corrections if unchanged[role] else invalidated).append(correction)
+                    role = SOURCE_ROLE.get(action_type, "estimate_page")
+                    if unchanged[role]:
+                        corrections.append(correction)
+                    else:
+                        invalidated.append({**correction, "invalidation_reason": (
+                            "source_photographs_changed" if role == "photograph" else "source_pages_changed")})
                 result = commit(db, c, records, corrections=corrections,
                                 base_assessment_revision=pointer["assessment_revision"] if pointer else None,
                                 reuse_from=previous.get("input_revision"), reuse_stages=reuse,
@@ -548,8 +559,8 @@ def create_app(database_url=None, storage_path=None):
     def review_context(db, cid, rev, expected):
         c = claim_for(db, cid, lock=True)
         row = assessment_for(db, cid, rev)
-        claim_v = views.claim_view(db, c)
-        review = views.review_for(db, c, rev)
+        claim_v = views.claim_view(db, c, current_row=row)
+        review = views.review_for(db, c, rev, row=row)
         if c["review_revision"] != expected or claim_v["assessment_revision"] != rev \
                 or c["input_revision"] != row["input_revision"]:
             fail(409, "stale_revision", "Reload the current assessment before saving.",
@@ -562,7 +573,7 @@ def create_app(database_url=None, storage_path=None):
         with database.session.begin() as db:
             c = claim_for(db, cid, lock=True)
             row = assessment_for(db, cid, rev)
-            review = views.review_for(db, c, rev)
+            review = views.review_for(db, c, rev, row=row)
 
             def action():
                 # Wait for the previous decision to finish before editing its old assessment.
@@ -618,7 +629,8 @@ def create_app(database_url=None, storage_path=None):
         with database.session() as db:
             claim = claim_for(db, cid)
             row = assessment_for(db, cid, rev)
-            return views.preconditions(db, views.claim_view(db, claim), row, views.review_for(db, claim, rev))
+            return views.preconditions(db, views.claim_view(db, claim, current_row=row), row,
+                                       views.review_for(db, claim, rev, row=row))
 
     @app.post("/api/v1/claims/{cid}/assessments/{rev}/finalize")
     def finalize(cid: str, rev: int, body: Revision, request: Request):
@@ -627,7 +639,7 @@ def create_app(database_url=None, storage_path=None):
 
             def action():
                 c, row, review = review_context(db, cid, rev, body.expected_review_revision)
-                checks = views.preconditions(db, views.claim_view(db, c), row, review)
+                checks = views.preconditions(db, views.claim_view(db, c, current_row=row), row, review)
                 if not checks["can_finalize"]:
                     fail(412, "finalize_blocked", "Resolve the remaining review requirements.", preconditions=checks)
                 frozen = freeze(db, cid, rev)

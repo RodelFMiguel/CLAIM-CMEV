@@ -202,3 +202,106 @@ def test_empty_version_value_is_rejected_by_record_and_wire():
     message["versions"] = {"code": ""}
     with pytest.raises(ContractError):
         validate_message("cmev.evt.page-read.v1", message)
+
+
+# --- bounded job keys and ordered boxes: the wire schema agrees with the records ---------------
+def _key_with(message, *, target, revision=None):
+    head, signature = message["job_key"].rsplit(":", 1)
+    claim, old_revision, task, _target = head.split(":")
+    revision = revision or int(old_revision)
+    message["input_revision"] = revision
+    message["job_key"] = f"{claim}:{revision}:{task}:{target}:{signature}"
+    return message
+
+
+def test_job_key_is_bounded_like_its_columns_on_wire_and_in_records():
+    from claim_cmev.contracts.common import JOB_KEY_MAX_LENGTH, JOB_TARGET_MAX_LENGTH
+    from claim_cmev.persistence.tables import jobs, metadata
+    schema = json.loads((SCHEMA_DIR / "envelope.v1.schema.json").read_text())["properties"]["job_key"]
+    record = Envelope.model_json_schema()["properties"]["job_key"]
+    assert schema["maxLength"] == JOB_KEY_MAX_LENGTH == record["maxLength"]
+    assert f"{{1,{JOB_TARGET_MAX_LENGTH}}}" in schema["pattern"] and jobs.c.target.type.length == JOB_TARGET_MAX_LENGTH
+    key_columns = [c for t in metadata.tables.values() for c in t.columns if c.name.endswith("job_key")]
+    assert key_columns and {c.type.length for c in key_columns} == {JOB_KEY_MAX_LENGTH}
+    topic = "cmev.cmd.line-items-extract.v1"
+    at_limit = _key_with(load_example(topic), target="t" * JOB_TARGET_MAX_LENGTH)
+    validate_message(topic, at_limit)
+    long_target = _key_with(load_example(topic), target="t" * (JOB_TARGET_MAX_LENGTH + 1))
+    long_key = _key_with(load_example(topic), target="t" * JOB_TARGET_MAX_LENGTH, revision=10 ** 16)
+    assert len(long_key["job_key"]) == JOB_KEY_MAX_LENGTH + 1  # a legal target, a 17-digit revision
+    for message in (long_target, long_key):
+        with pytest.raises(ContractError) as err:
+            validate_message(topic, message)
+        assert err.value.reason_code == "envelope_invalid"
+        with pytest.raises(ValueError):
+            Envelope.from_message(message)
+
+
+def test_make_job_key_refuses_keys_the_columns_cannot_hold():
+    versions = {"parser_config": "p-1"}
+    assert make_job_key(CLAIM, 1, "page_read", versions, "t" * 128).count("t" * 128) == 1
+    for target in ("t" * 129, "", "bad target", "a:b"):
+        with pytest.raises(ContractError) as err:
+            make_job_key(CLAIM, 1, "page_read", versions, target)
+        assert err.value.reason_code == "job_key_invalid"
+    with pytest.raises(ContractError):
+        make_job_key(CLAIM, 10 ** 16, "line_items_extract", versions, "t" * 128)
+
+
+def _box_paths(value, path=()):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key.endswith("box_norm") and isinstance(item, list):
+                yield path + (key,)
+            else:
+                yield from _box_paths(item, path + (key,))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _box_paths(item, path + (index,))
+
+
+BOX_TOPICS = [t for t in TOPICS if list(_box_paths(load_example(t)))]
+
+
+def test_every_box_field_is_covered():
+    assert set(BOX_TOPICS) >= {"cmev.evt.damage-segmented.v1", "cmev.evt.line-items-extracted.v1",
+                               "cmev.cmd.pen-marks-detect.v1", "cmev.evt.pen-marks-detected.v1"}
+
+
+@pytest.mark.parametrize("topic", BOX_TOPICS)
+@pytest.mark.parametrize("box", [[0.9, 0.9, 0.1, 0.1], [0.9, 0.1, 0.1, 0.9], [0.1, 0.9, 0.9, 0.1]])
+def test_crossed_boxes_are_refused_on_the_wire_as_by_the_records(topic, box):
+    from pydantic import TypeAdapter
+    from claim_cmev.contracts.common import BoxNorm
+    with pytest.raises(ValueError):
+        TypeAdapter(BoxNorm).validate_python(tuple(box))
+    for path in _box_paths(load_example(topic)):
+        message = load_example(topic)
+        node = message
+        for step in path[:-1]:
+            node = node[step]
+        node[path[-1]] = list(box)
+        with pytest.raises(ContractError) as err:
+            validate_message(topic, message)
+        assert err.value.reason_code == "payload_invalid"
+        node[path[-1]] = [0.2, 0.2, 0.2, 0.2]  # a degenerate but ordered box stays valid, as in BoxNorm
+        validate_message(topic, message)
+
+
+@pytest.mark.parametrize("uri", ["no-scheme-at-all", "evidence/01J8.jpg", "/srv/evidence/x", "s3://", "ftp://x/y",
+                                 "s3://bucket/has space"])
+def test_record_object_uris_require_the_wire_scheme(uri):
+    from pydantic import ValidationError
+    from claim_cmev.contracts.common import ArtifactRef
+    from claim_cmev.contracts.imaging import MaskRef
+    from contract_factories import artifact, mask
+    wire = _def_validator("uri")
+    assert list(wire.iter_errors(uri))
+    with pytest.raises(ValidationError):
+        ArtifactRef(**{**artifact(), "object_uri": uri})
+    with pytest.raises(ValidationError):
+        MaskRef(**{**mask(), "object_uri": uri})
+    for good in ("s3://cmev-derived/t/a1", "file://local-evidence/01JAX7Q1B2C3D4E5F6G7H8J9KM", "https://h/x"):
+        assert not list(wire.iter_errors(good))
+        assert ArtifactRef(**{**artifact(), "object_uri": good}).object_uri == good
+        assert MaskRef(**{**mask(), "object_uri": good}).object_uri == good

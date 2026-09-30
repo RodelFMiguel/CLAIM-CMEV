@@ -22,7 +22,13 @@ from ..review.state import ReviewState
 from ..runtime import get, put, utcnow, uid
 
 
-def load(db, claim, row, review):
+def load(db, claim, row, review, *, claim_v=None):
+    """The review state of ``row``. ``claim_v`` is the claim view when the caller already has it.
+
+    ``accepted_scope`` is exactly the accepted additions M8 used for this assessment
+    (stored with its inputs); an acceptance that was invalidated by changed evidence is
+    kept in the history but is not presented as scope.
+    """
     from . import views
     if review.get("domain_state"):
         result = ReviewState.model_validate(review["domain_state"])
@@ -48,7 +54,8 @@ def load(db, claim, row, review):
         select(assessments.c.assessment_revision, assessments.c.body).where(
             assessments.c.claim_id == claim["claim_id"],
             assessments.c.assessment_revision.in_(source_revisions)))} if source_revisions else {}
-    notes, dismissals, additions, accepted = [], {}, {}, []
+    notes, dismissals, additions = [], {}, {}
+    accepted = [ReviewEvent.model_validate(e) for e in row["inputs"].get("accepted_scope", [])]
     for event in inherited:
         if event.action_type == "add_note":
             notes.append(event)
@@ -64,8 +71,6 @@ def load(db, claim, row, review):
                     dismissals[current.finding_id] = event
         else:
             old = next((c for c in source.possible_additions if c.candidate_id == event.candidate_id), None)
-            if event.action_type == "accept_addition":
-                accepted.append(event)
             for current in result.assessment.possible_additions:
                 if old and (old.part_code, old.side, old.status, sorted(old.observation_ids)) == (
                         current.part_code, current.side, current.status, sorted(current.observation_ids)):
@@ -74,7 +79,7 @@ def load(db, claim, row, review):
         "inherited_notes": tuple(notes), "inherited_dismissals": dismissals,
         "inherited_addition_decisions": additions, "accepted_scope": tuple(accepted),
         "current_input_revision": claim["input_revision"],
-        "claim_assessment_revision": views.claim_view(db, claim)["assessment_revision"]})
+        "claim_assessment_revision": (claim_v or views.claim_view(db, claim, current_row=row))["assessment_revision"]})
 
 
 def stages(db, claim):
@@ -82,9 +87,11 @@ def stages(db, claim):
     return {s: bs[s] for s in ("parts", "damage", "summary", "page_read", "line_items", "pen_marks")} if bs else {}
 
 
-def gate(db, claim, row, review):
+def gate(db, claim, row, review, *, domain=None):
+    """Finalize preconditions; ``claim`` is the claim view and ``domain`` an already loaded review state."""
     result = evaluate_finalize_preconditions(
-        load(db, claim, row, review), presented_review_revision=claim["review_revision"], stage_states=stages(db, claim))
+        domain if domain is not None else load(db, claim, row, review, claim_v=claim),
+        presented_review_revision=claim["review_revision"], stage_states=stages(db, claim))
     return {**result.model_dump(mode="json"), "can_finalize": result.allowed and not review.get("finalized"),
             "checks": [{"code": c.precondition, "passed": c.passed,
                         "message": " ".join(b.message for b in c.blockers) or c.precondition.replace("_", " ")}

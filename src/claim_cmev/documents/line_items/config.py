@@ -25,7 +25,7 @@ DEFAULT_LAYOUT_FAMILIES_PATH = Path(__file__).resolve().parents[4] / "configs" /
 CONFIG_ENV = "CMEV_M5_LAYOUT_FAMILIES"
 ColumnField = Literal["line_no", "description", "operation", "qty", "unit_price", "amount"]
 VALUE_FIELDS: tuple[str, ...] = ("description", "operation", "qty", "unit_price", "amount")
-RowPatternKind = Literal["total", "tax", "heading"]
+RowPatternKind = Literal["total", "tax", "heading", "footer"]
 UNSUPPORTED = "unsupported"
 
 
@@ -102,6 +102,9 @@ class FamilySpec(_Strict):
     row_patterns: dict[RowPatternKind, tuple[StrictStr, ...]]
     terminator_kinds: tuple[Literal["total", "tax"], ...]
     subtotal_labels: tuple[StrictStr, ...] = ()
+    # Labels of the declaration's closing total (proposed). After one, text reaching value
+    # columns is not a declared row (see ``table.segment_page``); empty disables this.
+    final_total_labels: tuple[StrictStr, ...] = ()
 
     @model_validator(mode="after")
     def _consistent(self) -> FamilySpec:
@@ -139,6 +142,11 @@ class FamilySpec(_Strict):
         missing_kinds = set(self.terminator_kinds) - set(self.row_patterns)
         if missing_kinds:
             raise ValueError(f"{self.family_id}: terminator kinds {sorted(missing_kinds)} have no patterns")
+        totals = [normalise_text(p) for p in self.row_patterns.get("total", ())]
+        for label in self.final_total_labels:
+            key = normalise_text(label)
+            if not key or not any(key == t or key.startswith(t + " ") for t in totals):
+                raise ValueError(f"{self.family_id}: final total label {label!r} is not matched by a total pattern")
         return self
 
     # effective thresholds: family override, else the parser default

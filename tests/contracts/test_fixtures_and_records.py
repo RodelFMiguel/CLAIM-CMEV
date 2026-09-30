@@ -142,6 +142,34 @@ def test_claim_file_object_key_is_generated():
         ClaimFile(**{**base, "width": None})
 
 
+@pytest.mark.parametrize("name", ["front.jpg", "evidence.jpg", "cmev.jpg", "01J8.jpg", "local-evidence.png",
+                                  "01JAX7Q0VN4Z3K9F2M8R6T1C5D.jpg", "cmev-originals.jpeg"])
+@pytest.mark.parametrize("uri_of", [lambda fid: f"s3://cmev-evidence/{fid}",  # Storage.uri, S3 backend
+                                    lambda fid: f"file://local-evidence/{fid}",  # Storage.uri, local backend
+                                    lambda fid: f"s3://cmev-originals/fixture/{CLAIM}/{fid}.jpg"])  # fixtures
+def test_claim_file_accepts_any_user_name_when_the_key_is_generated(name, uri_of):
+    """Regression: a substring check refused names that happen to occur in a generated URI."""
+    for file_id in ("01JAX7Q1B2C3D4E5F6G7H8J9KM", "ph-0123456789abcdef01234567"):
+        uri = uri_of(file_id)
+        record = ClaimFile(**{**SCOPE, "file_id": file_id, "kind": "photo", "member_revisions": [1],
+                              "original_name": name, "media_type": "image/jpeg", "sha256": sha(uri), "byte_count": 10,
+                              "object_ref": {**artifact(file_id), "object_uri": uri, "sha256": sha(uri),
+                                             "media_type": "image/jpeg"},
+                              "upload_status": "stored", "width": 10, "height": 10})
+        assert record.original_name == name
+
+
+@pytest.mark.parametrize("uri", ["s3://cmev-evidence/front", "s3://cmev-evidence/front.jpg",
+                                 f"s3://cmev-originals/fixture/{CLAIM}/front.jpg", "file://local-evidence/front.JPG",
+                                 "s3://cmev-evidence/01JAX7Q1B2C3D4E5F6G7H8J9KM/front.jpg"])
+def test_claim_file_refuses_a_key_derived_from_the_user_name(uri):
+    with pytest.raises(ValidationError, match="generated"):
+        ClaimFile(**{**SCOPE, "file_id": "01JAX7Q1B2C3D4E5F6G7H8J9KM", "kind": "photo", "member_revisions": [1],
+                     "original_name": "front.jpg", "media_type": "image/jpeg", "sha256": sha(uri), "byte_count": 10,
+                     "object_ref": {**artifact(), "object_uri": uri, "sha256": sha(uri), "media_type": "image/jpeg"},
+                     "upload_status": "stored", "width": 10, "height": 10})
+
+
 # --- v1 (0.1.0) rejection ------------------------------------------------------------------------
 @pytest.mark.parametrize("model,data", [
     (LineItem, line_item(schema_version="0.1.0")),

@@ -11,7 +11,7 @@ from m5_support import CONFIG
 
 
 def test_repository_configuration_proposes_three_families_with_spec_defaults():
-    assert CONFIG.status == "proposed" and CONFIG.config_version == "m5-layout-families/0.1.0"
+    assert CONFIG.status == "proposed" and CONFIG.config_version == "m5-layout-families/0.2.0"
     assert [f.family_id for f in CONFIG.families] == [
         "family-a-ruled-grid", "family-b-numbered-rate", "family-c-compact-quote"]
     assert all(f.status == "proposed" for f in CONFIG.families)
