@@ -1,5 +1,7 @@
 # M2 - Damage segmentation and part matching
 
+> **Offline experiment update (2026-09-30):** the user selected SegFormer-B2 and HITL parts/damage for two manual training notebooks. See the [recorded experiment scope](../training-hitl-notebooks.md) for shared splits, the separate eight-class HITL damage taxonomy, evaluation objectives and limits. This experiment does not change serving contracts or claim CarDD benchmark results.
+
 Owner lane: 1 (Vision). Runtime container: `cmev-worker-damage`. Code: `src/claim_cmev/vision/damage/`. Training pipeline: `pipelines/vision/`. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 8.1, 9.3, 9.4, 10 (M2), 11.1, 11.2, 11.5, 11.8, 12.4, 13.1. Status: specified for v2; not implemented, not measured. CarDD access is an open gate.
 
 > **Runtime note.** The user directed containerised modules with Kafka as the transport between them on 2026-09-22. Proposal v2 section 9.1 has since been rewritten to describe this same runtime directly; it originally specified one API process plus one worker, a jobs table and no broker. Every v2 domain rule is unchanged: the decision rules in section 8, the exchanged records in section 9.3, module scope in section 10, datasets in section 11 and targets in section 13.1.
