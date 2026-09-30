@@ -1,8 +1,9 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-09-27 (Asia/Singapore), status corrected by Claude Code after independent verification.
+Last updated: 2026-09-30 (Asia/Singapore), manual HITL training notebook handoff added; the 2026-09-27 application verification remains historical.
 - **Implementation baseline:** HEAD `6e59bc2` on branch `code-skeleton`, which sits on top of `f280209`. Both are local commits, and no push has been verified.
-- **Read first:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
+- **Read first for training:** the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
+- **Application baseline:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
 - **Older entries:** the chronological handoffs below keep their original status, which is sometimes superseded.
 
 This file is the team's maintained handoff, not an automatically synchronised chat transcript. Share it with the skills and source changes through the team's normal version-control workflow.
@@ -25,6 +26,7 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 | Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes |
 | Application | Connected to the API/workbench: typed review actions, M6 decision replay, M3 reruns after human identity/coverage confirmations, pinned cost lookup, review-state overlays (dismissals and accepted scope), durable request retry, stage retry and frozen M9 reports. The evidence image overlays (`review/overlays.py`) are a library only; no endpoint or UI serves them |
 | Data and models | No trained model exists. M1 has **no code**: `vision/parts/` holds only `.gitkeep`. The M2 assignment, M4 raster/geometry/OCR, M5 parser and M6 linker are libraries covered by unit tests only; the pipeline never calls them. Derived masks and pages are placeholder URIs. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
+| Offline vision training (2026-09-30) | Two manual SegFormer-B2 HITL notebooks and shared conversion/training/evaluation helpers now exist. Actual HITL data is prepared; MPS tensor checks and fixture training checks pass. Full training/held-out accuracy and runtime adapters remain pending |
 | Shared agent workflows | Canonical skills remain under `.agents/skills`, with no workflow changes |
 | Validation | At `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. Docker has not been re-run since `6e59bc2`. Independent verification found remaining and new defects; see the 2026-09-27 section |
 | Evaluation | No model accuracy, real price calibration, real claim outcome, usability comparison or financial benefit measured |
@@ -1303,6 +1305,26 @@ Key Findings:
 4. Across all models, confusion matrices confirm that errors concentrate almost exclusively along adjacent panel seams (`back-door` <-> `front-door`, `grille` <-> `front-bumper`).
 
 Next concrete step: Finalize Module 1 default deployment selection and proceed to Module 2 (damage segmentation).
+
+
+## Manual HITL training notebook handoff (2026-09-30)
+
+Date/time and timezone: 2026-09-30, Asia/Singapore.
+Contributor / coding agent: Codex, with three explicitly requested parallel agents for data preparation, shared training, and notebooks.
+Task and relevant module: Prepare separate manually runnable M1 part and M2 damage training notebooks with SegFormer-B2, editable backbones/settings, HITL data and GPU portability.
+Branch / baseline commit / resulting commit or PR: `code-skeleton`, inspected HEAD `b13e250`; local uncommitted changes, no commit or push performed.
+Changed paths and completed behaviour:
+- `notebooks/M1_HITL_parts_training.ipynb`, `M2_HITL_damage_training.ipynb`, their companion Markdown and notebook README; architecture/head explanations, editable training settings, validation metrics/confusions/overlays, checkpoint reload, model comparisons and opt-in final test.
+- `pipelines/vision/{hitl_data,training,extract_hitl}.py`, `requirements-training.txt`, three targeted unit-test modules; shared immutable preparation, union-level grouping, portable CUDA/MPS/CPU training/evaluation and safe archive extraction.
+- `data/manifests/hitl_training_{source,preparation}_20260930.json`, `docs/training-hitl-notebooks.md`, six scoped proposal/specification notes and `docs/verification/hitl-notebooks-2026-09-30.md`.
+Decisions (accepted/proposed): User selected SegFormer-B2 for both experiments and HITL damage under distinct `damage-hitl-1.0.0`. Serving contracts remain CarDD-based; this does not merge taxonomies or establish CarDD acceptance. Default split seed 20260922 and 70/15/15 group fractions; M1 all 21 foreground labels, M2 all 8. HITL M2 evaluation is descriptive, without transferring the CarDD numerical target.
+Checks actually run, results and artifact locations:
+- User supplied original 3.1 GB archive and extracted files in `data/raw/`; no network dataset download was necessary after supply. All 3,626 metadata/annotation/image entries matched archive CRC/size. Source receipt/archive SHA256 recorded.
+- Prepared 1,812 samples into `data/processed/hitl/v1`: M1 train 711 / val 147 / test 140; M2 train 558 / val 132 / test 124. 441 shared images stay together across both tasks; 1,371 union groups. Manifest `ea054e856b9f2bf71abe67eebb514e6b704b0291247fc5ec156cc70b54469f49`. Repeat preparation and artifact/split hashes verified.
+- 24 targeted tests passed, including bounded synthetic train/checkpoint/reload/evaluation/plot tests. Both notebooks validate/compile; all 7 pre-training cells each executed against real HITL. Six training overlays visually inspected.
+- Mac MPS selected outside sandbox; cached pretrained B2 with 22/9-class heads and random-init ResNet50/101 passed 64×64 forward/backward checks. No CUDA test. Python 3.12 `.venv` prepared; pip dependency check passes. Generated evidence in `artifacts/evaluation/notebook-validation/`.
+Uncommitted work, limitations and missing prerequisites: Full HITL fitting and held-out evaluation intentionally left for manual notebook execution. No new trained model or runtime integration claimed. No vehicle IDs or assignment reservations supplied; zero dHash candidates does not prove vehicle independence. Publisher raster mask palettes did not match sampled metadata colors, so conversion uses annotated polygons and does not claim raster agreement. Other HF semantic architectures untested. Existing untracked presentation files were preserved.
+Next concrete step and owner: User runs `.venv/bin/jupyter lab notebooks/`, selects the environment kernel, reviews grouping/reservations and settings, and starts M1/M2 training manually. Validation selects configurations; final tests remain unused until the protocol is frozen.
 
 
 ## M1 serving and trainer fixes after branch review (2026-10-07)

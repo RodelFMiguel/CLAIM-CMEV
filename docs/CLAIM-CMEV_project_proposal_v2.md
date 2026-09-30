@@ -1,5 +1,7 @@
 # CLAIM-CMEV
 
+> **Offline experiment update (2026-09-30):** the user selected SegFormer-B2 and HITL parts/damage for two manual training notebooks. See the [recorded experiment scope](training-hitl-notebooks.md) for shared splits, the separate eight-class HITL damage taxonomy, evaluation objectives and limits. This experiment does not change serving contracts or claim CarDD benchmark results.
+
 ## Cross-Modal Evidence Verification of Declared Repair Scope Against Photographic Damage Evidence in Motor Own-Damage Claims
 
 **Project Proposal — version 2 (simplified scope)**
