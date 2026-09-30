@@ -1,0 +1,26 @@
+{
+  "source_url": "https://humansintheloop.org/resources/datasets/car-parts-and-car-damages-dataset/",
+  "acquired_at": "2026-09-30",
+  "method": "user-supplied archive and extracted directory",
+  "archive": "data/raw/CarPartsAndCarDamages.zip",
+  "sha256": "b7454257aa2aa08a7ea42003f8c1f15db70e5d77d63567a4373414ae8a998577",
+  "bytes": 3103430533,
+  "source_terms": "Publisher page states CC0 1.0; verified 2026-09-30",
+  "provenance": "real publicly released annotated photographs; source archive supplied by user",
+  "extraction_note": "User supplied extracted tree; matching archive members checked separately",
+  "download_status": "user provided originals; no network dataset download performed",
+  "extracted_input_verification": {
+    "members_checked": 3626,
+    "method": "Every meta/annotation/image member CRC32 and byte size compared with original ZIP directory",
+    "result": "matched"
+  },
+  "annotation_counts": {
+    "parts": 998,
+    "damage": 814
+  },
+  "subset_mapping": {
+    "Car damages dataset": "parts (21 classes)",
+    "Car parts dataset": "damage (8 classes)"
+  },
+  "validation_scope": "Acquisition and extracted input integrity only. See prepared manifest for conversion, split and per-class support."
+}
