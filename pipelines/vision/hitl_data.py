@@ -1,7 +1,12 @@
 """Offline, immutable Supervisely HITL conversion shared by both training notebooks.
 
 Folder names are deliberately not used to identify a task. IDs 1..N follow the
-repository taxonomy YAML order; 0 is background and 255 is conflicting overlap.
+repository taxonomy YAML order; 0 is background and 255 is ignored overlap.
+
+HITL annotators nest parts: a door polygon includes its window and mirror, a bumper
+its licence plate and grille. The default ``nested`` overlap policy lets a polygon
+that lies mostly inside a larger different-class polygon keep its pixels, and ignores
+only partial overlaps. ``ignore_all`` reproduces the original v1 preparation.
 No vehicle identity is inferred from image filenames or similarity hashes.
 """
 from __future__ import annotations
@@ -20,7 +25,13 @@ import numpy as np
 import yaml
 from PIL import Image, ImageDraw, ImageOps
 
-CONVERSION_VERSION = "hitl-polygons-1.0.0"
+CONVERSION_VERSION = "hitl-polygons-1.1.0"
+# policy -> (manifest policy string, conversion version). ignore_all keeps v1 hashes.
+OVERLAP_POLICIES = {
+    "ignore_all": ("different_class_overlap_ignore_255", "hitl-polygons-1.0.0"),
+    "nested": ("nested_smaller_wins_partial_overlap_ignore_255", CONVERSION_VERSION),
+}
+DEFAULT_NESTED_CONTAINMENT = 0.8
 IGNORE_INDEX = 255
 _REPO = Path(__file__).resolve().parents[2]
 
@@ -100,13 +111,24 @@ def _ring(points: list, width: int, height: int) -> list[tuple[float, float]]:
     return result
 
 
-def rasterize_annotation(annotation: dict, title_to_id: dict[str, int]) -> tuple[Image.Image, dict]:
-    """Rasterize holes and ignore cross-class overlap, independent of object order."""
+def rasterize_annotation(annotation: dict, title_to_id: dict[str, int], *, policy: str = "nested",
+                         containment: float = DEFAULT_NESTED_CONTAINMENT) -> tuple[Image.Image, dict]:
+    """Rasterize polygons with holes; the result is independent of object order.
+
+    Same-class overlap merges. For two different-class polygons, ``ignore_all`` marks
+    every shared pixel 255. ``nested`` gives shared pixels to the smaller polygon when
+    at least ``containment`` of its area lies inside the larger one (window inside
+    door); other shared pixels stay 255 (seam slivers, partial damage overlaps).
+    """
+    if policy not in OVERLAP_POLICIES:
+        raise ValueError(f"Unknown overlap policy {policy!r}; choose {sorted(OVERLAP_POLICIES)}")
+    if not 0 < containment <= 1:
+        raise ValueError("containment must lie in (0, 1]")
     width, height = annotation["size"]["width"], annotation["size"]["height"]
     if not isinstance(width, int) or not isinstance(height, int) or min(width, height) <= 0:
         raise ValueError("Invalid annotation dimensions")
-    output = np.zeros((height, width), dtype=np.uint8)
     counts = Counter()
+    objects = []
     for obj in annotation.get("objects", []):
         title = obj["classTitle"]
         if title not in title_to_id:
@@ -119,12 +141,31 @@ def rasterize_annotation(annotation: dict, title_to_id: dict[str, int]) -> tuple
         for interior in obj["points"].get("interior", []):
             draw.polygon(_ring(interior, width, height), fill=0)
         selected = np.asarray(binary, dtype=bool)
-        class_id = title_to_id[title]
-        conflict = selected & (output != 0) & (output != class_id)
-        output[selected & (output == 0)] = class_id
-        output[conflict] = IGNORE_INDEX
+        objects.append((title_to_id[title], selected, int(selected.sum())))
         counts[title] += 1
-    return Image.fromarray(output), dict(counts)
+    # Paint larger objects first so a nested smaller object ends on top. Ties sort
+    # by class and pixel content, never by the order objects appear in the file.
+    objects.sort(key=lambda item: (-item[2], item[0], hashlib.sha256(np.packbits(item[1]).tobytes()).digest()))
+    output = np.zeros((height, width), dtype=np.uint8)
+    for class_id, selected, _ in objects:
+        output[selected] = class_id
+    ignored = np.zeros((height, width), dtype=bool)
+    stats = {"nested_pixels": 0, "partial_overlap_pixels": 0}
+    for i, (class_i, mask_i, area_i) in enumerate(objects):
+        for class_j, mask_j, area_j in objects[:i]:  # area_j >= area_i
+            if class_i == class_j:
+                continue
+            shared = mask_i & mask_j
+            overlap = int(shared.sum())
+            if not overlap:
+                continue
+            if policy == "nested" and overlap >= containment * area_i:
+                stats["nested_pixels"] += overlap
+            else:
+                ignored |= shared
+                stats["partial_overlap_pixels"] += overlap
+    output[ignored] = IGNORE_INDEX
+    return Image.fromarray(output), dict(counts), stats
 
 
 def _aligned(image_path: Path, mask: Image.Image) -> tuple[Image.Image, Image.Image, dict]:
@@ -286,7 +327,9 @@ def _near_duplicates(records: list[dict]) -> list[dict]:
 def prepare_hitl(raw_root: str | Path, output_dir: str | Path, seed: int = 42,
                  val_fraction: float = .15, test_fraction: float = .15,
                  group_csv: str | Path | None = None,
-                 reserved_ids: Iterable[str] | str | Path | None = None) -> dict:
+                 reserved_ids: Iterable[str] | str | Path | None = None,
+                 overlap_policy: str = "nested",
+                 nested_containment: float = DEFAULT_NESTED_CONTAINMENT) -> dict:
     """Prepare BOTH tasks together; reuse identical versions, reject changed inputs.
 
     ``output_dir`` should be ``data/processed/hitl/<version>``. Group CSV columns
@@ -310,10 +353,13 @@ def prepare_hitl(raw_root: str | Path, output_dir: str | Path, seed: int = 42,
                     "receipt": json.loads(receipt_path.read_text())}
                    if receipt_path.is_file() else {"status": "acquisition_receipt_not_present"})
     reserved, group_rows = _read_reserved(reserved_ids), _read_groups(group_csv)
-    config = {"conversion_version": CONVERSION_VERSION, "seed": seed,
+    if overlap_policy not in OVERLAP_POLICIES:
+        raise ValueError(f"Unknown overlap policy {overlap_policy!r}; choose {sorted(OVERLAP_POLICIES)}")
+    policy_name, conversion_version = OVERLAP_POLICIES[overlap_policy]
+    config = {"conversion_version": conversion_version, "seed": seed,
               "val_fraction": val_fraction, "test_fraction": test_fraction,
               "reserved_ids": sorted(reserved), "group_rows": group_rows,
-              "taxonomy": taxonomy, "overlap_policy": "different_class_overlap_ignore_255",
+              "taxonomy": taxonomy, "overlap_policy": policy_name,
               "acquisition": acquisition,
               "orientation_policy": "infer_frame_from_dimensions_or_reject_ambiguous_exif",
               "source_fingerprint": _digest(sources + [
@@ -321,6 +367,9 @@ def prepare_hitl(raw_root: str | Path, output_dir: str | Path, seed: int = 42,
                    "annotation": str(row["annotation"].relative_to(raw_root)),
                    "content_sha256": row["content_sha256"], "annotation_sha256": row["annotation_sha256"]}
                   for row in samples])}
+    if overlap_policy == "nested":
+        # Absent for ignore_all so existing v1 preparations keep their configuration hash.
+        config["nested_containment"] = nested_containment
     config_hash = _digest(config)
     if output_dir.exists():
         manifest = load_prepared(output_dir)
@@ -336,7 +385,8 @@ def prepare_hitl(raw_root: str | Path, output_dir: str | Path, seed: int = 42,
         for sample in samples:
             task = sample["task"]
             annotation = json.loads(sample["annotation"].read_text())
-            mask, object_counts = rasterize_annotation(annotation, taxonomy[task]["title_to_id"])
+            mask, object_counts, overlap_stats = rasterize_annotation(
+                annotation, taxonomy[task]["title_to_id"], policy=overlap_policy, containment=nested_containment)
             image, mask, transform = _aligned(sample["image"], mask)
             sample_id = task + "-" + _digest([task, sample["content_sha256"], sample["annotation_sha256"]])[:24]
             if sample_id in seen_ids:
@@ -362,6 +412,8 @@ def prepare_hitl(raw_root: str | Path, output_dir: str | Path, seed: int = 42,
                       "pixel_counts": np.bincount(pixels[pixels != IGNORE_INDEX], minlength=len(taxonomy[task]["class_names"])).tolist(),
                       "ignored_pixels": int(np.count_nonzero(pixels == IGNORE_INDEX)),
                       "object_counts": object_counts, "provenance": "real"}
+            if overlap_policy == "nested":
+                record["overlap_stats"] = overlap_stats
             records.append(record)
         records.sort(key=lambda row: row["sample_id"])
         split = _assign_splits(records, seed, val_fraction, test_fraction, group_rows, reserved)
@@ -386,7 +438,7 @@ def prepare_hitl(raw_root: str | Path, output_dir: str | Path, seed: int = 42,
                 counts[task][partition] = {"images": len(rows), "groups": len({row["group_id"] for row in rows}),
                                            "pixel_counts": totals, "object_counts": dict(objects),
                                            "ignored_pixels": sum(row["ignored_pixels"] for row in rows)}
-        manifest = {"schema_version": 1, "conversion_version": CONVERSION_VERSION,
+        manifest = {"schema_version": 1, "conversion_version": conversion_version,
                     "preparation_config": config, "preparation_config_hash": config_hash,
                     "class_names": {task: entry["class_names"] for task, entry in taxonomy.items()},
                     "taxonomy": taxonomy, "records": records, "sources": sources, "counts": counts,
