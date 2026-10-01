@@ -16,7 +16,7 @@ import random
 import subprocess
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -48,9 +48,32 @@ class TrainingConfig:
     ce_weight: float = 1.0
     dice_weight: float = 0.5
     max_grad_norm: float = 1.0
+    # "cosine_epoch" is the original schedule (stepped once per epoch, no warmup) and
+    # stays the default so saved runs reload unchanged. "poly" and "cosine" step after
+    # every optimizer update and support a linear warmup.
+    lr_schedule: str = "cosine_epoch"
+    warmup_epochs: float = 0.0
+    poly_power: float = 1.0
     horizontal_flip: float = 0.5
     brightness: float = 0.15
     contrast: float = 0.15
+    saturation: float = 0.0
+    # Training-only geometry. (1.0, 1.0) keeps the centred letterbox used for evaluation;
+    # e.g. (0.5, 2.0) rescales relative to that fit, then takes a random image_size crop.
+    scale_range: tuple = (1.0, 1.0)
+    rotation_degrees: float = 0.0
+    # Opt-in M2 crop mixture: full-image, random native-detail, target-centred.
+    crop_mode: str = "legacy"
+    full_image_probability: float = 0.25
+    focused_crop_probability: float = 0.5
+    crop_scale_range: tuple = (1.0, 1.5)
+    crop_focus_class_ids: tuple = ()
+    repeat_factor_threshold: float = 0.0  # disabled; training image prevalence only
+    max_repeat_factor: float = 3.0
+    plateau_patience: int = 3
+    plateau_factor: float = 0.5
+    plateau_min_lr_ratio: float = 0.01
+    plateau_grace_epochs: int = 3
     mean: tuple = (0.485, 0.456, 0.406)
     std: tuple = (0.229, 0.224, 0.225)
     device: str = "auto"
@@ -74,8 +97,36 @@ class TrainingConfig:
             raise ValueError("workers and freeze_encoder_epochs must be nonnegative")
         if not 0 <= self.horizontal_flip <= 1:
             raise ValueError("horizontal_flip must be a probability")
-        if not (0 <= self.brightness <= 1 and 0 <= self.contrast <= 1):
-            raise ValueError("brightness/contrast must lie between 0 and 1")
+        if not (0 <= self.brightness <= 1 and 0 <= self.contrast <= 1 and 0 <= self.saturation <= 1):
+            raise ValueError("brightness/contrast/saturation must lie between 0 and 1")
+        if self.lr_schedule not in {"cosine_epoch", "cosine", "poly", "plateau"}:
+            raise ValueError("lr_schedule must be cosine_epoch, cosine, poly or plateau")
+        if self.warmup_epochs < 0 or (self.warmup_epochs and self.lr_schedule == "cosine_epoch"):
+            raise ValueError("warmup_epochs must be nonnegative and needs a per-step schedule (cosine, poly or plateau)")
+        if self.warmup_epochs >= self.epochs:
+            raise ValueError("warmup_epochs must be shorter than training")
+        if self.poly_power <= 0:
+            raise ValueError("poly_power must be positive")
+        if len(self.scale_range) != 2 or not 0 < self.scale_range[0] <= self.scale_range[1]:
+            raise ValueError("scale_range must be (low, high) with 0 < low <= high")
+        if not 0 <= self.rotation_degrees <= 45:
+            raise ValueError("rotation_degrees must lie between 0 and 45")
+        if self.crop_mode not in {"legacy", "damage_aware"}:
+            raise ValueError("crop_mode must be legacy or damage_aware")
+        if not (0 <= self.full_image_probability <= 1 and 0 <= self.focused_crop_probability <= 1
+                and self.full_image_probability + self.focused_crop_probability <= 1):
+            raise ValueError("Crop probabilities must be nonnegative and sum to at most one")
+        if len(self.crop_scale_range) != 2 or not 0 < self.crop_scale_range[0] <= self.crop_scale_range[1]:
+            raise ValueError("crop_scale_range must be positive and ordered")
+        if any(not isinstance(i, int) or i <= 0 or i >= IGNORE_INDEX for i in self.crop_focus_class_ids):
+            raise ValueError("crop_focus_class_ids must contain foreground class IDs")
+        if not 0 <= self.repeat_factor_threshold <= 1 or self.max_repeat_factor < 1:
+            raise ValueError("Invalid repeat-factor sampling settings")
+        if (self.plateau_patience < 0 or self.plateau_grace_epochs < 1
+                or not 0 < self.plateau_factor < 1 or not 0 < self.plateau_min_lr_ratio < 1):
+            raise ValueError("Invalid plateau scheduler settings")
+        if self.lr_schedule == "plateau" and self.patience <= self.plateau_patience + self.plateau_grace_epochs:
+            raise ValueError("Early stopping patience must allow a plateau reduction and its grace epochs")
         if len(self.mean) != 3 or len(self.std) != 3 or min(self.std) <= 0:
             raise ValueError("Provide three normalization means and positive standard deviations")
         if min(self.encoder_lr, self.head_lr, self.max_grad_norm) <= 0:
@@ -177,6 +228,69 @@ def letterbox(image, mask, size, mean=(0.485, 0.456, 0.406)):
     return canvas, target
 
 
+def random_scale_crop(image, mask, size, scale, mean=(0.485, 0.456, 0.406), rng=random):
+    """Rescale relative to the letterbox fit, then cut a random size x size window.
+
+    Larger scales crop part of the image; smaller ones place it at a random offset on a
+    mean-coloured canvas. Padding is ignore 255 in the labels, as in ``letterbox``.
+    """
+    if image.size != mask.size:
+        raise ValueError("Image and mask dimensions differ")
+    width, height = image.size
+    factor = min(size / width, size / height) * scale
+    resized = (max(1, round(width * factor)), max(1, round(height * factor)))
+    image = image.resize(resized, Image.Resampling.BILINEAR)
+    mask = mask.resize(resized, Image.Resampling.NEAREST)
+    # Negative offsets paste the image inside the canvas; positive ones crop it.
+    left = rng.randint(0, resized[0] - size) if resized[0] > size else -rng.randint(0, size - resized[0])
+    top = rng.randint(0, resized[1] - size) if resized[1] > size else -rng.randint(0, size - resized[1])
+    canvas = Image.new("RGB", (size, size), tuple(round(x * 255) for x in mean))
+    target = Image.new("L", (size, size), IGNORE_INDEX)
+    canvas.paste(image, (-left, -top))
+    target.paste(mask, (-left, -top))
+    return canvas, target
+
+
+def damage_aware_crop(image, mask, config, rng=random):
+    """Mix full photographs with native-detail crops; supervision is training-only.
+
+    Choose a foreground class uniformly among preferred classes present, then a
+    pixel of that class. A focused crop includes this anchor before any subsequent
+    rotation. No ground-truth crop selection is used during validation/inference.
+    """
+    if image.size != mask.size:
+        raise ValueError("Image and mask dimensions differ")
+    draw = rng.random()
+    if draw < config.full_image_probability:
+        return letterbox(image, mask, config.image_size, config.mean)
+    side = max(1, round(config.image_size / rng.uniform(*config.crop_scale_range)))
+    width, height = image.size
+    anchor = None
+    if draw < config.full_image_probability + config.focused_crop_probability:
+        labels = np.asarray(mask)
+        present = [int(i) for i in np.unique(labels) if i not in (0, IGNORE_INDEX)]
+        preferred = [i for i in config.crop_focus_class_ids if i in present]
+        if present:
+            selected = rng.choice(preferred or present)
+            ys, xs = np.nonzero(labels == selected)
+            i = rng.randrange(len(xs))
+            anchor = (int(xs[i]), int(ys[i]))
+    def origin(length, coordinate):
+        if length <= side:
+            return -rng.randint(0, side - length)
+        if coordinate is None:
+            return rng.randint(0, length - side)
+        return rng.randint(max(0, coordinate - side + 1), min(coordinate, length - side))
+    left = origin(width, anchor[0] if anchor else None)
+    top = origin(height, anchor[1] if anchor else None)
+    fill = tuple(round(x * 255) for x in config.mean)
+    pixels, target = Image.new("RGB", (side, side), fill), Image.new("L", (side, side), IGNORE_INDEX)
+    pixels.paste(image, (-left, -top))
+    target.paste(mask, (-left, -top))
+    size = (config.image_size, config.image_size)
+    return pixels.resize(size, Image.Resampling.BILINEAR), target.resize(size, Image.Resampling.NEAREST)
+
+
 class SegmentationDataset:
     """Map-style torch dataset; augmentation never modifies source evidence."""
     def __init__(self, records, config, training=False, num_classes=None):
@@ -199,12 +313,26 @@ class SegmentationDataset:
             if self.num_classes is not None and np.any((labels != IGNORE_INDEX) & (labels >= self.num_classes)):
                 raise ValueError("Mask has labels outside the frozen taxonomy")
             mask = Image.fromarray(labels.astype(np.uint8))
-        image, mask = letterbox(image, mask, self.config.image_size, self.config.mean)
+        low, high = self.config.scale_range
+        if self.training and self.config.crop_mode == "damage_aware":
+            image, mask = damage_aware_crop(image, mask, self.config)
+        elif self.training and (low, high) != (1.0, 1.0):
+            image, mask = random_scale_crop(image, mask, self.config.image_size,
+                                            random.uniform(low, high), self.config.mean)
+        else:
+            image, mask = letterbox(image, mask, self.config.image_size, self.config.mean)
         if self.training:
+            if self.config.rotation_degrees:
+                angle = random.uniform(-self.config.rotation_degrees, self.config.rotation_degrees)
+                fill = tuple(round(x * 255) for x in self.config.mean)
+                image = image.rotate(angle, resample=Image.Resampling.BILINEAR, fillcolor=fill)
+                mask = mask.rotate(angle, resample=Image.Resampling.NEAREST, fillcolor=IGNORE_INDEX)
             if random.random() < self.config.horizontal_flip:
                 image, mask = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT), mask.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
             image = ImageEnhance.Brightness(image).enhance(random.uniform(1-self.config.brightness, 1+self.config.brightness))
             image = ImageEnhance.Contrast(image).enhance(random.uniform(1-self.config.contrast, 1+self.config.contrast))
+            if self.config.saturation:
+                image = ImageEnhance.Color(image).enhance(random.uniform(1-self.config.saturation, 1+self.config.saturation))
         pixels = np.asarray(image, dtype=np.float32) / 255.0
         pixels = (pixels - np.asarray(self.config.mean, dtype=np.float32)) / np.asarray(self.config.std, dtype=np.float32)
         return {"pixel_values": torch.from_numpy(pixels.transpose(2, 0, 1).copy()),
@@ -342,12 +470,32 @@ def metrics_from_confusion(matrix, class_names):
     def macro(key):
         values = [r[key] for r in per_class[1:] if r[key] is not None]
         return float(np.mean(values)) if values else None
+    binary_tp = int(matrix[1:, 1:].sum())
+    binary_fp, binary_fn = int(matrix[0, 1:].sum()), int(matrix[1:, 0].sum())
+    binary_union = binary_tp + binary_fp + binary_fn
     return {"miou_foreground": macro("iou"), "dice_foreground": macro("dice"),
             "precision_foreground": macro("precision"), "recall_foreground": macro("recall"),
             "pixel_accuracy": ratio(tp.sum(), matrix.sum()), "valid_pixels": int(matrix.sum()),
             "macro_class_count": int(np.count_nonzero(union[1:])),
             "macro_policy": "background excluded; zero-union classes undefined/excluded; false-positive-only classes included",
-            "per_class": per_class, "confusion_matrix": matrix.tolist()}
+            "per_class": per_class, "confusion_matrix": matrix.tolist(),
+            "binary_foreground": {"iou": ratio(binary_tp, binary_union),
+                "precision": ratio(binary_tp, binary_tp + binary_fp),
+                "recall": ratio(binary_tp, binary_tp + binary_fn),
+                "dice": ratio(2 * binary_tp, 2 * binary_tp + binary_fp + binary_fn),
+                "true_positive": binary_tp, "false_positive": binary_fp, "false_negative": binary_fn,
+                "iou_reason": None if binary_union else "absent_in_truth_and_prediction",
+                "policy": "Collapse multiclass argmax IDs > 0; ignore 255 truth; no tuned threshold"}}
+
+
+def lr_factor(step, total_steps, warmup_steps, schedule="poly", power=1.0):
+    """Multiplier on the base learning rate at an optimizer step (0-based)."""
+    if warmup_steps and step < warmup_steps:
+        return (step + 1) / warmup_steps
+    progress = min(1.0, (step - warmup_steps) / max(1, total_steps - warmup_steps))
+    if schedule == "cosine":
+        return 0.5 * (1 + math.cos(math.pi * progress))
+    return (1 - progress) ** power
 
 
 def _worker_seed(worker_id):
@@ -357,11 +505,45 @@ def _worker_seed(worker_id):
     random.seed(worker_seed)
 
 
+def repeat_sampling_weights(records, num_classes, threshold, max_repeat=3.0):
+    """Capped sqrt(threshold / image prevalence), max over each image's classes.
+
+    Length of the epoch stays fixed. Repeated sampling is not independent evidence.
+    Refuse non-training records so held-out support cannot influence sampling.
+    """
+    if not records or any(r.get("split") != "train" for r in records):
+        raise ValueError("Repeat sampling requires nonempty training records only")
+    presence = []
+    for record in records:
+        if "pixel_counts" in record:
+            row = np.asarray(record["pixel_counts"])
+            if len(row) != num_classes:
+                raise ValueError("Pixel counts differ from taxonomy")
+            presence.append(row > 0)
+        else:
+            with Image.open(record["mask_path"]) as mask:
+                labels = np.asarray(mask)
+                presence.append([np.any(labels == i) for i in range(num_classes)])
+    presence = np.asarray(presence, dtype=bool)
+    presence[:, 0] = False
+    frequency = presence.mean(0)
+    factors = np.ones(num_classes)
+    supported = frequency > 0
+    factors[supported] = np.clip(np.sqrt(threshold / frequency[supported]), 1, max_repeat)
+    return np.where(presence, factors, 1).max(1).tolist()
+
+
 def _loader(records, config, device, classes, training=False):
     import torch
+    sampler = None
+    if training and config.repeat_factor_threshold:
+        weights = repeat_sampling_weights(records, len(classes), config.repeat_factor_threshold, config.max_repeat_factor)
+        sampler = torch.utils.data.WeightedRandomSampler(weights, len(records), replacement=True,
+                                                        generator=torch.Generator().manual_seed(config.seed))
     return torch.utils.data.DataLoader(
         SegmentationDataset(records, config, training, len(classes)), batch_size=config.batch_size,
-        shuffle=training, num_workers=0 if device.type == "mps" else config.workers,
+        shuffle=training and sampler is None, sampler=sampler,
+        num_workers=0 if device.type == "mps" else config.workers,
         pin_memory=device.type == "cuda", worker_init_fn=_worker_seed,
         generator=torch.Generator().manual_seed(config.seed), drop_last=False)
 
@@ -487,12 +669,31 @@ def train(manifest, config):
         encoder_parameters = model.encoder_parameters()
         optimizer = torch.optim.AdamW([{"params": encoder_parameters, "lr": config.encoder_lr},
                                        {"params": model.head_parameters(), "lr": config.head_lr}], weight_decay=config.weight_decay)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
         use_amp = config.amp and device.type == "cuda"
         scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
         training_loader = _loader(train_records, config, device, classes, training=True)
+        per_step = config.lr_schedule in {"poly", "cosine"}
+        updates_per_epoch = math.ceil(len(training_loader) / config.accumulation_steps)
+        warmup_updates = round(config.warmup_epochs * updates_per_epoch)
+        if per_step:
+            total_updates = updates_per_epoch * config.epochs
+            scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda step: lr_factor(
+                step, total_updates, warmup_updates, config.lr_schedule, config.poly_power))
+            record["schedule"] = {"updates_per_epoch": updates_per_epoch, "total_updates": total_updates,
+                                  "warmup_updates": warmup_updates}
+        elif config.lr_schedule == "plateau":
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, mode="max", factor=config.plateau_factor, patience=config.plateau_patience,
+                threshold=config.min_delta, threshold_mode="abs",
+                min_lr=[config.encoder_lr * config.plateau_min_lr_ratio,
+                        config.head_lr * config.plateau_min_lr_ratio])
+            record["schedule"] = {"monitor": "validation foreground mIoU", "warmup_updates": warmup_updates,
+                                  "early_stop_grace_epochs": config.plateau_grace_epochs}
+        else:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
         validation_loader = _loader(val_records, config, device, classes)
         best, stale = -math.inf, 0
+        optimizer_updates, last_lr_drop = 0, -config.plateau_grace_epochs
         for epoch in range(config.epochs):
             started = time.perf_counter()
             model.train()
@@ -517,11 +718,18 @@ def train(manifest, config):
                     raise FloatingPointError("Non-finite training loss")
                 scaler.scale(loss / group_size).backward()
                 if (step + 1) % config.accumulation_steps == 0 or step + 1 == total_batches:
+                    if config.lr_schedule == "plateau" and optimizer_updates < warmup_updates:
+                        fraction = (optimizer_updates + 1) / warmup_updates
+                        for group, base_lr in zip(optimizer.param_groups, (config.encoder_lr, config.head_lr)):
+                            group["lr"] = base_lr * fraction
                     scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
                     scaler.step(optimizer)
                     scaler.update()
                     optimizer.zero_grad(set_to_none=True)
+                    optimizer_updates += 1
+                    if per_step:
+                        scheduler.step()
                 train_loss += loss.item() * len(labels)
                 seen += len(labels)
                 matrix += confusion_counts(labels.cpu().numpy(), logits.detach().argmax(1).cpu().numpy(), len(classes))
@@ -536,9 +744,6 @@ def train(manifest, config):
                             "encoder_lr": optimizer.param_groups[0]["lr"], "head_lr": optimizer.param_groups[1]["lr"],
                             "elapsed_seconds": time.perf_counter()-started}
             history.append(epoch_record)
-            _json(run_dir / "history.json", history)
-            with (run_dir / "training_log.jsonl").open("a") as log:
-                log.write(json.dumps(epoch_record) + "\n")
             improved = score > best + config.min_delta
             if improved:
                 best, stale = score, 0
@@ -546,7 +751,18 @@ def train(manifest, config):
                 _json(evaluation_dir / "val_metrics.json", {**val, "split": "val", "epoch": epoch+1})
             else:
                 stale += 1
-            scheduler.step()
+            if config.lr_schedule == "plateau" and optimizer_updates >= warmup_updates:
+                before = [group["lr"] for group in optimizer.param_groups]
+                scheduler.step(score)
+                if any(group["lr"] < old for group, old in zip(optimizer.param_groups, before)):
+                    last_lr_drop = epoch
+            elif config.lr_schedule == "cosine_epoch":
+                scheduler.step()
+            epoch_record["next_encoder_lr"] = optimizer.param_groups[0]["lr"]
+            epoch_record["next_head_lr"] = optimizer.param_groups[1]["lr"]
+            _json(run_dir / "history.json", history)
+            with (run_dir / "training_log.jsonl").open("a") as log:
+                log.write(json.dumps(epoch_record) + "\n")
             checkpoint = {"model": model.state_dict(), "optimizer": optimizer.state_dict(),
                           "scheduler": scheduler.state_dict(), "scaler": scaler.state_dict(),
                           "epoch": epoch+1, "best_val_miou_foreground": best,
@@ -557,7 +773,8 @@ def train(manifest, config):
                 _save_checkpoint(run_dir / "best.pt", checkpoint)
             _json(run_dir / "manifest.json", record)
             print(f"epoch {epoch+1}/{config.epochs}: train loss {train_loss/seen:.4f}, val loss {val['loss']:.4f}, val foreground mIoU {score:.4f}")
-            if stale >= config.patience:
+            grace_complete = config.lr_schedule != "plateau" or epoch - last_lr_drop >= config.plateau_grace_epochs
+            if stale >= config.patience and grace_complete:
                 break
         record.update(status="completed", completed_epochs=len(history), checkpoint_sha256=_file_hash(run_dir / "best.pt"))
     except BaseException as error:
@@ -598,11 +815,13 @@ def load_run(run_dir, device="auto"):
     return model.float().to(selected_device).eval(), config, record, selected_device
 
 
-def evaluate_run(run_dir, manifest, split="val", device="auto"):
+def evaluate_run(run_dir, manifest, split="val", device="auto", image_size=None):
     """Explicit held-out evaluation; call test only after all choices are frozen."""
     if split not in {"val", "test"}:
         raise ValueError("Evaluation supports val or test; reserved assignment data is separate")
     model, config, record, selected_device = load_run(run_dir, device)
+    if image_size is not None:
+        config = replace(config, image_size=image_size)
     current = task_manifest(manifest, config.task)
     if any(current[key] != record[key] for key in ("class_names", "manifest_hash", "split_hash")):
         raise ValueError("Evaluation data/taxonomy differs from the frozen run")
@@ -611,12 +830,15 @@ def evaluate_run(run_dir, manifest, split="val", device="auto"):
     loader = _loader(records, config, selected_device, current["class_names"])
     metrics = _evaluate(model, loader, selected_device, current["class_names"], config)
     metrics.update(split=split, epoch=record["best_epoch"], run_id=record["run_id"],
+                   evaluation_image_size=config.image_size, manifest_hash=record["manifest_hash"],
+                   split_hash=record["split_hash"],
                    checkpoint_sha256=_file_hash(Path(run_dir) / "best.pt"))
     output = Path(record["evaluation_dir"])
-    _json(output / f"{split}_metrics.json", metrics)
+    prefix = split if image_size is None else f"{split}_size{image_size}"
+    _json(output / f"{prefix}_metrics.json", metrics)
     import pandas as pd
-    pd.DataFrame(metrics["per_class"]).to_csv(output / f"{split}_per_class.csv", index=False)
-    np.save(output / f"{split}_confusion.npy", np.asarray(metrics["confusion_matrix"]))
+    pd.DataFrame(metrics["per_class"]).to_csv(output / f"{prefix}_per_class.csv", index=False)
+    np.save(output / f"{prefix}_confusion.npy", np.asarray(metrics["confusion_matrix"]))
     return metrics
 
 
@@ -641,10 +863,11 @@ def plot_history(run_dir):
     return fig
 
 
-def plot_confusion(run_dir, split="val"):
+def plot_confusion(run_dir, split="val", image_size=None):
     import matplotlib.pyplot as plt
     record = _read_run(run_dir)
-    metrics = json.loads((Path(record["evaluation_dir"]) / f"{split}_metrics.json").read_text())
+    prefix = split if image_size is None else f"{split}_size{image_size}"
+    metrics = json.loads((Path(record["evaluation_dir"]) / f"{prefix}_metrics.json").read_text())
     counts = np.asarray(metrics["confusion_matrix"])
     normalized = np.divide(counts, counts.sum(1, keepdims=True), out=np.zeros_like(counts, dtype=float), where=counts.sum(1, keepdims=True)!=0)
     fig, axes = plt.subplots(1, 2, figsize=(18, 8))
@@ -655,7 +878,7 @@ def plot_confusion(run_dir, split="val"):
         plt.setp(axis.get_xticklabels(), rotation=90)
         fig.colorbar(display, ax=axis, fraction=.046)
     fig.tight_layout()
-    fig.savefig(Path(record["evaluation_dir"]) / f"{split}_confusion.png", dpi=160)
+    fig.savefig(Path(record["evaluation_dir"]) / f"{prefix}_confusion.png", dpi=160)
     # Separate per-class plot makes rare-class failure visible alongside the matrix.
     bars, axis = plt.subplots(figsize=(12, 5))
     foreground = metrics["per_class"][1:]
@@ -663,16 +886,18 @@ def plot_confusion(run_dir, split="val"):
     axis.set(ylabel="IoU", ylim=(0, 1), title=f"{split}: foreground per-class IoU (undefined classes omitted)")
     plt.setp(axis.get_xticklabels(), rotation=60, ha="right")
     bars.tight_layout()
-    bars.savefig(Path(record["evaluation_dir"]) / f"{split}_per_class_iou.png", dpi=160)
+    bars.savefig(Path(record["evaluation_dir"]) / f"{prefix}_per_class_iou.png", dpi=160)
     return fig, bars
 
 
-def show_predictions(run_dir, manifest, split="val", count=4, device="auto"):
+def show_predictions(run_dir, manifest, split="val", count=4, device="auto", image_size=None):
     import torch
     import matplotlib.pyplot as plt
     if split not in {"val", "test"}:
         raise ValueError("Prediction preview must use val/test")
     model, config, record, selected_device = load_run(run_dir, device)
+    if image_size is not None:
+        config = replace(config, image_size=image_size)
     current = task_manifest(manifest, config.task)
     if any(current[key] != record[key] for key in ("class_names", "manifest_hash", "split_hash")):
         raise ValueError("Preview manifest differs from the frozen run")
@@ -704,26 +929,118 @@ def show_predictions(run_dir, manifest, split="val", count=4, device="auto"):
     fig.legend(handles=[Patch(color=palette(i), label=name) for i, name in enumerate(current["class_names"])],
                loc="lower center", ncol=min(6, len(current["class_names"])), fontsize=8)
     fig.tight_layout(rect=(0, .10, 1, 1))
-    fig.savefig(Path(record["evaluation_dir"]) / f"{split}_overlays.png", dpi=150)
+    prefix = split if image_size is None else f"{split}_size{image_size}"
+    fig.savefig(Path(record["evaluation_dir"]) / f"{prefix}_overlays.png", dpi=150)
     return fig
 
 
-def compare_runs(run_dirs):
-    """Validation-only comparison; reject differing cohorts, taxonomy or image size."""
+def model_summary(model, depth=2):
+    """Parameter counts per module down to ``depth`` levels, marking encoder layers.
+
+    ``model`` is the adapter returned by ``build_model``; its wrapped network is
+    summarised, so row names match the printed module tree.
+    """
+    import pandas as pd
+    encoder_ids = {id(p) for p in model.encoder_parameters()}
+    rows = []
+    for name, module in model.network.named_modules():
+        level = name.count(".") + 1 if name else 0
+        if not name or level > depth:
+            continue
+        parameters = list(module.parameters())
+        count = sum(p.numel() for p in parameters)
+        if not count:
+            continue
+        rows.append({"module": name, "type": type(module).__name__, "level": level, "parameters": count,
+                     "part": "encoder" if all(id(p) in encoder_ids for p in parameters) else "head/decoder"})
+    return pd.DataFrame(rows)
+
+
+def show_targets(manifest, task, split="train", count=6, rare_classes=3, seed=0, focus_classes=None):
+    """Audit prepared targets: photograph, label mask and overlay per sample.
+
+    Draws some images containing the rarest classes of the split, then random ones.
+    Ignored pixels (255) are magenta, so unlabelled overlap is never mistaken for a
+    white car. Use train/val while developing; the test split stays unseen.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+    from matplotlib.patches import Patch
+    if split not in {"train", "val"}:
+        raise ValueError("Audit train or val targets; keep test unseen during development")
+    current = task_manifest(manifest, task)
+    names = current["class_names"]
+    records = [r for r in current["records"] if r["split"] == split]
+    if not records:
+        raise ValueError(f"No {split} records for {task}")
+    rng = random.Random(seed)
+    totals = np.sum([r["pixel_counts"] for r in records], axis=0)
+    chosen = []
+    if focus_classes is not None:
+        if any(name not in names[1:] for name in focus_classes):
+            raise ValueError("Focus classes must be known foreground labels")
+        priority = [names.index(name) for name in focus_classes]
+    else:
+        priority = [i for i in np.argsort(totals) if i and totals[i]][:rare_classes]
+    for class_id in priority:
+        candidates = [r for r in records if r["pixel_counts"][class_id] and r not in chosen]
+        if candidates and len(chosen) < count:
+            chosen.append(rng.choice(candidates))
+    remaining = [r for r in records if r not in chosen]
+    chosen += rng.sample(remaining, min(count - len(chosen), len(remaining)))
+    palette = plt.get_cmap("turbo", len(names))
+    colours = ListedColormap([palette(i) for i in range(len(names))] + [(1.0, 0.0, 1.0, 1.0)])
+    fig, axes = plt.subplots(len(chosen), 3, figsize=(13, 3.5 * len(chosen)), squeeze=False)
+    present = set()
+    for row, record in enumerate(chosen):
+        with Image.open(record["image_path"]) as image:
+            rgb = np.asarray(image.convert("RGB"))
+        with Image.open(record["mask_path"]) as image:
+            labels = np.asarray(image)
+        present.update(int(v) for v in np.unique(labels) if v != IGNORE_INDEX)
+        shown = np.where(labels == IGNORE_INDEX, len(names), labels)
+        axes[row, 0].imshow(rgb)
+        axes[row, 1].imshow(shown, cmap=colours, vmin=0, vmax=len(names), interpolation="nearest")
+        axes[row, 2].imshow(rgb)
+        axes[row, 2].imshow(np.ma.masked_where(labels == 0, shown), cmap=colours, vmin=0, vmax=len(names),
+                            alpha=0.5, interpolation="nearest")
+        ignored = float(np.mean(labels == IGNORE_INDEX))
+        for column, heading in enumerate(("Photograph", f"Target · {ignored:.1%} ignored", "Target overlay")):
+            axes[row, column].set_title(f"{heading} · {str(record['sample_id'])[-6:]}")
+            axes[row, column].axis("off")
+    handles = [Patch(color=palette(i), label=names[i]) for i in sorted(present)]
+    handles.append(Patch(color=(1.0, 0.0, 1.0), label="ignored (255)"))
+    fig.legend(handles=handles, loc="lower center", ncol=min(6, len(handles)), fontsize=8)
+    fig.tight_layout(rect=(0, 0.06, 1, 1))
+    return fig
+
+
+def compare_runs(run_dirs, evaluation_image_size=None):
+    """Compare matching validation cohorts/taxonomies on a shared evaluation grid."""
     import pandas as pd
     rows, expected = [], None
     for directory in run_dirs:
         record = _read_run(directory)
         if record["status"] != "completed":
             raise ValueError("Only completed runs can be compared")
-        signature = (record["task"], record["manifest_hash"], record["split_hash"], record["taxonomy_hash"], record["config"]["image_size"])
+        size = evaluation_image_size if evaluation_image_size is not None else record["config"]["image_size"]
+        signature = (record["task"], record["manifest_hash"], record["split_hash"], record["taxonomy_hash"], size)
         if expected is not None and signature != expected:
             raise ValueError("Comparison needs identical task, split, taxonomy and evaluation resolution")
         expected = signature
-        metrics = json.loads((Path(record["evaluation_dir"]) / "val_metrics.json").read_text())
+        filename = "val_metrics.json" if evaluation_image_size is None else f"val_size{size}_metrics.json"
+        metrics = json.loads((Path(record["evaluation_dir"]) / filename).read_text())
+        if evaluation_image_size is not None:
+            if any(metrics.get(key) != record[key] for key in ("manifest_hash", "split_hash", "run_id")):
+                raise ValueError("Common-resolution evaluation has incompatible provenance")
+            if metrics.get("evaluation_image_size") != size or metrics.get("checkpoint_sha256") != record["checkpoint_sha256"]:
+                raise ValueError("Common-resolution evaluation has incompatible resolution or checkpoint")
         rows.append({"run_id": record["run_id"], "architecture": record["config"]["architecture"],
                      "checkpoint": record.get("weight_source", record["config"]["checkpoint"]), "seed": record["config"]["seed"],
                      "best_epoch": record["best_epoch"], "val_miou": metrics["miou_foreground"],
-                     "val_dice": metrics["dice_foreground"], "parameters": record.get("parameters"),
+                     "val_dice": metrics["dice_foreground"],
+                     "binary_iou": metrics.get("binary_foreground", {}).get("iou"),
+                     "training_image_size": record["config"]["image_size"], "evaluation_image_size": size,
+                     "parameters": record.get("parameters"),
                      "device": record["environment"]["device"]})
     return pd.DataFrame(rows).sort_values("val_miou", ascending=False) if rows else pd.DataFrame()

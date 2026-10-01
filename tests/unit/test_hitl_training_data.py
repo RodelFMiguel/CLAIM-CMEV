@@ -46,7 +46,7 @@ def test_holes_overlap_and_background_are_order_independent():
     a = obj("a", [[1, 1], [7, 1], [7, 7], [1, 7]], [[[3, 3], [5, 3], [5, 5], [3, 5]]])
     b = obj("b", [[6, 0], [9, 0], [9, 9], [6, 9]])
     annotation = {"size": {"width": 10, "height": 10}, "objects": [a, b]}
-    mask, counts = data.rasterize_annotation(annotation, {"a": 1, "b": 2})
+    mask, counts, stats = data.rasterize_annotation(annotation, {"a": 1, "b": 2})
     pixels = np.asarray(mask)
     assert pixels[4, 4] == 0  # interior is a hole
     assert pixels[2, 2] == 1
@@ -54,9 +54,45 @@ def test_holes_overlap_and_background_are_order_independent():
     assert pixels[8, 8] == 2
     assert pixels[0, 0] == 0
     annotation["objects"].reverse()
-    other, _ = data.rasterize_annotation(annotation, {"a": 1, "b": 2})
+    other, _, _ = data.rasterize_annotation(annotation, {"a": 1, "b": 2})
     np.testing.assert_array_equal(pixels, np.asarray(other))
     assert counts == {"a": 1, "b": 1}
+    assert stats["nested_pixels"] == 0 and stats["partial_overlap_pixels"] > 0
+
+
+def _door_and_window():
+    door = obj("door", [[0, 0], [9, 0], [9, 9], [0, 9]])
+    window = obj("window", [[2, 2], [5, 2], [5, 5], [2, 5]])  # entirely inside the door
+    return {"size": {"width": 10, "height": 10}, "objects": [window, door]}
+
+
+def test_nested_polygon_keeps_its_pixels_in_either_order():
+    annotation = _door_and_window()
+    mask, _, stats = data.rasterize_annotation(annotation, {"door": 1, "window": 2})
+    pixels = np.asarray(mask)
+    assert pixels[3, 3] == 2  # window inside the door is kept, not ignored
+    assert pixels[7, 7] == 1
+    assert not np.any(pixels == 255)
+    assert stats["nested_pixels"] > 0 and stats["partial_overlap_pixels"] == 0
+    annotation["objects"].reverse()
+    other, _, _ = data.rasterize_annotation(annotation, {"door": 1, "window": 2})
+    np.testing.assert_array_equal(pixels, np.asarray(other))
+
+
+def test_ignore_all_policy_reproduces_v1_and_threshold_is_respected():
+    annotation = _door_and_window()
+    legacy, _, _ = data.rasterize_annotation(annotation, {"door": 1, "window": 2}, policy="ignore_all")
+    assert np.asarray(legacy)[3, 3] == 255
+    # Window half outside the door: below an 0.8 containment threshold, so ignored.
+    annotation["objects"][0]["points"]["exterior"] = [[6, 2], [10, 2], [10, 5], [6, 5]]
+    annotation["objects"][1]["points"]["exterior"] = [[0, 0], [8, 0], [8, 9], [0, 9]]
+    partial, _, _ = data.rasterize_annotation(annotation, {"door": 1, "window": 2})
+    assert np.asarray(partial)[3, 7] == 255
+    assert np.asarray(partial)[3, 9] == 2
+    loose, _, _ = data.rasterize_annotation(annotation, {"door": 1, "window": 2}, containment=0.3)
+    assert np.asarray(loose)[3, 7] == 2
+    with pytest.raises(ValueError, match="overlap policy"):
+        data.rasterize_annotation(annotation, {"door": 1, "window": 2}, policy="last_wins")
 
 
 def test_union_split_and_canonical_taxonomy_ignore_swapped_names(raw, tmp_path):
@@ -103,6 +139,23 @@ def test_reserved_and_supplied_groups_propagate_across_tasks(raw, tmp_path):
     assert len(reserved) == 4
     assert {row["content_sha256"] for row in reserved} == set(hashes)
     assert len({row["group_id"] for row in reserved}) == 1
+
+
+def test_overlap_policy_is_versioned_and_legacy_config_is_unchanged(raw, tmp_path):
+    nested = data.prepare_hitl(raw, tmp_path / "nested")
+    assert nested["conversion_version"] == data.CONVERSION_VERSION
+    assert nested["preparation_config"]["overlap_policy"] == "nested_smaller_wins_partial_overlap_ignore_255"
+    assert nested["preparation_config"]["nested_containment"] == data.DEFAULT_NESTED_CONTAINMENT
+    assert all("overlap_stats" in row for row in nested["records"])
+    legacy = data.prepare_hitl(raw, tmp_path / "legacy", overlap_policy="ignore_all")
+    assert legacy["conversion_version"] == "hitl-polygons-1.0.0"
+    assert legacy["preparation_config"]["overlap_policy"] == "different_class_overlap_ignore_255"
+    assert "nested_containment" not in legacy["preparation_config"]
+    assert not any("overlap_stats" in row for row in legacy["records"])
+    with pytest.raises(ValueError, match="new processed version"):
+        data.prepare_hitl(raw, tmp_path / "legacy")  # default nested policy differs
+    with pytest.raises(ValueError, match="new processed version"):
+        data.prepare_hitl(raw, tmp_path / "nested", nested_containment=0.5)
 
 
 def test_changed_config_and_tampered_masks_fail_closed(raw, tmp_path):
