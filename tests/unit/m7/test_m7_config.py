@@ -45,7 +45,7 @@ def test_every_eligible_key_has_one_documented_positive_base_price():
 
 def test_policy_values_are_proposed_and_frozen_from_validation():
     config = load_cost_table_config()
-    assert (config.method, config.min_independent_base_cases, config.conformal) == ("empirical_percentile", 8, "cqr")
+    assert (config.method, config.min_independent_base_cases, config.conformal) == ("lightgbm_quantile", 8, "cqr")
     assert config.nominal_coverage == Decimal("0.90") and config.quantiles == (Decimal("0.05"), Decimal("0.95"))
     for name in ("eligible_keys.yaml", "base_prices.yaml", "generator.yaml", "splits.yaml", "cost_table.yaml"):
         assert yaml.safe_load((DEFAULT_CONFIG_DIR / name).read_text())["status"] == "proposed"

@@ -14,9 +14,27 @@ SEED = 20260924
 
 @pytest.fixture(scope="session")
 def built(tmp_path_factory):
-    """(registry_root, manifest) for the demo build with the frozen configuration."""
+    """(registry_root, manifest) for the empirical (contingency fallback) build with the frozen configuration."""
     root = tmp_path_factory.mktemp("registry")
-    manifest = run(["--seed", str(SEED), "--out", str(root), "--promote", "--with-injected"])
+    manifest = run(["--seed", str(SEED), "--out", str(root), "--promote", "--with-injected",
+                    "--method", "empirical_percentile"])
+    return root, manifest
+
+
+@pytest.fixture(scope="session")
+def needs_lightgbm():
+    """Skip when lightgbm (or its OpenMP runtime) is not usable in this environment."""
+    try:
+        import lightgbm  # noqa: F401
+    except (ImportError, OSError) as exc:
+        pytest.skip(f"lightgbm is not usable here: {exc}")
+
+
+@pytest.fixture(scope="session")
+def built_lightgbm(needs_lightgbm, tmp_path_factory):
+    """(registry_root, manifest) for the same records built with method lightgbm_quantile."""
+    root = tmp_path_factory.mktemp("registry-lightgbm")
+    manifest = run(["--seed", str(SEED), "--out", str(root), "--method", "lightgbm_quantile"])
     return root, manifest
 
 

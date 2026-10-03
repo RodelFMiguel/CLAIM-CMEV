@@ -35,7 +35,7 @@ REGISTRY_FILE = "registry.json"
 _VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 # A withheld row's own reason, mapped onto the lookup/M8 reason vocabulary.
 _WITHHELD_TO_REASON = {INSUFFICIENT_SUPPORT: INSUFFICIENT_SUPPORT, NO_RECORDS: INSUFFICIENT_SUPPORT,
-                       UNSUPPORTED_COMBINATION: UNSUPPORTED_COMBINATION}
+                       UNSUPPORTED_COMBINATION: UNSUPPORTED_COMBINATION, RANGE_INVALID: RANGE_INVALID}
 
 
 class CostTableError(ContractError):

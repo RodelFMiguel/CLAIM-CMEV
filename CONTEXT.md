@@ -1,6 +1,7 @@
 # CLAIM-CMEV shared development context
 
 Last updated: 2026-09-27 (Asia/Singapore), status corrected by Claude Code after independent verification.
+- **Later addition (2026-10-02, uncommitted):** M7 LightGBM quantile method, now the default cost-table build; see [the M7 entry](#m7-lightgbm-quantile-method-2026-10-02) at the end.
 - **Implementation baseline:** HEAD `6e59bc2` on branch `code-skeleton`, which sits on top of `f280209`. Both are local commits, and no push has been verified.
 - **Read first:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
 - **Older entries:** the chronological handoffs below keep their original status, which is sometimes superseded.
@@ -24,7 +25,7 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 | Specifications | The full target is broader than the implementation. Only three M9 checklist boxes are ticked, and all three are supported by code. The ticking understates progress, because several implemented items are still unticked |
 | Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes |
 | Application | Connected to the API/workbench: typed review actions, M6 decision replay, M3 reruns after human identity/coverage confirmations, pinned cost lookup, review-state overlays (dismissals and accepted scope), durable request retry, stage retry and frozen M9 reports. The evidence image overlays (`review/overlays.py`) are a library only; no endpoint or UI serves them |
-| Data and models | No trained model exists. M1 has **no code**: `vision/parts/` holds only `.gitkeep`. The M2 assignment, M4 raster/geometry/OCR, M5 parser and M6 linker are libraries covered by unit tests only; the pipeline never calls them. Derived masks and pages are placeholder URIs. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
+| Data and models | No trained model exists. M1 has **no code**: `vision/parts/` holds only `.gitkeep`. The M2 assignment, M4 raster/geometry/OCR, M5 parser and M6 linker are libraries covered by unit tests only; the pipeline never calls them. Derived masks and pages are placeholder URIs. M7 costs are synthetic and built offline; since 2026-10-02 the default M7 build is the LightGBM quantile pair, selected over the empirical method on synthetic validation data (M7 entry at the end). PaddleOCR was smoke-run on synthetic pages only |
 | Shared agent workflows | Canonical skills remain under `.agents/skills`, with no workflow changes |
 | Validation | At `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. Docker has not been re-run since `6e59bc2`. Independent verification found remaining and new defects; see the 2026-09-27 section |
 | Evaluation | No model accuracy, real price calibration, real claim outcome, usability comparison or financial benefit measured |
@@ -50,7 +51,7 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 2. Connect the tested M4/M5 document libraries, the M6 linker and the M2 assignment library to persisted artifacts and worker commands. The fixture producers currently emit pre-linked marks and pre-assigned observations. Obtain team-reviewed supported layouts/aliases and permitted sample pages for real-page acceptance. Keep fixture mode explicit and fail closed when live prerequisites are unavailable. The current fixture pipeline does not run OCR on uploads.
 3. Extend the evidence panel to actual page/photo artifacts and aligned row/mark/mask overlays, then replace manual fixture-ID/coordinate controls. Complete persistence of unsent generic form drafts and targeted accessibility acceptance; current IndexedDB guarantees cover submitted requests and note/amount drafts.
 4. Complete remaining runtime acceptance: broker interruption/restart, coordinated PostgreSQL/object-store restore, capacity, dedicated migration job and eventual per-model/GPU packaging. Local replay/failure tests and both Compose smoke runs do not substitute for these checks.
-5. Team prerequisites remain CarDD consent/files, HITL access, layouts/marking rules, frozen taxonomy/config choices, grouped evaluation reservations, owners and the runtime effort budget. LightGBM/RQ4 is a separate offline experiment, not an already-measured outcome.
+5. Team prerequisites remain CarDD consent/files, HITL access, layouts/marking rules, frozen taxonomy/config choices, grouped evaluation reservations, owners and the runtime effort budget. LightGBM, RQ4 and experiment C were run on synthetic prices on 2026-10-02 (final entry); the default build method is now `lightgbm_quantile`, with `lightgbm` a core dependency and `libgomp1` in the app image.
 
 The current integrated fixture milestone is complete. See the final Codex entry below for changed paths, checks and remaining boundaries; do not restart from the superseded Outbox import failure in the historical Claude handoff.
 
@@ -1238,3 +1239,53 @@ Four lanes run in parallel on disjoint paths:
 - **Validation:** created and rendered both slides with PowerPoint; visually inspected both renders. Native text bounds showed zero overflows. Presentation package and layout validators passed with two slides, 16:9, Aptos, zero findings and zero layout warnings. The bundled artifact authoring runtime was unavailable, so native PowerPoint automation was used. No application code or tests changed in this task.
 - **Limitations and next step:** collect the team's dataset/checkpoint details, measured model results, component updates and next owners/dates, then replace the editable placeholders. Training completion does not establish runtime integration or accuracy. The deck is local and uncommitted; no push was performed.
 - **Visual redesign (2026-09-27, Claude Code):** still two slides, rebuilt via PowerPoint automation from `runtime/presentation-build/create-deck-v2.ps1`. The script uses tinted full-bleed background photos, glass cards, module chips, a legend (running / fixture outputs / planned), status pills and three stat tiles. The stat tiles show 1,413 fixture/synthetic tests, 9 full-profile containers (8 long-running) and the team-reported SegFormer-B2. Backgrounds: slide 1 uses the project's own `src/workbench/public/images/damaged-car.png`; slide 2 uses the Wikimedia Commons photo "Rear End Tesla Model X Collision Damage Repair" by Scientificranking, licensed CC BY 4.0. The photo is credited on the slide and in the notes, and was cropped, converted to greyscale and tinted. The photo-cropping script is `prepare-backgrounds.py`. The previous deck is kept as `runtime/presentation-build/CLAIM-CMEV_system_design_and_progress.draft.pptx`. Checks: PowerPoint text bounds showed zero overflows, both renders were inspected, and the file reopens in PowerPoint with 2 slides and speaker notes. The pptx skill's `validate.py` was not run, because `lxml`/`defusedxml` are not installed.
+
+
+## M7 LightGBM quantile method (2026-10-02)
+
+Date/time and timezone: 2026-10-02, Asia/Singapore (time not recorded).
+Contributor / coding agent: Claude Code, at the user's request. The user accepted the [plan](docs/plans/m7-lightgbm-quantile-plan.md) with all six recommendations and asked to proceed.
+Task and relevant module: M7 reference cost ranges, item R13: the learned `lightgbm_quantile` method, the method comparison, RQ4 and experiment C.
+Branch / baseline commit / resulting commit or PR: `main` / written on `4edb356`, reapplied onto `b302d99` after `git pull` on 2026-10-03 / no commit or PR. Everything below is uncommitted. No push.
+
+Changed paths and completed behaviour:
+- New `src/claim_cmev/costs/reference/lightgbm_quantile.py`: two LightGBM regressors with quantile loss at 0.05 and 0.95; features part, operation, vehicle class; one training row per independent base case (median quote); target `ln(amount)`; early stopping on validation. It returns the same `KeyFit` objects as the empirical method, so the support sweep, conformal step, row assembly, validation, test metrics and publication are reused.
+- `build.py`: `fit_policy` (shared fit and policy selection), method switch, `--method` override, model files (`model.lower.txt`, `model.upper.txt`, `model.json`) hashed in the manifest. `config.py`: `LightGBMRecipe`, the `lightgbm` block, and the guard that refused every non-empirical method removed. `empirical.py`: `KeyFit.crossed`; a crossed fit is never served or calibrated.
+- New `src/claim_cmev/costs/reference/evaluation.py` and `pipelines/costs/eval_cost_table.py` (`compare`, `rq4`, `experiment-c`). They publish nothing and write `report.json` and `report.md` under `artifacts/evaluation/` (ignored by Git).
+- Tests: new `tests/unit/m7/test_m7_lightgbm.py` and `test_m7_evaluation.py`; `conftest.py` gains `needs_lightgbm` and `built_lightgbm`.
+- Configuration and packaging: `configs/costs/cost_table.yaml` (`config_version` 2026.10.2, `method: lightgbm_quantile`, `lightgbm` recipe, `method_selection`, `lightgbm_status: compared`); `pyproject.toml` core dependency `lightgbm>=4.5,<5`; `infra/Dockerfile.api` installs `libgomp1`.
+- Documentation: the plan, M7 specification, training specification 7.4.2, evaluation plan and `pipelines/README.md`. Three M7-related checkboxes ticked, each with its evidence.
+
+Decisions (accepted/proposed) and references:
+- Accepted by the user: base-case rows; log target; the selection rule (inside the 0.85 to 0.95 validation band, narrower median range wins; tie or none keeps empirical); full plan.
+- Shared-contract change (accepted decision 4): a learned key with enough support whose bounds cross is withheld with `withheld_reason = range_invalid`. `WithheldReason` in `contracts/costs.py`, M7 `WITHHELD_REASONS` and the lookup mapping gained that value. M8 already handles `range_invalid` under R11; no M8 or UI change. No crossed key occurred in these runs.
+- Decision 5, settled by the user later the same day ("Switch"): `method: lightgbm_quantile` is the default (`config_version` 2026.10.2). Because a default build runs in `cmev-cost-bootstrap` and in every test environment, `lightgbm` moved from an optional extra to a core dependency and `infra/Dockerfile.api` installs `libgomp1`. The empirical method stays buildable with `--method empirical_percentile`; the M7 `built` test fixture pins it so the empirical tests keep their meaning.
+- Deviations from the plan text: model files are flat, not a `model/` folder (the loader refuses nested paths). LightGBM's default categorical settings were kept and recorded, not tuned.
+- Every recipe value remains **proposed**.
+
+Checks actually run, results and artifact locations (macOS arm64, Python 3.14.5, LightGBM 4.7.0, seed 20260924, synthetic prices only):
+- Full Python suite after the default switch: 1331 passed, 3 skipped (2 need HITL data, 1 needs the OCR venv). This includes the integration, backend and M8 fixture suites running against the LightGBM default table. If LightGBM cannot be imported, a default build now fails with a message naming the missing runtime and the `--method empirical_percentile` fallback.
+- Method comparison, both methods at support threshold 8 with `cqr` selected on validation:
+
+| Partition | Method | Coverage | Median width | Keys with a range |
+| --- | --- | --- | --- | --- |
+| validation | empirical | 0.9059 (799 of 882) | 207.41 | 85 of 128 |
+| validation | LightGBM | 0.8866 (782 of 882) | 189.33 | 85 of 128 |
+| test | empirical | 0.9039 (1082 of 1197) | 207.41 | 85 of 128 |
+| test | LightGBM | 0.8855 (1060 of 1197) | 189.33 | 85 of 128 |
+
+  Selected on validation: `lightgbm_quantile` (narrower median range). Both meet the test target band. LightGBM's ranges are about 9 percent narrower and cover about 1.8 points less; its conformal offset is 0.0387 against 0.0800.
+- Experiment C, 384 injected records with 38 labelled (prevalence 0.099); 13 labelled records sit on keys with no served range and get no cost check. Empirical: precision 0.395, recall among checked 0.680 (17 of 25). LightGBM: precision 0.400, recall 0.720 (18 of 25). Low precision is expected: a 0.90 interval flags about 10 percent of ordinary prices. Recall on +25 percent anomalies is low for both (3 and 4 of 8).
+- RQ4, caps of 16, 12, 8, 5 and 3 train base cases per key. Served view: coverage stays between 0.886 and 0.907 for both methods down to a cap of 8; below the threshold of 8 every key is withheld. Model-only view (not served): LightGBM coverage 0.888 to 0.905 and empirical 0.881 to 0.895; at a cap of 3 LightGBM's median width grows to 275 against 214.
+- Table published locally and active: `ct-20260922-76c1a65a` (LightGBM, the default build) under the ignored `artifacts/cost_tables/`; earlier local builds from this session remain beside it. Reports: `artifacts/evaluation/m7-method-comparison/`, `experiment-c/`, `rq4-reduced-support/`. Regenerate with `python pipelines/costs/eval_cost_table.py <compare|experiment-c|rq4> --seed 20260924 --out artifacts/evaluation/<name>`.
+
+Uncommitted work, limitations and missing prerequisites:
+- Nothing is committed. Synthetic prices only: the generator is multiplicative with lognormal noise, so these results show that the method and its calibration work under the generator, not real repair-price accuracy.
+- The injected set is small (3 base cases per key), so anomaly figures are counts, not stable rates.
+- Reproducibility was checked on one machine (the same seed rebuilds the same table version). LightGBM floats can differ across platforms, which could change a bound by a cent and so the version hash. Not run: Docker images, a Linux build, the frontend, any browser check.
+- The default table changed from the empirical `ct-20260922-0c9a22f4` to the LightGBM `ct-20260922-76c1a65a`, so served ranges are about 9 percent narrower. Existing assessments keep the table version they pinned; a running stack needs its `cost-tables` volume rebuilt by `cmev-cost-bootstrap` to pick up the new default.
+- Known and unchanged: with this seed the key `front-bumper / replace / sedan_standard` is withheld for support under both methods.
+
+Docker check for the default switch: **not verified**. On 2026-10-02 an image build from `infra/Dockerfile.api` followed by the bootstrap command was stopped at its 30-minute limit without output. A separate `docker pull python:3.12-slim-bookworm` on the same machine also did not finish within 2 minutes, while the host reached Docker Hub, PyPI and the Debian mirror in under a second, so the stall is in this machine's Docker image pulls and never reached the changed Dockerfile lines. The `libgomp1` line and the LightGBM build inside the Linux image are therefore untested.
+
+Next concrete step and agreed owner (or unassigned): unassigned. On a machine whose Docker can pull images, build `infra/Dockerfile.api`, run `cmev-cost-bootstrap` and the lean Compose browser smoke, and record whether the Linux table version matches `ct-20260922-76c1a65a`; then review and commit this work, and have Lane 4 review the proposed recipe and the selection evidence.

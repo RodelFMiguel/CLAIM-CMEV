@@ -14,6 +14,8 @@ COPY pyproject.toml README.md ./
 COPY src/claim_cmev ./src/claim_cmev
 COPY configs ./configs
 COPY infra/migrations ./infra/migrations
+# libgomp1: OpenMP runtime LightGBM needs for the offline M7 build (method lightgbm_quantile).
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
 RUN pip install . && useradd --uid 10001 --create-home cmev \
     && mkdir -p /srv/artifacts/models /srv/artifacts/cost_tables \
     && chown 10001:10001 /srv/artifacts/cost_tables

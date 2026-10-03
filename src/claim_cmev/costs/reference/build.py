@@ -16,7 +16,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
 from claim_cmev.contracts.common import SCHEMA_VERSION, ContractError
@@ -31,12 +31,13 @@ from .empirical import (
     fit_empirical, served_bounds, support_sweep,
 )
 from .generator import GENERATOR_MANIFEST, generate_injected_anomalies, generate_prices
+from .lightgbm_quantile import MODEL_FILES, MODEL_REPORT_FILE, LightGBMFit, fit_lightgbm
 from .lookup import MANIFEST_FILE
 from .publish import promote, write_json, write_table_files
-from .records import file_sha256, read_records
+from .records import PriceRecord, file_sha256, read_records
 from .splits import membership_hash, reserve_test_membership, screen_records, split_records
 from .validation import BuildValidationError, validate_ranges
-from .vocabulary import COST_KEY_FIELDS, INSUFFICIENT_SUPPORT, SYNTHETIC_NOTICE
+from .vocabulary import COST_KEY_FIELDS, INSUFFICIENT_SUPPORT, METHODS, RANGE_INVALID, SYNTHETIC_NOTICE
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 BUILT_BY = "claim_cmev.costs.reference.build"
@@ -93,6 +94,43 @@ def _check_membership(rows: Sequence[dict], members: Sequence[dict], exclusions:
         raise BuildValidationError(problems)
 
 
+def fit_policy(partitions: Mapping[str, Sequence[PriceRecord]], config: CostTableConfig,
+               ) -> tuple[dict, dict[str, Any], LightGBMFit | None]:
+    """Fit ``config.method`` on train, then fix the serving policy without touching test.
+
+    The support threshold is selected on validation (or taken frozen from the configuration);
+    the conformal offset is fitted on calibration and selected on validation (or frozen).
+    Returns ``(fits, policy, learned)``; ``learned`` is ``None`` for the empirical method.
+    """
+    learned = None
+    if config.method == "lightgbm_quantile":
+        if config.lightgbm is None:
+            raise BuildValidationError(["method lightgbm_quantile needs the lightgbm recipe in cost_table.yaml"])
+        learned = fit_lightgbm(partitions["train"], partitions["validation"], quantiles=config.quantiles,
+                               recipe=config.lightgbm, eligible_keys=config.grid.eligible_keys())
+        fits = dict(learned.fits)
+    else:
+        fits = fit_empirical(partitions["train"], quantiles=config.quantiles)
+    sweep = support_sweep(fits, partitions["validation"], config=config,
+                          eligible_key_count=len(config.grid.eligible_keys()))
+    frozen = config.min_independent_base_cases
+    min_support = frozen if frozen is not None else sweep["selected"]
+    if min_support is None:
+        raise BuildValidationError(["no support threshold is frozen and the validation sweep selected none"])
+    conformal_fit = fit_conformal(fits, partitions["calibration"], min_support=min_support,
+                                  nominal=config.nominal_coverage)
+    selection = conformal_selection(fits, partitions["validation"], conformal_fit,
+                                    min_support=min_support, config=config)
+    conformal = config.conformal if config.conformal is not None else selection["selected"]
+    if conformal == "cqr" and conformal_fit["offset"] is None:
+        raise BuildValidationError(["cqr is configured but the calibration partition gives no finite offset"])
+    offset = Decimal(conformal_fit["offset"]) if conformal == "cqr" else None
+    policy = {"min_support": min_support, "sweep": sweep, "conformal": conformal, "offset": offset,
+              "conformal_fit": conformal_fit, "conformal_selection": selection,
+              "learned": None if learned is None else dict(learned.report)}
+    return fits, policy, learned
+
+
 def build_cost_table(records_path: Path, *, config: CostTableConfig, out_dir: Path, table_version: str | None = None,
                      promote_active: bool = False, built_by: str = BUILT_BY) -> dict[str, Any]:
     """Build, validate and publish one immutable table under ``out_dir/<table_version>/``.
@@ -113,24 +151,11 @@ def build_cost_table(records_path: Path, *, config: CostTableConfig, out_dir: Pa
         reservation = reserve_test_membership(split)
         write_json(staging / "test_reservation.json", reservation)
         # 2. Fit on train only; select the support threshold on validation only.
-        fits = fit_empirical(split.partitions["train"], quantiles=config.quantiles)
-        sweep = support_sweep(fits, split.partitions["validation"], config=config,
-                              eligible_key_count=len(grid.eligible_keys()))
-        frozen = config.min_independent_base_cases
-        min_support = frozen if frozen is not None else sweep["selected"]
-        if min_support is None:
-            raise BuildValidationError(["no support threshold is frozen and the validation sweep selected none"])
         # 3. Conformal offset fitted on the calibration partition only; selected on validation, then frozen.
-        conformal_fit = fit_conformal(fits, split.partitions["calibration"], min_support=min_support,
-                                      nominal=config.nominal_coverage)
-        selection = conformal_selection(fits, split.partitions["validation"], conformal_fit,
-                                        min_support=min_support, config=config)
-        conformal = config.conformal if config.conformal is not None else selection["selected"]
-        if conformal == "cqr" and conformal_fit["offset"] is None:
-            raise BuildValidationError(["cqr is configured but the calibration partition gives no finite offset"])
-        offset = Decimal(conformal_fit["offset"]) if conformal == "cqr" else None
-        policy = {"min_support": min_support, "sweep": sweep, "conformal": conformal, "offset": offset,
-                  "conformal_fit": conformal_fit, "conformal_selection": selection}
+        fits, policy, learned = fit_policy(split.partitions, config)
+        min_support, sweep, offset = policy["min_support"], policy["sweep"], policy["offset"]
+        conformal, conformal_fit, selection = (policy["conformal"], policy["conformal_fit"],
+                                               policy["conformal_selection"])
         as_of = date.fromisoformat(generator["settings"]["dates"]["as_of_date"])
         provenance = {"source_kind": "synthetic", "generator_version": generator["generator_version"],
                       "seed": generator["seed"], "generator_ref": "generator.json"}
@@ -163,8 +188,7 @@ def build_cost_table(records_path: Path, *, config: CostTableConfig, out_dir: Pa
                                   "by_key": coverage_by_key(served_bounds(rows), split.partitions["validation"])},
                    "final_test": metrics, "support_sweep_ref": "support_sweep.json",
                    "calibration_ref": "calibration.json",
-                   "learned_comparator": {"method": "lightgbm_quantile", "status": config.lightgbm_status,
-                                          "note": "not run; RQ4 conclusions are limited to the empirical method"}}
+                   "learned_comparator": _learned_comparator(config, learned)}
         splits_doc = {"split": split_config.describe(), "split_config_hash": split.config_hash,
                       "partitions": split.summary(), "support_after_split": split.support_after_split()}
         calibration_doc = {"synthetic": True, "table_version": version, "fit": conformal_fit,
@@ -174,10 +198,15 @@ def build_cost_table(records_path: Path, *, config: CostTableConfig, out_dir: Pa
         files = write_table_files(staging, rows=rows, members=members, exclusions=exclusion_rows,
                                   documents=documents, config_snapshot=snapshot)
         files["test_reservation.json"] = file_sha256(staging / "test_reservation.json")
+        if learned is not None:  # flat file names: the table loader refuses nested paths
+            for name, text in learned.model_text.items():
+                (staging / MODEL_FILES[name]).write_text(text, encoding="utf-8")
+                files[MODEL_FILES[name]] = file_sha256(staging / MODEL_FILES[name])
+            files[MODEL_REPORT_FILE] = write_json(staging / MODEL_REPORT_FILE, dict(learned.report))
         manifest = _manifest(config=config, version=version, build_id=build_id, content_hash=content_hash,
                              generator=generator, split=split, reservation=reservation, policy=policy, rows=rows,
                              exclusion_rows=exclusion_rows, validation=validation, metrics=metrics, as_of=as_of,
-                             files=dict(sorted(files.items())), built_by=built_by)
+                             files=dict(sorted(files.items())), built_by=built_by, learned=learned)
         write_json(staging / MANIFEST_FILE, manifest)
         entry = {"table_version": version, "build_id": build_id, "content_hash": content_hash,
                  "manifest_sha256": file_sha256(staging / MANIFEST_FILE), "built_at": manifest["built_at"],
@@ -194,9 +223,18 @@ def build_cost_table(records_path: Path, *, config: CostTableConfig, out_dir: Pa
     return manifest | {"published_path": str(path), "reused_existing": reused}
 
 
+def _learned_comparator(config: CostTableConfig, learned: LightGBMFit | None) -> dict[str, Any]:
+    if learned is None:
+        return {"method": "lightgbm_quantile", "status": config.lightgbm_status,
+                "note": "this table is the empirical method; see lightgbm_status in the configuration snapshot"}
+    return {"method": "lightgbm_quantile", "status": "run", "report_ref": MODEL_REPORT_FILE,
+            "note": "this table is the learned method; the empirical method remains the contingency fallback"}
+
+
 def _manifest(*, config: CostTableConfig, version: str, build_id: str, content_hash: str, generator: dict, split,
               reservation: dict, policy: dict, rows: Sequence[dict], exclusion_rows: Sequence[dict],
-              validation: dict, metrics: dict, as_of: date, files: dict, built_by: str) -> dict[str, Any]:
+              validation: dict, metrics: dict, as_of: date, files: dict, built_by: str,
+              learned: LightGBMFit | None = None) -> dict[str, Any]:
     """Build manifest: integration contracts 9.3 fields plus the M7 manifest fields."""
     sweep, min_support, fit = policy["sweep"], policy["min_support"], policy["conformal_fit"]
     applied = policy["offset"] is not None
@@ -246,7 +284,8 @@ def _manifest(*, config: CostTableConfig, version: str, build_id: str, content_h
                                "frozen_in_config": config.conformal is not None,
                                "note": config.conformal_decision,
                                "calibration_partition_sha256": split.hashes["calibration"]},
-        "learned_comparator": {"method": "lightgbm_quantile", "status": config.lightgbm_status},
+        "learned_comparator": _learned_comparator(config, learned),
+        "lightgbm": None if learned is None else dict(learned.report),
         "key_count": supported, "supported_key_count": supported, "grid_key_count": len(rows),
         "eligible_key_count": len(config.grid.eligible_keys()),
         "withheld_key_count": withheld.get(INSUFFICIENT_SUPPORT, 0), "withheld_by_reason": withheld,
@@ -258,7 +297,8 @@ def _manifest(*, config: CostTableConfig, version: str, build_id: str, content_h
         "final_test_summary": {k: metrics["final_test"]["coverage"][k]
                                for k in ("coverage", "evaluated_records", "covered")}
                               | {"target_status": metrics["final_test"]["target_status"]},
-        "interval_integrity": {"crossed_bounds": 0, "zero_width_allowed": config.zero_width_allowed,
+        "interval_integrity": {"crossed_bounds": 0, "crossed_fits_withheld": withheld.get(RANGE_INVALID, 0),
+                               "zero_width_allowed": config.zero_width_allowed,
                                "zero_width_keys": zero_width},
         "taxonomy_version": config.grid.taxonomy_version, "taxonomy_versions": dict(config.grid.taxonomy_versions),
         "eligible_keys_version": config.grid.version,
@@ -277,6 +317,8 @@ def run(argv: Sequence[str] | None = None) -> dict[str, Any]:
     parser.add_argument("--prices-dir", type=Path, default=None,
                         help="generated records location (default: <out>/_generated/prices)")
     parser.add_argument("--table-version", default=None, help="explicit version (default: derived from content)")
+    parser.add_argument("--method", choices=METHODS, default=None,
+                        help="override the configured method (recorded in the configuration snapshot)")
     parser.add_argument("--promote", action="store_true", help="make this table the default for new assessments")
     parser.add_argument("--with-injected", action="store_true",
                         help="also write the separate injected-anomaly run (experiment C input, never built)")
@@ -287,8 +329,11 @@ def run(argv: Sequence[str] | None = None) -> dict[str, Any]:
     ordinary = generate_prices(config=generator_config, out_dir=run_dir / "ordinary")
     if args.with_injected:
         generate_injected_anomalies(config=generator_config, out_dir=run_dir / "injected_anomaly")
-    manifest = build_cost_table(ordinary.records_path, config=load_cost_table_config(args.config_dir),
-                                out_dir=args.out, table_version=args.table_version, promote_active=args.promote)
+    config = load_cost_table_config(args.config_dir)
+    if args.method is not None and args.method != config.method:
+        config = config.with_policy(method=args.method)
+    manifest = build_cost_table(ordinary.records_path, config=config, out_dir=args.out,
+                                table_version=args.table_version, promote_active=args.promote)
     return manifest
 
 
