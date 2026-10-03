@@ -1,8 +1,8 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-10-01 (Asia/Singapore), M2 damage-focused notebook adjustments validated; the 2026-09-27 application verification remains historical.
-- **Implementation baseline:** HEAD `6e59bc2` on branch `code-skeleton`, which sits on top of `f280209`. Both are local commits, and no push has been verified.
-- **Read first for training:** the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), then the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
+Last updated: 2026-10-02 (Asia/Singapore), M2 recall/regularisation presets and validation background-offset tuning added; the 2026-09-27 application verification remains historical.
+- **Implementation baseline:** HEAD `343ef1a` on branch `image-worker` (training checkpoint commit). Application code last changed in `6e59bc2` on `code-skeleton`. No push has been verified.
+- **Read first for training:** the [M2 CarDD notebook handoff](#m2-cardd-notebook-and-converter-2026-10-02), the [M2 recall/regularisation handoff](#m2-recall-regularisation-presets-and-background-offset-2026-10-02), the [M2 failure-review handoff](#m2-failure-review-and-tiny-fitting-diagnostic-2026-10-02), then the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
 - **Application baseline:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
 - **Older entries:** the chronological handoffs below keep their original status, which is sometimes superseded.
 
@@ -26,7 +26,7 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 | Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes |
 | Application | Connected to the API/workbench: typed review actions, M6 decision replay, M3 reruns after human identity/coverage confirmations, pinned cost lookup, review-state overlays (dismissals and accepted scope), durable request retry, stage retry and frozen M9 reports. The evidence image overlays (`review/overlays.py`) are a library only; no endpoint or UI serves them |
 | Data and models | No trained model exists. M1 has **no code**: `vision/parts/` holds only `.gitkeep`. The M2 assignment, M4 raster/geometry/OCR, M5 parser and M6 linker are libraries covered by unit tests only; the pipeline never calls them. Derived masks and pages are placeholder URIs. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
-| Offline vision training (2026-10-01) | Two manual SegFormer-B2 HITL notebooks and shared helpers exist. One full M1 run on v1 labels completed (validation foreground mIoU 0.6205, epoch 28 of 30); this is a development result, not a held-out one. The notebooks now default to v2 labels (nested overlap policy) and the `fixed_aug` recipe, which has no full-data result yet. Held-out accuracy and runtime adapters remain pending |
+| Offline vision training (2026-10-02) | Manual SegFormer-B2 HITL notebooks. M1 on v2 labels with `fixed_aug`: validation foreground mIoU 0.799 (run `f9be9131`). M2: 0.222 (`6203ed59`) and 0.232 (`eacada43`); both miss about half of damage pixels and overfit after about epoch 10. The M2 default is now the untested `damage_focus` preset. All are validation results; the test split is unused. Runtime adapters remain pending |
 | Shared agent workflows | Canonical skills remain under `.agents/skills`, with no workflow changes |
 | Validation | At `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. Docker has not been re-run since `6e59bc2`. Independent verification found remaining and new defects; see the 2026-09-27 section |
 | Evaluation | No model accuracy, real price calibration, real claim outcome, usability comparison or financial benefit measured |
@@ -1406,6 +1406,113 @@ Checks actually run, results and artifact locations:
 - Evidence: `artifacts/evaluation/m2-adjustments-20261001/`, plus `artifacts/evaluation/m2-adjustments-validation.log` and `m2-adjustments-pretrained.log`. `git diff --check` passed.
 Uncommitted work, limitations and missing prerequisites: No full fit, new validation score or final-test evaluation was run. Default 640 training memory/throughput and the optional ConvNeXt model were not benchmarked. Exact interrupted-run resume and native-resolution tiled inference remain future work. No serving integration or accuracy improvement is claimed. Existing unrelated changes remain in the working tree.
 Next concrete step and agreed owner: User restarts the project `venv` kernel to load the changed helper module, reviews the audit/crop cells and runs M2 manually. Use `focused_640` for the combined candidate or the staged presets for attribution; compare validation at the same resolution before freezing the test protocol.
+
+## M2 failure review and tiny fitting diagnostic (2026-10-02)
+
+Date/time and timezone: 2026-10-02, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: Make the proposed 20–30-example flaking/paint-chip audit and small reviewed-training-subset fitting test executable for the user; offline M2 diagnosis.
+Branch / baseline commit / resulting commit or PR: `image-worker`; inspected HEAD moved from `abad09f` to `343ef1a` during work. Existing contributor changes/commit preserved; this agent made no commit or push.
+Changed paths and completed behaviour:
+- `notebooks/M2_HITL_failure_audit.ipynb` and `pipelines/vision/diagnostics.py`: load a frozen M2 checkpoint; rank class-present train/val images by missed class pixels; distinguish background/type misses and labels erased by resizing; export distinct class-balanced review images with native close-ups and original annotation locators.
+- Editable review CSV requires a human `clean` decision. A separate manual fitting cell accepts only explicitly selected, unchanged original training images; preserves all nine labels; fits a fresh pretrained model without augmentation; reports same-image loss, per-class IoU and overlays. Test/reserved images are refused by the audit; validation/test records cannot enter fitting.
+- `tests/unit/test_vision_diagnostics.py`, `notebooks/README.md`, `docs/training-hitl-notebooks.md`, `.gitignore` (new ignored `artifacts/diagnostics/`). Main M1/M2 notebooks and source annotations were not changed by this task.
+Decisions/status:
+- The reference M2 run `damage-segformer-20261001T151123Z-eacada43` is now completed (34 epochs, best epoch 19; best foreground validation mIoU 0.2324). This supersedes the earlier handoff saying the revised recipe had no full fit. The user ran that fit; this task did not retrain it.
+- Memorization scores are explicitly diagnostic, not held-out metrics or serving candidates. No split is fabricated to masquerade as validation, and no annotations are automatically corrected. A failed/ambiguous human review is never automatically accepted.
+Checks actually run, results and artifact locations:
+- Four vision test modules: **49 passed**, including class-balanced unique selection, ignored pixels, human-review/provenance gates, train-only fitting, failure status and fixture checkpoint/history output. Fixture fitting is not evaluated model performance.
+- New notebook schema validates and all code cells parse. All six code cells ran with real HITL and the tiny-fit switch disabled; the saved-review resume path was also exercised.
+- Actual saved-checkpoint inference on Apple MPS scored 232 class-present training images. Exported 24 distinct failure pages: 12 flaking, 12 paint-chip. Review decisions are all blank. No selected target was entirely erased by resizing; this does not prove visual clarity or correct annotation.
+- Review packet: `artifacts/diagnostics/m2/20261001T163333Z-train-f5c955/` (`review.csv`, `all_focus_scores.csv`, `audit.json`, 24 PNGs). Visually inspected pages from both focus classes. Logs: `artifacts/evaluation/m2-failure-audit-validation.log` and `m2-failure-audit-render.log`. Generated artifacts are Git-ignored; `git diff --check` passed.
+Limitations: Human label review and real-image tiny fitting remain pending. No label quality verdict, new generalization score, test evaluation, or CarDD integration is claimed. The chosen failures are a biased diagnostic sample, not an estimate of overall annotation error.
+Next concrete step and owner: User reviews the 24 PNGs and fills `review.csv`, then opens the audit notebook, loads the existing packet, explicitly chooses 4–8 clean training IDs and enables `RUN_TINY_FIT`. Inspect focus-class curves and masks before choosing the next full training experiment.
+
+
+## M2 recall/regularisation presets and background offset (2026-10-02)
+
+Date/time and timezone: 2026-10-02, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request after reviewing why M2 does not improve.
+Task and relevant module: M2 damage segmentation training recipe (offline).
+Branch / baseline commit / resulting commit or PR: `image-worker` / `343ef1a` / uncommitted.
+Diagnosis (validation, from saved metrics):
+- Runs `6203ed59` (0.2224) and `eacada43` (`focused_640` with ADE20K checkpoint and damage-aware crops, 0.2324) are within validation noise of each other.
+- Both overfit after about epoch 10: training mIoU rises to 0.56-0.69 while validation stays at 0.20-0.23.
+- Both miss about half of the damage pixels as background. Any-damage recall is 0.53-0.63.
+- Merging the 8 classes into 4 groups (from the confusion matrix) only reaches about 0.33 mIoU, so damage-vs-background is the bottleneck rather than type confusion.
+Changed paths and completed behaviour:
+- `pipelines/vision/training.py`. All new fields default to off, so saved runs reload unchanged.
+  - `class_weighting="sqrt_inverse"` with `class_weight_cap`: cross-entropy weights sqrt(f_background / f_class) from TRAINING pixel counts only, recorded in the run manifest.
+  - `drop_path_rate` and `classifier_dropout`, applied to the SegFormer config.
+  - `ema_decay`: averaged weights with a decay warmup of min(decay, (1+n)/(10+n)). Validation and checkpoints use the averaged weights; `raw_model` keeps the trained ones.
+  - Per-epoch `val_binary_iou`, `val_binary_recall` and `val_binary_precision` in the history and printout, plotted when present.
+  - `tune_background_offset`: validation only, one pass, saved as `val[_sizeN]_background_offset.json`. `evaluate_run`, `plot_confusion` and `show_predictions` accept `background_offset` and write separate `_bg<offset>` reports.
+- `notebooks/M2_HITL_damage_training.ipynb`:
+  - New presets `weighted_loss` (`rare_sampling` + class weights) and the default `damage_focus` (+ drop path 0.2, decoder dropout 0.2, weight decay 0.05, EMA 0.995).
+  - A class-weight table in the config cell.
+  - A new background-offset tuning section after the comparison cell.
+  - The final test reuses the validation-selected offset.
+  - Code cells whose source changed were cleared.
+- `tests/unit/test_vision_training.py`: 9 new tests.
+- `notebooks/README.md` and `docs/training-hitl-notebooks.md`.
+- Not touched: the user's uncommitted `M2_HITL_failure_audit.ipynb`, `pipelines/vision/diagnostics.py` edits and `artifacts/diagnostics/`.
+Decisions (accepted/proposed) and references: All recipe values are proposed starting points. The background offset is a post-hoc validation choice and must not be tuned on test. CarDD is not used: consent and files are still absent from `data/raw/`.
+Checks actually run, results and artifact locations:
+- 57 vision unit tests pass.
+- The M2 notebook validates, and its setup cells run on v2. On v2 the class weights are broken-part 4.56, dent 6.87, and 10 (the cap) for the other damage classes.
+- Real SegFormer-B2 (ADE20K) smoke runs on MPS completed with all new controls (16 train and 8 val images, output in the scratchpad, not a model result). They exposed an early-averaging lag, fixed with the decay warmup and re-checked.
+- Offset tuning on existing models (validation, 640 px):
+  - `eacada43`: 0.232 -> 0.240 at offset +1.0, any-damage IoU 0.435 -> 0.467, recall 0.53 -> 0.61.
+  - `6203ed59`: 0.221 -> 0.222 at -0.25.
+  - Reports are in each run's `artifacts/evaluation/<run>/val_size640_*`.
+  - These gains are optimistic, because the offset was chosen and scored on the same validation set.
+Uncommitted work, limitations and missing prerequisites: Uncommitted. No full `weighted_loss` or `damage_focus` run exists, so the effect of the new presets is unknown. Validation noise between epochs is about ±0.02 mIoU.
+Next concrete step and agreed owner (or unassigned): The user restarts the kernel and runs M2 with `damage_focus`. For attribution, optionally also run `weighted_loss`. Then tune the background offset at 640 and compare against `eacada43` with `compare_runs`. CarDD pretraining waits for consent and files.
+
+
+## M2 CarDD notebook and converter (2026-10-02)
+
+Date/time and timezone: 2026-10-02, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request while the user copies CarDD into `data/raw/CarDD_release/`.
+Task and relevant module: M2 damage segmentation on CarDD, the specified M2 dataset (offline).
+Branch / baseline commit / resulting commit or PR: `image-worker` / `343ef1a` / uncommitted.
+Status before this work: the best HITL M2 run, `damage-segformer-20261002T004306Z-3f7eb21b` (`damage_focus`), reached 0.241 validation mIoU at epoch 44 with any-damage IoU about 0.50. It was still training when this entry was written. HITL stays the documented contingency.
+Changed paths and completed behaviour:
+- New `pipelines/vision/cardd_data.py`:
+  - `inspect_cardd` is a read-only check of a CarDD copy.
+  - `prepare_cardd` converts COCO instance annotations into `data/processed/cardd/<version>` in the HITL-compatible layout. Files are discovered by category names; the split comes from the file name; polygons and list/compressed RLE are supported; different-class overlaps go to the smaller instance; `iscrowd` regions become ignore 255; EXIF orientation is aligned or rejected.
+  - Official splits are kept, but cross-split exact or pixel duplicates stay only in the earliest of train, val and test. Unchanged originals are byte copies; `max_side` stores optional downscaled copies.
+  - `load_prepared` is reused from `hitl_data`.
+- `pipelines/vision/training.py`: a `TASKS` table adds `damage_cardd`, with artifacts under `artifacts/models/damage-cardd/` and `dataset: CarDD`.
+- New `notebooks/M2_CarDD_damage_training.ipynb` (31 cells):
+  - Inspection, preparation, support and label audit, crop preview, architecture, training, validation, 640-pixel comparison, background-offset tuning, reload and an opt-in final test.
+  - Recipes `focused_640`, `weighted_loss`, default `damage_focus` and `convnext`, with 60 epochs maximum and patience 10.
+- New `tests/unit/test_cardd_data.py`: 7 tests.
+- `notebooks/README.md`, `docs/training-hitl-notebooks.md`.
+Decisions (accepted/proposed) and references:
+- The M2 specification and contracts use CarDD; this follows them.
+- Overlap and crowd handling follow the M2 specification's smaller-area-wins rule.
+- The cross-split duplicate policy and the `damage_focus` carry-over are proposed.
+- CarDD consent remains the team's responsibility; the converter records but does not verify it.
+Checks actually run, results and artifact locations:
+- 59 vision tests pass.
+- Every code cell of the new notebook ran end to end against a synthetic CarDD-format dataset in the scratchpad. This included real SegFormer-B2 ADE20K training for 2 epochs at 128 px on MPS, plus validation, comparison, offset tuning and reload.
+- Real release (`data/raw/CarDD_release/`, 5.7 GB including the unused `CarDD_SOD` folder):
+  - `inspect_cardd` found `CarDD_COCO/annotations/instances_{train,val,test}2017.json` with 2,816/810/374 images and 6,211/1,744/785 polygon instances.
+  - There are no crowd or RLE annotations and no missing images. The longer side is at most 1,000 px (median 1000x667), so `max_side` is not needed.
+- `data/processed/cardd/v1` (manifest `fc89ec07...`) was created by the user's notebook kernel at 12:25.
+  - A concurrent preparation by Claude Code failed safely at the final atomic rename and left no files.
+  - `load_prepared` verified every hash, and `prepare_cardd` reloads v1 unchanged.
+  - All 4,000 images are kept as byte copies with EXIF orientation 1, and nothing was excluded.
+  - Background is 74.6% of labelled pixels (HITL: about 92%). The rarest class, tire-flat, appears in 219 training images. 739 images have different-class overlap.
+- The near-duplicate audit flagged 4 pairs at dHash distance 3 or less. All are the same stock photograph with recolouring or tone changes (for example a blue car versus a red car). One pair crosses splits: train `000473.jpg` and val `000790.jpg`. It is left in place and only recorded, because the policy acts on exact duplicates only. No test image is involved.
+- Label overlays for tire-flat, lamp-broken, glass-shatter, scratch, dent and crack were inspected and align with the photographs.
+Uncommitted work, limitations and missing prerequisites:
+- Uncommitted.
+- No CarDD model result exists.
+- An epoch at 640 px is expected to take roughly 10-15 minutes on the Mac.
+- Recoloured near-duplicates beyond the dHash threshold may remain undetected.
+Next concrete step and agreed owner (or unassigned): The user trains `damage_focus` from the CarDD notebook. Whether to exclude val `000790.jpg` is a team choice; excluding it would require a new prepared version.
 
 
 ## M1 serving and trainer fixes after branch review (2026-10-07)

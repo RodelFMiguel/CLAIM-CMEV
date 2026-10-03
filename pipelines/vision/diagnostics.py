@@ -49,6 +49,8 @@ def rank_misses(model, records, config, names, device, focus_names):
                     missed_as_background=int((target & (pred == 0)).sum()),
                     missed_as_other_damage=int((target & (pred != 0) & (pred != cid)).sum()),
                     image_sha256=record.get('image_sha256'), mask_sha256=record.get('mask_sha256')))
+            if (i+1) % 25 == 0 or i+1 == len(records):
+                print(f'Audit inference: {i+1}/{len(records)} images', flush=True)
     return pd.DataFrame(rows)
 
 
@@ -111,7 +113,7 @@ def render_review(model, record, config, names, device, focus_name, zoom_size=25
     y0 = max(0, min(h-zoom_size, int(ys[anchor])-zoom_size//2))
     x1, y1 = min(w, x0+zoom_size), min(h, y0+zoom_size)
     palette = plt.get_cmap('turbo', len(names))
-    fig, axes = plt.subplots(2, 3, figsize=(15, 9))
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
     for row, view in enumerate((np.s_[:, :], np.s_[y0:y1, x0:x1])):
         for column, labels in enumerate((None, truth, native_pred)):
             ax = axes[row, column]
@@ -132,7 +134,7 @@ def render_review(model, record, config, names, device, focus_name, zoom_size=25
     handles.append(Patch(color='magenta', label='ignore 255'))
     fig.legend(handles=handles, loc='lower center', ncol=5, fontsize=8)
     fig.suptitle(f"{record['sample_id']} | {focus_name} | model input {config.image_size}px")
-    fig.tight_layout(rect=(0, .07, 1, .95))
+    fig.subplots_adjust(left=.02, right=.98, top=.9, bottom=.12, wspace=.04, hspace=.3)
     return fig
 
 
