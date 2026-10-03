@@ -57,4 +57,28 @@ The M2 notebook now includes staged presets for BatchNorm adaptation, ADE20K dec
 
 Binary foreground metrics collapse the existing multiclass argmax and exclude ignored pixels; they do not establish assignment accuracy. Comparing training resolutions explicitly evaluates every candidate at one common resolution and writes separate `val_size<N>_*` artifacts. Original run metrics remain intact. Validation/test never use target-driven crops or training sampling weights. Exact resume and native-resolution tiled inference are not introduced. Legacy config defaults and the M1 notebook remain compatible.
 
+### M2 recall and regularisation presets (2026-10-02)
+
+Both completed M2 runs miss about half of the damage pixels as background and overfit after about epoch 10. Grouping the classes into four only raises mIoU to about 0.33, so localisation, not type confusion, is the main error. Two new presets target this. `weighted_loss` adds square-root inverse-frequency cross-entropy weights from training pixels, capped at 10. `damage_focus` (the new default) adds stochastic depth 0.2, decoder dropout 0.2, weight decay 0.05 and EMA weight averaging at 0.995, with a decay warmup. Validation history now records any-damage IoU, recall and precision each epoch.
+
+`tune_background_offset` lowers the background logit by a value chosen on validation, in one pass, and saves the table. On run `eacada43` it raised validation mIoU from 0.232 to 0.240 and damage recall from 0.53 to 0.61, at offset +1.0. That gain is optimistic, because the offset was chosen and scored on the same split. The final-test cell reuses the selected value unchanged. None of the new presets has a full-data result yet.
+
+### M2 on CarDD (2026-10-02)
+
+`notebooks/M2_CarDD_damage_training.ipynb` trains M2 on CarDD, the dataset the M2 specification and the data contracts use (six classes, `damage-cardd-1.0.0`). `pipelines/vision/cardd_data.py` converts the COCO instance annotations into semantic masks:
+- Files are discovered by category names, with the split taken from the file name.
+- Polygons and both RLE formats are supported.
+- Where instances of different classes overlap, the smaller one wins, as the M2 specification says.
+- `iscrowd` regions become ignore 255.
+- CarDD's official splits are kept, but an identical photograph in several splits stays only in the earliest of train, val and test.
+- Unchanged originals are byte copies; an optional `max_side` stores downscaled copies.
+
+The prepared layout matches the HITL one, so `load_prepared` and the training harness read it with `task="damage_cardd"`. Runs go to `artifacts/models/damage-cardd/`. HITL and CarDD are never pooled.
+
 Both companion notebook Markdown copies were removed at the user's request; training explanations remain in notebook Markdown cells. Previous M2 notebook outputs are backed up under ignored `artifacts/exports/notebook-backups/`.
+
+## M2 failure review and tiny fitting diagnostic (2026-10-02)
+
+Use `notebooks/M2_HITL_failure_audit.ipynb` to load a saved M2 checkpoint, rank actual flaking/paint-chip misses on training or validation images, and export a balanced review packet with native-image close-ups, targets, predictions and an editable CSV. Human review records visibility, boundary/class consistency and uncertainty; the notebook never automatically declares a label clean or rewrites annotations.
+
+After reviewing the packet, explicitly select 4–8 clean original training images for a separate, opt-in memorization test. `pipelines/vision/diagnostics.py` keeps preprocessing deterministic, measures the same images in evaluation mode, reports focus-class curves, and records the selected IDs/hashes, source checkpoint and review provenance under `artifacts/diagnostics/m2/`. Validation/test images cannot enter fitting. This test asks whether the training pipeline can fit clean examples; its scores are not validation results and are excluded from normal model comparisons.

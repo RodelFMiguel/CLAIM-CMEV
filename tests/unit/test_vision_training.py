@@ -404,3 +404,107 @@ def test_rejects_invalid_m2_controls():
         t.TrainingConfig(repeat_factor_threshold=2)
     with pytest.raises(ValueError, match="grace epochs"):
         t.TrainingConfig(lr_schedule="plateau", patience=3, plateau_patience=2, plateau_grace_epochs=2)
+
+
+def test_class_weights_follow_training_frequency_and_refuse_heldout():
+    records = [{"split": "train", "pixel_counts": [9000, 90, 0, 1]},
+               {"split": "train", "pixel_counts": [1000, 10, 0, 0]}]
+    weights = t.class_loss_weights(records, 4, "sqrt_inverse", cap=50)
+    assert weights[0] == 1.0
+    assert weights[1] == pytest.approx(10.0)  # sqrt(10000 / 100)
+    assert weights[2] == 1.0  # absent from training: left unweighted
+    assert weights[3] == 50.0  # sqrt(10000 / 1) = 100, capped
+    assert t.class_loss_weights(records, 4, "none") is None
+    with pytest.raises(ValueError, match="training records only"):
+        t.class_loss_weights([{"split": "val", "pixel_counts": [1, 1, 1, 1]}], 4)
+
+
+@pytest.mark.skipif(not TORCH, reason="Optional training dependencies not installed")
+def test_weighted_loss_matches_manual_cross_entropy_and_ignores_void():
+    import torch
+    import torch.nn.functional as F
+    logits = torch.randn(1, 3, 2, 2, requires_grad=True)
+    labels = torch.tensor([[[0, 1], [2, 255]]])
+    weights = torch.tensor([1.0, 4.0, 2.0])
+    loss = t.segmentation_loss(logits, labels, ce_weight=1.0, dice_weight=0.0, class_weights=weights)
+    expected = F.cross_entropy(logits, labels, weight=weights, ignore_index=255)
+    assert loss.item() == pytest.approx(expected.item())
+    loss.backward()
+    assert torch.all(logits.grad[0, :, 1, 1] == 0)
+
+
+def test_new_regularisation_controls_are_validated():
+    with pytest.raises(ValueError, match="class_weighting"):
+        t.TrainingConfig(class_weighting="inverse")
+    with pytest.raises(ValueError, match="drop_path_rate"):
+        t.TrainingConfig(drop_path_rate=1.2)
+    with pytest.raises(ValueError, match="only applied to SegFormer"):
+        t.TrainingConfig(architecture="resnet50", classifier_dropout=0.2)
+    with pytest.raises(ValueError, match="ema_decay"):
+        t.TrainingConfig(ema_decay=1.0)
+
+
+@pytest.mark.skipif(importlib.util.find_spec("transformers") is None, reason="transformers not installed")
+def test_segformer_dropout_and_drop_path_overrides_are_applied():
+    from transformers import SegformerConfig
+    small = SegformerConfig(depths=[1, 1, 1, 1], hidden_sizes=[8, 16, 32, 64], decoder_hidden_size=16,
+                            num_attention_heads=[1, 1, 1, 1]).to_dict()
+    config = t.TrainingConfig(task="damage", drop_path_rate=0.3, classifier_dropout=0.25)
+    model = t.build_model(config, ["background", "dent"], saved_config=small, load_pretrained=False)
+    assert model.network.config.drop_path_rate == 0.3
+    assert model.network.decode_head.dropout.p == 0.25
+
+
+@pytest.mark.skipif(not TORCH, reason="Optional training dependencies not installed")
+def test_ema_weighted_training_saves_averaged_weights_and_records_binary_history(tmp_path):
+    import torch
+    manifest = _fixture_manifest(tmp_path)
+    config = t.TrainingConfig(epochs=2, image_size=32, batch_size=1, ema_decay=0.5, class_weighting="sqrt_inverse",
+                              artifacts_root=str(tmp_path / "artifacts"), run_id="ema", device="cpu", pretrained=False)
+    with patch.object(t, "build_model", side_effect=_tiny_model):
+        record = t.train(manifest, config)
+        evaluated = t.evaluate_run(record["run_dir"], manifest, split="val", device="cpu")
+    assert record["ema"]["decay"] == 0.5
+    assert record["class_weights"]["background"] == 1.0 and record["class_weights"]["part"] >= 1.0
+    state = torch.load(Path(record["run_dir"], "best.pt"), weights_only=True)
+    assert set(state["model"]) == set(state["raw_model"])
+    assert any(not torch.equal(state["model"][k], state["raw_model"][k]) for k in state["model"])
+    history = json.loads(Path(record["run_dir"], "history.json").read_text())
+    assert all({"val_binary_iou", "val_binary_recall", "val_binary_precision"} <= set(h) for h in history)
+    assert evaluated["background_offset"] == 0.0
+
+
+def test_background_offset_prediction_trades_background_for_damage():
+    import torch
+    logits = torch.tensor([[[[2.0]], [[1.5]], [[0.5]]]])  # background 2.0, best damage class 1 at 1.5
+    assert t._predict(logits).item() == 0
+    assert t._predict(logits, 0.4).item() == 0
+    assert t._predict(logits, 0.6).item() == 1
+    assert t._predict(logits, -1.0).item() == 0
+
+
+@pytest.mark.skipif(not TORCH, reason="Optional training dependencies not installed")
+def test_tune_background_offset_uses_validation_and_writes_separate_reports(tmp_path):
+    manifest = _fixture_manifest(tmp_path)
+    config = t.TrainingConfig(epochs=1, image_size=32, batch_size=1,
+                              artifacts_root=str(tmp_path / "artifacts"), run_id="offset", device="cpu", pretrained=False)
+    with patch.object(t, "build_model", side_effect=_tiny_model):
+        record = t.train(manifest, config)
+        selected, table = t.tune_background_offset(record["run_dir"], manifest, offsets=[0, 0.5, 1.0], device="cpu")
+        assert selected in {0.0, 0.5, 1.0}
+        assert table["background_offset"].tolist() == [0.0, 0.5, 1.0]
+        assert {"miou_foreground", "binary_iou", "binary_recall", "iou_part"} <= set(table.columns)
+        saved = json.loads(Path(record["evaluation_dir"], "val_background_offset.json").read_text())
+        assert saved["selected_offset"] == selected and saved["split"] == "val"
+        tuned = t.evaluate_run(record["run_dir"], manifest, split="val", device="cpu", background_offset=0.5)
+        assert tuned["background_offset"] == 0.5
+        assert Path(record["evaluation_dir"], "val_bg0.5_metrics.json").is_file()
+        assert Path(record["evaluation_dir"], "val_metrics.json").is_file()  # untuned report preserved
+        with pytest.raises(ValueError, match="include 0"):
+            t.tune_background_offset(record["run_dir"], manifest, offsets=[0.5, 1.0], device="cpu")
+
+
+def test_ema_decay_ramps_up_before_reaching_its_target():
+    assert t.ema_decay_at(0, 0.995) == pytest.approx(0.1)
+    assert t.ema_decay_at(10, 0.995) == pytest.approx(11 / 20)
+    assert t.ema_decay_at(5000, 0.995) == 0.995

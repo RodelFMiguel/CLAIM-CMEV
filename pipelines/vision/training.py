@@ -6,6 +6,7 @@ notebooks in notebooks/vision for editable recipes and interpretation limits.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.metadata
 import json
@@ -25,6 +26,8 @@ import numpy as np
 from PIL import Image, ImageEnhance
 
 IGNORE_INDEX = 255
+# Task -> (artifact folder under artifacts/models, dataset name). damage = HITL damage taxonomy.
+TASKS = {"parts": ("parts", "HITL"), "damage": ("damage-hitl", "HITL"), "damage_cardd": ("damage-cardd", "CarDD")}
 
 
 @dataclass
@@ -74,6 +77,12 @@ class TrainingConfig:
     plateau_factor: float = 0.5
     plateau_min_lr_ratio: float = 0.01
     plateau_grace_epochs: int = 3
+    # Opt-in damage-recall and regularisation controls; defaults keep saved runs unchanged.
+    class_weighting: str = "none"  # "sqrt_inverse": CE weights from TRAINING pixel frequency
+    class_weight_cap: float = 10.0  # largest weight relative to background (weight 1)
+    drop_path_rate: float | None = None  # SegFormer stochastic depth; None keeps the checkpoint value
+    classifier_dropout: float | None = None  # SegFormer decoder dropout; None keeps the checkpoint value
+    ema_decay: float = 0.0  # 0 disables; e.g. 0.995 validates and saves averaged weights
     mean: tuple = (0.485, 0.456, 0.406)
     std: tuple = (0.229, 0.224, 0.225)
     device: str = "auto"
@@ -84,8 +93,8 @@ class TrainingConfig:
     run_id: str | None = None
 
     def __post_init__(self):
-        if self.task not in {"parts", "damage"}:
-            raise ValueError("task must be parts or damage (HITL damage taxonomy)")
+        if self.task not in TASKS:
+            raise ValueError("task must be parts, damage (HITL damage taxonomy) or damage_cardd (CarDD)")
         if self.architecture not in {"segformer", "resnet50", "resnet101", "hf_semantic"}:
             raise ValueError("Unknown architecture; add a semantic logits adapter in build_model")
         for name in ("image_size", "batch_size", "epochs", "accumulation_steps", "patience"):
@@ -127,6 +136,16 @@ class TrainingConfig:
             raise ValueError("Invalid plateau scheduler settings")
         if self.lr_schedule == "plateau" and self.patience <= self.plateau_patience + self.plateau_grace_epochs:
             raise ValueError("Early stopping patience must allow a plateau reduction and its grace epochs")
+        if self.class_weighting not in {"none", "sqrt_inverse"} or self.class_weight_cap < 1:
+            raise ValueError("class_weighting must be none or sqrt_inverse, with class_weight_cap >= 1")
+        for name in ("drop_path_rate", "classifier_dropout"):
+            value = getattr(self, name)
+            if value is not None and not 0 <= value < 1:
+                raise ValueError(f"{name} must be None or lie in [0, 1)")
+            if value is not None and self.architecture != "segformer":
+                raise ValueError(f"{name} is only applied to SegFormer checkpoints")
+        if not 0 <= self.ema_decay < 1:
+            raise ValueError("ema_decay must lie in [0, 1); 0 disables weight averaging")
         if len(self.mean) != 3 or len(self.std) != 3 or min(self.std) <= 0:
             raise ValueError("Provide three normalization means and positive standard deviations")
         if min(self.encoder_lr, self.head_lr, self.max_grad_norm) <= 0:
@@ -369,6 +388,10 @@ def build_model(config, class_names, *, saved_config=None, load_pretrained=None)
         if config.architecture == "segformer":
             if not isinstance(model_config, SegformerConfig):
                 raise ValueError("segformer requires a SegFormer/MiT checkpoint")
+            if config.drop_path_rate is not None:
+                model_config.drop_path_rate = config.drop_path_rate
+            if config.classifier_dropout is not None:
+                model_config.classifier_dropout_prob = config.classifier_dropout
             model_cls = SegformerForSemanticSegmentation
             base = model_cls.from_pretrained(config.checkpoint, revision=config.revision, config=model_config,
                                             ignore_mismatched_sizes=True) if pretrained else model_cls(model_config)
@@ -417,15 +440,18 @@ def build_model(config, class_names, *, saved_config=None, load_pretrained=None)
     return LogitsAdapter()
 
 
-def segmentation_loss(logits, labels, ce_weight=1.0, dice_weight=0.5):
-    """CE plus foreground soft Dice, excluding ignore pixels from both terms."""
+def segmentation_loss(logits, labels, ce_weight=1.0, dice_weight=0.5, class_weights=None):
+    """CE plus foreground soft Dice, excluding ignore pixels from both terms.
+
+    ``class_weights`` (one per class) re-weights only the cross-entropy term.
+    """
     import torch
     import torch.nn.functional as F
     valid = labels != IGNORE_INDEX
     if not bool(valid.any()):
         return logits.sum() * 0
     logits = logits.float()
-    ce = F.cross_entropy(logits, labels, ignore_index=IGNORE_INDEX)
+    ce = F.cross_entropy(logits, labels, weight=class_weights, ignore_index=IGNORE_INDEX)
     targets = F.one_hot(labels.masked_fill(~valid, 0), logits.shape[1]).permute(0, 3, 1, 2).float()
     targets = targets * valid[:, None]
     probabilities = logits.softmax(dim=1) * valid[:, None]
@@ -533,6 +559,69 @@ def repeat_sampling_weights(records, num_classes, threshold, max_repeat=3.0):
     return np.where(presence, factors, 1).max(1).tolist()
 
 
+def class_loss_weights(records, num_classes, mode="sqrt_inverse", cap=10.0):
+    """Cross-entropy weights from TRAINING pixel frequency: sqrt(f_background / f_class).
+
+    Background gets 1; rarer classes get more, capped at ``cap``. Classes absent from
+    training keep weight 1. Refuse non-training records so held-out labels never
+    influence the loss.
+    """
+    if mode == "none":
+        return None
+    if mode != "sqrt_inverse":
+        raise ValueError("Unknown class weighting mode")
+    if not records or any(r.get("split") != "train" for r in records):
+        raise ValueError("Class weights require nonempty training records only")
+    totals = np.zeros(num_classes, dtype=np.float64)
+    for record in records:
+        if "pixel_counts" in record:
+            row = np.asarray(record["pixel_counts"], dtype=np.float64)
+            if len(row) != num_classes:
+                raise ValueError("Pixel counts differ from taxonomy")
+        else:
+            with Image.open(record["mask_path"]) as mask:
+                labels = np.asarray(mask)
+            row = np.bincount(labels[labels != IGNORE_INDEX].ravel(), minlength=num_classes)[:num_classes]
+        totals += row
+    if totals[0] <= 0:
+        raise ValueError("Training records contain no background pixels")
+    weights = np.ones(num_classes)
+    present = totals > 0
+    weights[present] = np.clip(np.sqrt(totals[0] / totals[present]), 1, cap)
+    weights[0] = 1.0
+    return weights.tolist()
+
+
+def ema_decay_at(update, decay):
+    """Ramp the decay up from 0.1 so early averages are not dominated by the initial weights."""
+    return min(decay, (1 + update) / (10 + update))
+
+
+def _update_ema(averaged, model, decay):
+    """Exponential moving average of parameters; buffers (e.g. BatchNorm statistics) are copied."""
+    import torch
+    with torch.no_grad():
+        for target, source in zip(averaged.parameters(), model.parameters()):
+            target.lerp_(source.detach(), 1 - decay)
+        for target, source in zip(averaged.buffers(), model.buffers()):
+            target.copy_(source)
+
+
+def _report_prefix(split, image_size=None, background_offset=0.0):
+    prefix = split if image_size is None else f"{split}_size{image_size}"
+    return prefix if not background_offset else f"{prefix}_bg{background_offset:g}"
+
+
+def _predict(logits, background_offset=0.0):
+    """Argmax after lowering the background logit by ``background_offset`` (ties keep background)."""
+    import torch
+    if not background_offset:
+        return logits.argmax(1)
+    background = logits[:, 0] - background_offset
+    best, index = logits[:, 1:].max(1)
+    return torch.where(background >= best, torch.zeros_like(index), index + 1)
+
+
 def _loader(records, config, device, classes, training=False):
     import torch
     sampler = None
@@ -548,7 +637,7 @@ def _loader(records, config, device, classes, training=False):
         generator=torch.Generator().manual_seed(config.seed), drop_last=False)
 
 
-def _evaluate(model, loader, device, classes, config):
+def _evaluate(model, loader, device, classes, config, class_weights=None, background_offset=0.0):
     import torch
     model.eval()
     matrix = np.zeros((len(classes), len(classes)), dtype=np.int64)
@@ -558,15 +647,17 @@ def _evaluate(model, loader, device, classes, config):
         for batch in loader:
             pixels, labels = batch["pixel_values"].to(device), batch["labels"].to(device)
             logits = model(pixels)
-            loss = segmentation_loss(logits, labels, config.ce_weight, config.dice_weight)
+            loss = segmentation_loss(logits, labels, config.ce_weight, config.dice_weight, class_weights)
             loss_sum += loss.item() * len(labels)
             image_count += len(labels)
-            matrix += confusion_counts(labels.cpu().numpy(), logits.argmax(1).cpu().numpy(), len(classes))
+            prediction = _predict(logits, background_offset)
+            matrix += confusion_counts(labels.cpu().numpy(), prediction.cpu().numpy(), len(classes))
     if not image_count:
         raise ValueError("Evaluation split is empty")
     metrics = metrics_from_confusion(matrix, classes)
     elapsed = time.perf_counter() - started
     metrics.update(loss=loss_sum / image_count, image_count=image_count, elapsed_seconds=elapsed,
+                   background_offset=background_offset,
                    images_per_second=image_count / elapsed, timing_scope="full evaluation including loading, loss and CPU confusion")
     return metrics
 
@@ -631,7 +722,7 @@ def train(manifest, config):
     torch.backends.cudnn.deterministic = True
     run_id = config.run_id or f"{config.task}-{config.architecture}-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
     root = Path(config.artifacts_root).resolve()
-    run_dir = root / "models" / ("parts" if config.task == "parts" else "damage-hitl") / run_id
+    run_dir = root / "models" / TASKS[config.task][0] / run_id
     evaluation_dir = root / "evaluation" / run_id
     if run_dir.exists() or evaluation_dir.exists():
         raise FileExistsError("Run ID already exists; use a new run_id to preserve prior artifacts")
@@ -639,7 +730,7 @@ def train(manifest, config):
     evaluation_dir.mkdir(parents=True)
     record = {"run_id": run_id, "run_dir": str(run_dir), "evaluation_dir": str(evaluation_dir),
               "status": "running", "registry_status": "candidate", "task": config.task,
-              "dataset": "HITL", "class_names": classes, "taxonomy_hash": _hash(classes),
+              "dataset": TASKS[config.task][1], "class_names": classes, "taxonomy_hash": _hash(classes),
               "manifest_hash": manifest["manifest_hash"], "split_hash": manifest["split_hash"],
               "config": asdict(config), "environment": _environment(device),
               "preprocessing": {"resize": "aspect-preserving centered letterbox", "mask_resampling": "nearest",
@@ -672,6 +763,17 @@ def train(manifest, config):
         use_amp = config.amp and device.type == "cuda"
         scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
         training_loader = _loader(train_records, config, device, classes, training=True)
+        weight_list = class_loss_weights(train_records, len(classes), config.class_weighting, config.class_weight_cap)
+        class_weights = None if weight_list is None else torch.tensor(weight_list, dtype=torch.float32, device=device)
+        if weight_list is not None:
+            record["class_weights"] = dict(zip(classes, weight_list))
+        averaged = None
+        if config.ema_decay:
+            averaged = copy.deepcopy(model).eval()
+            for parameter in averaged.parameters():
+                parameter.requires_grad_(False)
+            record["ema"] = {"decay": config.ema_decay, "warmup": "min(decay, (1 + update) / (10 + update))",
+                             "policy": "validation, best.pt and last.pt 'model' hold averaged weights; 'raw_model' holds the trained weights"}
         per_step = config.lr_schedule in {"poly", "cosine"}
         updates_per_epoch = math.ceil(len(training_loader) / config.accumulation_steps)
         warmup_updates = round(config.warmup_epochs * updates_per_epoch)
@@ -713,7 +815,7 @@ def train(manifest, config):
                 group_size = min(config.accumulation_steps, total_batches - group_start)
                 with torch.autocast(device_type=device.type, enabled=use_amp):
                     logits = model(pixels)
-                    loss = segmentation_loss(logits, labels, config.ce_weight, config.dice_weight)
+                    loss = segmentation_loss(logits, labels, config.ce_weight, config.dice_weight, class_weights)
                 if not bool(torch.isfinite(loss)):
                     raise FloatingPointError("Non-finite training loss")
                 scaler.scale(loss / group_size).backward()
@@ -728,12 +830,15 @@ def train(manifest, config):
                     scaler.update()
                     optimizer.zero_grad(set_to_none=True)
                     optimizer_updates += 1
+                    if averaged is not None:
+                        _update_ema(averaged, model, ema_decay_at(optimizer_updates - 1, config.ema_decay))
                     if per_step:
                         scheduler.step()
                 train_loss += loss.item() * len(labels)
                 seen += len(labels)
                 matrix += confusion_counts(labels.cpu().numpy(), logits.detach().argmax(1).cpu().numpy(), len(classes))
-            val = _evaluate(model, validation_loader, device, classes, config)
+            val = _evaluate(averaged if averaged is not None else model, validation_loader, device, classes,
+                            config, class_weights)
             score = val["miou_foreground"]
             if score is None:
                 raise ValueError("Validation has no foreground union; cannot select a model")
@@ -741,6 +846,9 @@ def train(manifest, config):
                             "train_miou_foreground": metrics_from_confusion(matrix, classes)["miou_foreground"],
                             "val_loss": val["loss"], "val_miou_foreground": score,
                             "val_dice_foreground": val["dice_foreground"],
+                            "val_binary_iou": val["binary_foreground"]["iou"],
+                            "val_binary_recall": val["binary_foreground"]["recall"],
+                            "val_binary_precision": val["binary_foreground"]["precision"],
                             "encoder_lr": optimizer.param_groups[0]["lr"], "head_lr": optimizer.param_groups[1]["lr"],
                             "elapsed_seconds": time.perf_counter()-started}
             history.append(epoch_record)
@@ -763,16 +871,22 @@ def train(manifest, config):
             _json(run_dir / "history.json", history)
             with (run_dir / "training_log.jsonl").open("a") as log:
                 log.write(json.dumps(epoch_record) + "\n")
-            checkpoint = {"model": model.state_dict(), "optimizer": optimizer.state_dict(),
+            checkpoint = {"model": (averaged if averaged is not None else model).state_dict(),
+                          "optimizer": optimizer.state_dict(),
                           "scheduler": scheduler.state_dict(), "scaler": scaler.state_dict(),
                           "epoch": epoch+1, "best_val_miou_foreground": best,
                           "manifest_hash": manifest["manifest_hash"], "split_hash": manifest["split_hash"],
                           "class_names": classes, "config": asdict(config), "torch_rng_state": torch.get_rng_state()}
+            if averaged is not None:
+                checkpoint["raw_model"] = model.state_dict()
             _save_checkpoint(run_dir / "last.pt", checkpoint)
             if improved:
                 _save_checkpoint(run_dir / "best.pt", checkpoint)
             _json(run_dir / "manifest.json", record)
-            print(f"epoch {epoch+1}/{config.epochs}: train loss {train_loss/seen:.4f}, val loss {val['loss']:.4f}, val foreground mIoU {score:.4f}")
+            binary = val["binary_foreground"]
+            print(f"epoch {epoch+1}/{config.epochs}: train loss {train_loss/seen:.4f}, val loss {val['loss']:.4f}, "
+                  f"val foreground mIoU {score:.4f}, any-damage IoU {binary['iou'] or 0:.4f} "
+                  f"(recall {binary['recall'] or 0:.3f}, precision {binary['precision'] or 0:.3f})")
             grace_complete = config.lr_schedule != "plateau" or epoch - last_lr_drop >= config.plateau_grace_epochs
             if stale >= config.patience and grace_complete:
                 break
@@ -815,8 +929,12 @@ def load_run(run_dir, device="auto"):
     return model.float().to(selected_device).eval(), config, record, selected_device
 
 
-def evaluate_run(run_dir, manifest, split="val", device="auto", image_size=None):
-    """Explicit held-out evaluation; call test only after all choices are frozen."""
+def evaluate_run(run_dir, manifest, split="val", device="auto", image_size=None, background_offset=0.0):
+    """Explicit held-out evaluation; call test only after all choices are frozen.
+
+    ``background_offset`` must come from ``tune_background_offset`` on validation;
+    reports with an offset are written under a separate ``_bg<offset>`` prefix.
+    """
     if split not in {"val", "test"}:
         raise ValueError("Evaluation supports val or test; reserved assignment data is separate")
     model, config, record, selected_device = load_run(run_dir, device)
@@ -828,13 +946,18 @@ def evaluate_run(run_dir, manifest, split="val", device="auto", image_size=None)
     records = [r for r in current["records"] if r["split"] == split]
     _verify_records(records)
     loader = _loader(records, config, selected_device, current["class_names"])
-    metrics = _evaluate(model, loader, selected_device, current["class_names"], config)
+    weights = record.get("class_weights")
+    if weights is not None:
+        import torch
+        weights = torch.tensor([weights[name] for name in current["class_names"]], dtype=torch.float32,
+                               device=selected_device)
+    metrics = _evaluate(model, loader, selected_device, current["class_names"], config, weights, background_offset)
     metrics.update(split=split, epoch=record["best_epoch"], run_id=record["run_id"],
                    evaluation_image_size=config.image_size, manifest_hash=record["manifest_hash"],
                    split_hash=record["split_hash"],
                    checkpoint_sha256=_file_hash(Path(run_dir) / "best.pt"))
     output = Path(record["evaluation_dir"])
-    prefix = split if image_size is None else f"{split}_size{image_size}"
+    prefix = _report_prefix(split, image_size, background_offset)
     _json(output / f"{prefix}_metrics.json", metrics)
     import pandas as pd
     pd.DataFrame(metrics["per_class"]).to_csv(output / f"{prefix}_per_class.csv", index=False)
@@ -851,8 +974,10 @@ def plot_history(run_dir):
     epochs = [h["epoch"] for h in history]
     for key, axis, label in (("train_loss", axes[0], "train"), ("val_loss", axes[0], "validation"),
                              ("train_miou_foreground", axes[1], "train"), ("val_miou_foreground", axes[1], "validation"),
+                             ("val_binary_iou", axes[1], "validation any-damage IoU"),
                              ("encoder_lr", axes[2], "encoder"), ("head_lr", axes[2], "head")):
-        axis.plot(epochs, [h[key] for h in history], label=label)
+        if all(key in h for h in history):  # older runs lack the any-damage series
+            axis.plot(epochs, [h[key] for h in history], label=label)
     for axis, title in zip(axes, ("CE + Dice loss", "Foreground mIoU", "Learning rate")):
         axis.set(title=title, xlabel="Epoch")
         axis.axvline(record["best_epoch"], linestyle="--", color="grey", alpha=.5)
@@ -863,10 +988,10 @@ def plot_history(run_dir):
     return fig
 
 
-def plot_confusion(run_dir, split="val", image_size=None):
+def plot_confusion(run_dir, split="val", image_size=None, background_offset=0.0):
     import matplotlib.pyplot as plt
     record = _read_run(run_dir)
-    prefix = split if image_size is None else f"{split}_size{image_size}"
+    prefix = _report_prefix(split, image_size, background_offset)
     metrics = json.loads((Path(record["evaluation_dir"]) / f"{prefix}_metrics.json").read_text())
     counts = np.asarray(metrics["confusion_matrix"])
     normalized = np.divide(counts, counts.sum(1, keepdims=True), out=np.zeros_like(counts, dtype=float), where=counts.sum(1, keepdims=True)!=0)
@@ -890,7 +1015,7 @@ def plot_confusion(run_dir, split="val", image_size=None):
     return fig, bars
 
 
-def show_predictions(run_dir, manifest, split="val", count=4, device="auto", image_size=None):
+def show_predictions(run_dir, manifest, split="val", count=4, device="auto", image_size=None, background_offset=0.0):
     import torch
     import matplotlib.pyplot as plt
     if split not in {"val", "test"}:
@@ -911,7 +1036,7 @@ def show_predictions(run_dir, manifest, split="val", count=4, device="auto", ima
     for i in range(len(records)):
         example = dataset[i]
         with torch.inference_mode():
-            prediction = model(example["pixel_values"][None].to(selected_device)).argmax(1)[0].cpu().numpy()
+            prediction = _predict(model(example["pixel_values"][None].to(selected_device)), background_offset)[0].cpu().numpy()
         truth = example["labels"].numpy()
         pixels = example["pixel_values"].numpy().transpose(1, 2, 0) * np.asarray(config.std) + np.asarray(config.mean)
         truth_masked = np.ma.masked_where(truth == IGNORE_INDEX, truth)
@@ -929,9 +1054,63 @@ def show_predictions(run_dir, manifest, split="val", count=4, device="auto", ima
     fig.legend(handles=[Patch(color=palette(i), label=name) for i, name in enumerate(current["class_names"])],
                loc="lower center", ncol=min(6, len(current["class_names"])), fontsize=8)
     fig.tight_layout(rect=(0, .10, 1, 1))
-    prefix = split if image_size is None else f"{split}_size{image_size}"
+    prefix = _report_prefix(split, image_size, background_offset)
     fig.savefig(Path(record["evaluation_dir"]) / f"{prefix}_overlays.png", dpi=150)
     return fig
+
+
+def tune_background_offset(run_dir, manifest, offsets=None, device="auto", image_size=None,
+                           objective="miou_foreground"):
+    """Choose a background logit offset on VALIDATION only, in one inference pass.
+
+    Lowering the background score by ``offset`` makes the model call damage more
+    readily (higher recall, lower precision); a negative offset does the reverse.
+    Returns ``(selected_offset, table)`` and saves both. Apply the selected value to
+    the test split unchanged; never tune it on test.
+    """
+    import torch
+    import pandas as pd
+    if objective not in {"miou_foreground", "binary_iou"}:
+        raise ValueError("objective must be miou_foreground or binary_iou")
+    offsets = [round(float(x), 4) for x in (np.arange(-1.0, 3.01, 0.25) if offsets is None else offsets)]
+    if 0.0 not in offsets or len(set(offsets)) != len(offsets):
+        raise ValueError("Offsets must be distinct and include 0 (the untuned model)")
+    model, config, record, selected_device = load_run(run_dir, device)
+    if image_size is not None:
+        config = replace(config, image_size=image_size)
+    current = task_manifest(manifest, config.task)
+    if any(current[key] != record[key] for key in ("class_names", "manifest_hash", "split_hash")):
+        raise ValueError("Tuning data/taxonomy differs from the frozen run")
+    names = current["class_names"]
+    records = [r for r in current["records"] if r["split"] == "val"]
+    if not records:
+        raise ValueError("No validation records")
+    _verify_records(records)
+    matrices = {offset: np.zeros((len(names), len(names)), dtype=np.int64) for offset in offsets}
+    with torch.inference_mode():
+        for batch in _loader(records, config, selected_device, names):
+            logits = model(batch["pixel_values"].to(selected_device))
+            labels = batch["labels"].numpy()
+            for offset in offsets:
+                matrices[offset] += confusion_counts(labels, _predict(logits, offset).cpu().numpy(), len(names))
+    rows = []
+    for offset in offsets:
+        metrics = metrics_from_confusion(matrices[offset], names)
+        binary = metrics["binary_foreground"]
+        rows.append({"background_offset": offset, "miou_foreground": metrics["miou_foreground"],
+                     "binary_iou": binary["iou"], "binary_recall": binary["recall"],
+                     "binary_precision": binary["precision"],
+                     **{f"iou_{r['class_name']}": r["iou"] for r in metrics["per_class"][1:]}})
+    table = pd.DataFrame(rows)
+    ranked = table.assign(distance=table["background_offset"].abs()).sort_values(
+        [objective, "distance"], ascending=[False, True])
+    selected = float(ranked.iloc[0]["background_offset"])
+    _json(Path(record["evaluation_dir"]) / f"{_report_prefix('val', image_size)}_background_offset.json",
+          {"run_id": record["run_id"], "checkpoint_sha256": _file_hash(Path(run_dir) / "best.pt"),
+           "split": "val", "evaluation_image_size": config.image_size, "objective": objective,
+           "selected_offset": selected, "rows": rows,
+           "policy": "Selected on validation only; apply unchanged to test. Ties prefer the smallest change."})
+    return selected, table
 
 
 def model_summary(model, depth=2):
