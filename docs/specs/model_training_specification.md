@@ -458,15 +458,17 @@ This is the contingency fallback if the LightGBM comparison cannot finish (v2 se
 
 | Recipe item | **Proposed** value |
 | --- | --- |
-| Library | LightGBM, version pinned in `requirements-train.txt` |
+| Library | LightGBM, a core dependency in `pyproject.toml` (`lightgbm>=4.5,<5`) since it became the default build method on 2026-10-02; the version used is recorded in each table's `model.json`. Needs the OpenMP runtime: `libgomp1` in the app image, `libomp` on macOS |
 | Models | Two models, `objective="quantile"` with `alpha=0.05` and `alpha=0.95` |
 | Features | Part (categorical), operation (categorical), vehicle class (categorical). Currency and basis are held constant, so they are recorded rather than used as features |
+| Training rows and target | One row per independent base case, the median of its quotes, matching the empirical method. Target `ln(amount)`; a prediction is converted to a fixed-place decimal before it becomes a bound |
+| Categorical handling | LightGBM defaults `min_data_per_group` 100 and `cat_smooth` 10, recorded in the recipe. Not tuned |
 | Excluded features | Model year, side, damage type, workshop identifier, record date. Record this exclusion list in the manifest |
 | Trees | `n_estimators` 400, `learning_rate` 0.05, `num_leaves` 15, `min_data_in_leaf` 20 |
 | Regularisation | `feature_fraction` 1.0 (only three features), `lambda_l2` 1.0 |
 | Early stopping | On the validation partition, 50 rounds without improvement in pinball loss |
-| Seed | 20260922, with `deterministic=True` and `force_row_wise=True` |
-| Crossed bounds | If the 5th-quantile prediction exceeds the 95th-quantile prediction for a key, that key publishes no range, with reason `crossed_bounds` |
+| Seed | 20260922, with `deterministic=True`, `force_row_wise=True` and one thread |
+| Crossed bounds | If the 5th-quantile prediction exceeds the 95th-quantile prediction for a key, that key publishes no range, with withheld reason `range_invalid` (the code M8 already handles; decided 2026-10-02 instead of a separate `crossed_bounds` code) |
 
 #### 7.4.3 Calibration partition
 
@@ -854,7 +856,7 @@ The conversion step must read `meta.json` class titles and assert the expected v
 - [ ] Build `generate_prices.py` to the specification in section 9.3, with separate `record_id` and `base_case_id`.
 - [ ] Generate ordinary and injected-anomaly records in separate runs with separate manifests.
 - [ ] Build the empirical percentile baseline first, since it is the contingency fallback.
-- [ ] Build the bounded LightGBM quantile comparison with the excluded-feature list recorded.
+- [x] Build the bounded LightGBM quantile comparison with the excluded-feature list recorded. Done 2026-10-02 on synthetic records.
 - [ ] Sweep the minimum independent base-case support threshold on validation, then freeze it.
 - [ ] Decide and record whether conformal adjustment is used; if so, fit it on the `calib` partition only.
 - [ ] Publish the cost table with membership, exclusions, independent support counts and the calibration report.

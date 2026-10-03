@@ -88,16 +88,16 @@ def test_metrics_report_counts_and_denominators_once_on_the_test_partition(built
     assert final["available_range_rate"]["test_records"]["total"] >= coverage["evaluated_records"]
     assert sum(g["evaluated_records"] for g in final["by_support_group"]) == coverage["evaluated_records"]
     assert final["target_status"] in ("met", "unmet") and "not proof" in final["interpretation"]
-    assert metrics["learned_comparator"]["status"] == "not_run"
+    assert metrics["learned_comparator"]["status"] == "compared"  # the empirical table; comparison ran
     assert read_json(root / manifest["table_version"] / "support_sweep.json")["synthetic"] is True
 
 
 def test_rebuilding_is_deterministic_and_idempotent(built, tmp_path):
     root, manifest = built
-    again = run(["--seed", "20260924", "--out", str(root)])
+    again = run(["--seed", "20260924", "--out", str(root), "--method", "empirical_percentile"])
     assert again["reused_existing"] and again["table_version"] == manifest["table_version"]
     assert [t["table_version"] for t in list_tables(root)] == [manifest["table_version"]]
-    elsewhere = run(["--seed", "20260924", "--out", str(tmp_path / "other")])
+    elsewhere = run(["--seed", "20260924", "--out", str(tmp_path / "other"), "--method", "empirical_percentile"])
     assert elsewhere["table_version"] == manifest["table_version"]
     assert (tmp_path / "other" / elsewhere["table_version"] / "ranges.json").read_bytes() == \
            (root / manifest["table_version"] / "ranges.json").read_bytes()

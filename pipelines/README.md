@@ -8,7 +8,7 @@
 
 Follow the [technical model/data lifecycle](../docs/specs/technical_specification.md). All entrypoints must take versioned config and explicit input/output locations, then record source/split hashes, code revision, seeds and metrics. Do not train during claim processing.
 
-Cost refresh consumes eligible final approvals or explicitly documented synthetic seeds. It must not consume surveyor agreement directly. `documents/` only reserves its location; `vision/` holds the M1 part-segmentation scripts below.
+Cost refresh consumes eligible final approvals or explicitly documented synthetic seeds. It must not consume surveyor agreement directly. `costs/` implements `generate_prices.py`, `build_cost_table.py` and `eval_cost_table.py` (method comparison, RQ4 and experiment C). `documents/` only reserves its location; `vision/` holds the M1 part-segmentation scripts below.
 
 ## M1 part segmentation (`vision/`)
 

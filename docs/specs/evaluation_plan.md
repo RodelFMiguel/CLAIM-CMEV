@@ -373,7 +373,7 @@ Functional completion, measured model performance and budget adherence are repor
 - [ ] Freeze complete-entry scoring, box tolerances and money comparison before any M5 measurement.
 - [ ] Write the experiment A case set and map each safety invariant SI-01 to SI-12 to at least one case.
 - [ ] Build the experiment B controlled claim cases with outcomes labelled independently of model predictions.
-- [ ] Build the experiment C ordinary and injected populations as two separate generators, and document the prevalence used.
+- [x] Build the experiment C ordinary and injected populations as two separate generators, and document the prevalence used. Done: separate seeded runs, prevalence 0.10, magnitudes +0.25, +0.50 and -0.30; scored by `pipelines/costs/eval_cost_table.py experiment-c`.
 - [ ] Implement SVC-01 to SVC-17, including the transport checks SVC-09 to SVC-17 added by the runtime change.
 - [ ] Record the `lean` profile startup time, peak memory and per-stage latency on the demonstration machine.
 - [ ] Select every threshold on validation data and record the frozen value with its date.

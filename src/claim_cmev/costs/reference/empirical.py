@@ -18,7 +18,9 @@ from claim_cmev.contracts.common import SCHEMA_VERSION
 
 from .config import CostTableConfig, Grid
 from .records import PriceRecord
-from .vocabulary import INSUFFICIENT_SUPPORT, NO_RECORDS, UNSUPPORTED_COMBINATION, CostKeyTuple, key_text
+from .vocabulary import (
+    INSUFFICIENT_SUPPORT, NO_RECORDS, RANGE_INVALID, UNSUPPORTED_COMBINATION, CostKeyTuple, key_text,
+)
 
 Bounds = Mapping[CostKeyTuple, tuple[Decimal, Decimal, int]]
 
@@ -46,13 +48,18 @@ def quantize(value: Decimal, places: int = 2) -> Decimal:
 
 @dataclass(frozen=True)
 class KeyFit:
-    """Unrounded percentile bounds from train; rounding happens once, at publication."""
+    """Unrounded bounds from train (either method); rounding happens once, at publication."""
 
     key: CostKeyTuple
     lower_raw: Decimal
     upper_raw: Decimal
     independent_base_case_count: int
     record_count: int
+
+    @property
+    def crossed(self) -> bool:
+        """A lower bound above its upper bound. Percentiles never cross; a learned pair can."""
+        return self.lower_raw > self.upper_raw
 
     def bounds(self, offset: Decimal | None = None, places: int = 2) -> tuple[Decimal, Decimal]:
         """Published bounds, optionally widened by a log-scale conformal offset, rounded once."""
@@ -85,9 +92,10 @@ def fit_empirical(train: Sequence[PriceRecord], *, quantiles: tuple[Decimal, Dec
 
 def served(fits: Mapping[CostKeyTuple, KeyFit], min_support: int, offset: Decimal | None = None,
            places: int = 2) -> dict[CostKeyTuple, tuple[Decimal, Decimal, int]]:
-    """The rounded bounds that would be published for keys meeting the support minimum."""
+    """The rounded bounds that would be published for keys meeting the support minimum.
+    A crossed fit is never served."""
     return {k: (*f.bounds(offset, places), f.independent_base_case_count) for k, f in fits.items()
-            if f.independent_base_case_count >= min_support}
+            if f.independent_base_case_count >= min_support and not f.crossed}
 
 
 def support_group(count: int, edges: Sequence[int]) -> str:
@@ -169,6 +177,11 @@ def _widths(bounds: Bounds) -> dict:
             "zero_width_keys": sum(1 for w in widths if w == 0)}
 
 
+def width_summary(bounds: Bounds) -> dict:
+    """Mean and median width of served bounds, and how many are zero-width."""
+    return _widths(bounds)
+
+
 def _closeness(result: Mapping, nominal: Decimal) -> Decimal:
     return abs(Decimal(result["covered"]) / Decimal(result["evaluated_records"]) - nominal)
 
@@ -210,7 +223,7 @@ def fit_conformal(fits: Mapping[CostKeyTuple, KeyFit], calibration: Sequence[Pri
     scores = []
     for record in calibration:
         fit = fits.get(record.key)
-        if fit is None or fit.independent_base_case_count < min_support:
+        if fit is None or fit.independent_base_case_count < min_support or fit.crossed:
             continue
         scores.append(max((fit.lower_raw / record.amount).ln(), (record.amount / fit.upper_raw).ln()))
     scores.sort()
@@ -265,8 +278,10 @@ def assemble_rows(fits: Mapping[CostKeyTuple, KeyFit], grid: Grid, *, keys_with_
             reason = UNSUPPORTED_COMBINATION
         elif key not in keys_with_records:
             reason = NO_RECORDS
-        elif key not in bounds:
+        elif fit is None or fit.independent_base_case_count < min_support:
             reason = INSUFFICIENT_SUPPORT
+        elif key not in bounds:
+            reason = RANGE_INVALID  # enough support, but the learned bounds crossed
         else:
             reason = None
         tally = tallies[key]
