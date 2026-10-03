@@ -17,6 +17,7 @@ where = ["src"]
 include = ["claim_cmev*"]
 
 [tool.pytest.ini_options]
+pythonpath = [".", "src"]
 testpaths = ["tests/backend", "tests/contracts", "tests/unit", "tests/integration"]
 
 [tool.setuptools.package-data]

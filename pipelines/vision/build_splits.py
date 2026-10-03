@@ -1,0 +1,218 @@
+"""Group-aware split manifest generator for M1 vehicle part segmentation.
+
+Splits the HITL parts dataset into train (70%), val (15%), and test (15%) partitions
+using image content_sha256 over the union of both HITL subsets to prevent cross-module
+evaluation leakage (model training specification section 6 and 7.1).
+"""
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+import logging
+from pathlib import Path
+import random
+from typing import Any
+
+from claim_cmev.contracts.common import PART_CODES
+
+log = logging.getLogger("cmev.pipelines.build_splits")
+
+DEFAULT_SEED = 20260922
+DEFAULT_SPLIT_VERSION = "0.1.0"
+
+
+def sha256_of_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def compute_union_hashes(
+    parts_records: list[dict[str, Any]],
+    damage_raw_dir: Path | None = None,
+) -> tuple[list[str], set[str]]:
+    """Compute the sorted list of all unique image hashes in the union of both subsets.
+    
+    Returns:
+        union_hashes: sorted list of unique SHA-256 strings across both subsets.
+        shared_hashes: set of SHA-256 strings that exist in both parts and damage subsets.
+    """
+    parts_hashes = {rec["image_sha256"] for rec in parts_records}
+    damage_hashes = set()
+
+    if damage_raw_dir and damage_raw_dir.exists():
+        img_dir = damage_raw_dir / "File1" / "img"
+        if img_dir.exists():
+            for img_path in img_dir.glob("*.*"):
+                damage_hashes.add(sha256_of_file(img_path))
+
+    shared_hashes = parts_hashes.intersection(damage_hashes)
+    union_hashes = sorted(parts_hashes.union(damage_hashes))
+    return union_hashes, shared_hashes
+
+
+def create_splits(
+    parts_records: list[dict[str, Any]],
+    union_hashes: list[str],
+    shared_hashes: set[str],
+    seed: int = DEFAULT_SEED,
+    train_ratio: float = 0.70,
+    val_ratio: float = 0.15,
+) -> dict[str, list[dict[str, Any]]]:
+    """Deterministically partition records into train, val, and test.
+    
+    The split is performed on the union of hashes so that any image shared between
+    parts and damage always falls into the same partition across modules.
+    """
+    rng = random.Random(seed)
+    shuffled_hashes = list(union_hashes)
+    rng.shuffle(shuffled_hashes)
+
+    n_total = len(shuffled_hashes)
+    n_train = int(round(n_total * train_ratio))
+    n_val = int(round(n_total * val_ratio))
+
+    train_hash_set = set(shuffled_hashes[:n_train])
+    val_hash_set = set(shuffled_hashes[n_train:n_train + n_val])
+    test_hash_set = set(shuffled_hashes[n_train + n_val:])
+
+    splits: dict[str, list[dict[str, Any]]] = {"train": [], "val": [], "test": []}
+
+    for rec in parts_records:
+        h = rec["image_sha256"]
+        is_shared = h in shared_hashes
+        entry = {
+            "example_id": rec["image_name"],
+            "source_path": rec["image_path"],
+            "content_sha256": h,
+            "group_key": h,
+            "mask_path": rec["mask_path"],
+            "mask_sha256": rec["mask_sha256"],
+            "width": rec["width"],
+            "height": rec["height"],
+            "class_pixel_counts": rec["class_pixel_counts"],
+            "class_object_counts": rec["class_object_counts"],
+            "is_shared_with_damage": is_shared,
+            "provenance": "real",
+        }
+
+        if h in train_hash_set:
+            splits["train"].append(entry)
+        elif h in val_hash_set:
+            splits["val"].append(entry)
+        elif h in test_hash_set:
+            splits["test"].append(entry)
+        else:
+            raise RuntimeError(f"Hash {h} not found in any partition set")
+
+    # Sort each partition by example_id for reproducibility
+    for split_name in splits:
+        splits[split_name].sort(key=lambda r: r["example_id"])
+
+    return splits
+
+
+def build_and_save_splits(
+    parts_index_path: Path | str,
+    damage_raw_dir: Path | str | None,
+    output_dir: Path | str,
+    seed: int = DEFAULT_SEED,
+    split_version: str = DEFAULT_SPLIT_VERSION,
+    train_ratio: float = 0.70,
+    val_ratio: float = 0.15,
+) -> dict[str, Any]:
+    parts_index_path = Path(parts_index_path)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not parts_index_path.exists():
+        raise FileNotFoundError(f"Parts index file not found: {parts_index_path}")
+
+    parts_records = [json.loads(line) for line in parts_index_path.read_text(encoding="utf-8").splitlines() if line]
+    damage_path = Path(damage_raw_dir) if damage_raw_dir else None
+
+    log.info(f"Loaded {len(parts_records)} records from {parts_index_path}")
+    union_hashes, shared_hashes = compute_union_hashes(parts_records, damage_path)
+    log.info(f"Union image hashes: {len(union_hashes)}, Shared with damage: {len(shared_hashes)}")
+
+    splits = create_splits(parts_records, union_hashes, shared_hashes, seed, train_ratio, val_ratio)
+
+    file_hashes: dict[str, str] = {}
+    partition_counts: dict[str, int] = {}
+    per_class_support: dict[str, dict[str, int]] = {}
+
+    for split_name in ("train", "val", "test"):
+        records = splits[split_name]
+        partition_counts[split_name] = len(records)
+        split_file = output_dir / f"{split_name}.jsonl"
+
+        with open(split_file, "w", encoding="utf-8") as f:
+            for r in records:
+                f.write(json.dumps(r) + "\n")
+
+        file_hashes[f"{split_name}.jsonl"] = sha256_of_file(split_file)
+
+        # Count per-class objects
+        class_support: dict[str, int] = {code: 0 for code in PART_CODES}
+        for r in records:
+            for code, cnt in r["class_object_counts"].items():
+                class_support[code] = class_support.get(code, 0) + cnt
+        per_class_support[split_name] = class_support
+
+    manifest = {
+        "status": "frozen",
+        "split_version": split_version,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "seed": seed,
+        "group_key": "content_sha256",
+        "ratios": {
+            "train": train_ratio,
+            "val": val_ratio,
+            "test": round(1.0 - train_ratio - val_ratio, 4),
+        },
+        "union_total_images": len(union_hashes),
+        "shared_images_with_damage": len(shared_hashes),
+        "parts_partition_counts": partition_counts,
+        "total_parts_images": len(parts_records),
+        "per_class_object_support": per_class_support,
+        "file_hashes": file_hashes,
+    }
+
+    manifest_path = output_dir / "split_manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    log.info(f"Split manifest written to {manifest_path}")
+    return manifest
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Create group-aware train/val/test splits for HITL parts.")
+    parser.add_argument("--parts-index", type=Path, default=Path("data/interim/hitl_parts/index.jsonl"),
+                        help="Path to parts index.jsonl produced by convert_hitl.py.")
+    parser.add_argument("--damage-raw-dir", type=Path, default=Path("data/raw/Car parts dataset"),
+                        help="Path to raw HITL damage folder to identify shared images.")
+    parser.add_argument("--output-dir", type=Path, default=Path("data/splits/parts/0.1.0"),
+                        help="Output directory for split manifest and partition jsonl files.")
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed for deterministic splitting.")
+    parser.add_argument("--split-version", type=str, default=DEFAULT_SPLIT_VERSION, help="Split version string.")
+    parser.add_argument("--train-ratio", type=float, default=0.70, help="Fraction for training split.")
+    parser.add_argument("--val-ratio", type=float, default=0.15, help="Fraction for validation split.")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    build_and_save_splits(
+        args.parts_index,
+        args.damage_raw_dir,
+        args.output_dir,
+        seed=args.seed,
+        split_version=args.split_version,
+        train_ratio=args.train_ratio,
+        val_ratio=args.val_ratio,
+    )
+
+
+if __name__ == "__main__":
+    main()

@@ -56,6 +56,9 @@ Thumbs.db
 !/artifacts/evaluation/.gitkeep
 /artifacts/exports/**
 !/artifacts/exports/.gitkeep
+*.pt
+*.pth
+/weights/
 
 # Local runtime state
 /runtime/

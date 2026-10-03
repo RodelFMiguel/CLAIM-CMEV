@@ -34,7 +34,9 @@ class Storage:
         if self.s3:
             self.client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=media_type)
         else:
-            (self.directory / key).write_bytes(data)
+            target = self.directory / key
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
 
     def read(self, key):
         if self.s3:

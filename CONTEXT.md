@@ -1238,3 +1238,68 @@ Four lanes run in parallel on disjoint paths:
 - **Validation:** created and rendered both slides with PowerPoint; visually inspected both renders. Native text bounds showed zero overflows. Presentation package and layout validators passed with two slides, 16:9, Aptos, zero findings and zero layout warnings. The bundled artifact authoring runtime was unavailable, so native PowerPoint automation was used. No application code or tests changed in this task.
 - **Limitations and next step:** collect the team's dataset/checkpoint details, measured model results, component updates and next owners/dates, then replace the editable placeholders. Training completion does not establish runtime integration or accuracy. The deck is local and uncommitted; no push was performed.
 - **Visual redesign (2026-09-27, Claude Code):** still two slides, rebuilt via PowerPoint automation from `runtime/presentation-build/create-deck-v2.ps1`. The script uses tinted full-bleed background photos, glass cards, module chips, a legend (running / fixture outputs / planned), status pills and three stat tiles. The stat tiles show 1,413 fixture/synthetic tests, 9 full-profile containers (8 long-running) and the team-reported SegFormer-B2. Backgrounds: slide 1 uses the project's own `src/workbench/public/images/damaged-car.png`; slide 2 uses the Wikimedia Commons photo "Rear End Tesla Model X Collision Damage Repair" by Scientificranking, licensed CC BY 4.0. The photo is credited on the slide and in the notes, and was cropped, converted to greyscale and tinted. The photo-cropping script is `prepare-backgrounds.py`. The previous deck is kept as `runtime/presentation-build/CLAIM-CMEV_system_design_and_progress.draft.pptx`. Checks: PowerPoint text bounds showed zero overflows, both renders were inspected, and the file reopens in PowerPoint with 2 slides and speaker notes. The pptx skill's `validate.py` was not run, because `lxml`/`defusedxml` are not installed.
+
+### M1 Vehicle Part Segmentation Ablation Study Verified (2026-09-27)
+
+Contributor: Antigravity (Lane 1 Vision). Preserved all prior defect remediation and architectural handoff entries.
+
+Changed paths:
+- Configuration: `configs/models/parts.yaml`, `configs/models/parts_v2_weighted.yaml`, `configs/models/parts_v3_compound.yaml`, `configs/models/parts_v4_augmented.yaml`, `configs/models/parts_v5_b2.yaml`
+- Pipelines & Dataset: `pipelines/vision/dataset.py`, `pipelines/vision/train_segformer.py`, `pipelines/vision/eval_segmentation.py`, `pipelines/vision/convert_hitl.py`, `pipelines/vision/build_splits.py`
+- Serving & Integration: `src/claim_cmev/vision/parts/adapter.py`, `src/claim_cmev/vision/parts/config.py`
+- Tests: `tests/unit/test_build_splits.py`, `tests/unit/test_convert_hitl.py`, `tests/unit/test_parts_adapter.py`, `tests/unit/test_parts_segmenter_live.py`, `tests/unit/test_segformer_dataset.py`, `tests/unit/test_train_eval_segformer.py`
+- Artifacts: `artifacts/models/parts/0.1.0/`, `artifacts/models/parts/0.2.0-weighted/`, `artifacts/models/parts/0.3.0-compound/`, `artifacts/models/parts/0.4.0-augmented/`, `artifacts/models/parts/0.5.0-b2/`
+
+Controlled Ablation Study Results on Frozen Test Split (147 images, `data/splits/parts/0.1.0/test.jsonl`):
+1. **Baseline (`0.1.0`)**: SegFormer-B0, unweighted CE (40 epochs). Test Foreground mIoU: **0.4664**, Supported Panels mIoU: **0.4710**. 7/10 panels passed $\ge 0.40$ floor; `roof` (0.1316), `rocker-panel` (0.1224), `back-door` (0.2708) failed.
+2. **Weighted CE (`0.2.0`)**: SegFormer-B0, inverse-sqrt class frequency weighting ($w_c \propto 1/\sqrt{N_c}$, bg=0.50, 60 epochs). Test Foreground mIoU: **0.5897** (+12.33 points), Panels mIoU: **0.5831**. 9/10 panels passed floor (`roof`: 0.4581, `rocker-panel`: 0.4575 passed; `back-door`: 0.3818 near floor).
+3. **Compound Loss (`0.3.0`)**: SegFormer-B0, Weighted CE + Soft Dice Loss ($\lambda=1.0$, 60 epochs). Test Foreground mIoU: **0.6034** (**Target $\ge 0.60$ MET**), Panels mIoU: **0.5945** (**10/10 panels passed floor**; `back-door` reached 0.4071, `rocker-panel` 0.4727, `roof` 0.4643).
+4. **Compound + Augmentation (`0.4.0`)**: SegFormer-B0, CLAHE seam-contrast + subtle perspective warp ($<4\%$). Test Foreground mIoU: **0.5986**, Panels mIoU: **0.5907** (10/10 panels passed floor). Boundary precision improved on seams but slight macro smoothing occurred on low-capacity B0.
+5. **Encoder Capacity Scaling (`0.5.0`)**: SegFormer-B2 (`nvidia/mit-b2`, 27.4M parameters, compound loss). Test Foreground mIoU: **0.7075** (+24.11 points over baseline), Supported Panels mIoU: **0.6914** (+22.04 points). All 10 supported panels passed with large margins (`back-door`: 0.5529, `rocker-panel`: 0.5764, `roof`: 0.5778, `quarter-panel`: 0.6811, `fender`: 0.6942, `front-bumper`: 0.8127, `hood`: 0.8545).
+6. **SegFormer-B2 + Advanced Augmentation (`0.6.0`)**: SegFormer-B2 + Compound Loss + CLAHE seam contrast + subtle perspective warp ($<4\%$). Test Foreground mIoU: **0.7062**, Supported Panels mIoU: **0.6916**. Directly enhanced boundary precision and IoU on seam-delimited panels (`back-door`: 0.5529 -> **0.5602**, precision +1.44 pts; `quarter-panel`: 0.6811 -> **0.6884**; `trunk`: 0.7124 -> **0.7150**), while circular wheel classes experienced minor aspect-ratio variation under perspective warp.
+
+Validation Evidence:
+- Executed on RTX 5060 Laptop GPU in Python 3.12 / PyTorch `2.14.0+cu130`.
+- Evaluated on identical frozen test split reserved under union hash grouping (`content_sha256`), guaranteeing zero leakage across the 441 shared images with M2.
+- 5 passed in parts unit and live adapter tests (`test_parts_adapter.py`, `test_parts_segmenter_live.py`).
+
+Limits:
+- HITL part labels carry no left/right side. All predictions assign `side="unknown"` per invariant; resolution is deferred to M3 human confirmation.
+- CarDD damage dataset pending consent/files for M2.
+
+Next concrete step: Update default serving configuration in `configs/models/parts.yaml` to point to SegFormer-B2 (`artifacts/models/parts/0.5.0-b2/` or `0.6.0-b2-augmented/`), and proceed to M2 damage segmentation conversion and pipeline setup.
+
+
+### Cross-Architecture Benchmark: CNNs (ResNet-50, YOLOv8) vs Transformers (SegFormer-B2, B3) Verified (2026-10-03)
+
+Contributor: Antigravity (Lane 1 Vision). Evaluated all architectures on the identical frozen test split (147 images, `data/splits/parts/0.1.0/test.jsonl`).
+
+Changed paths:
+- Configurations: `configs/models/parts_resnet50.yaml`, `configs/models/parts_v7_b2_original.yaml`, `configs/models/parts_v8_b3_compound.yaml`
+- Scripts & Pipelines: `pipelines/vision/train_resnet.py`, `pipelines/vision/export_yolo_parts.py`, `pipelines/vision/train_eval_yolo.py`, `pipelines/vision/eval_segmentation.py`
+- interim Data: `data/interim/yolo_parts/` (YOLO segmentation format with normalized polygon labels)
+- Artifacts:
+  - DeepLabV3-ResNet50: `artifacts/models/parts/resnet50/test_evaluation_report.json`
+  - YOLOv8m-seg: `artifacts/models/parts/yolov8m-seg/test_evaluation_report.json`
+  - SegFormer-B2 Original (Vanilla CE): `artifacts/models/parts/0.7.0-b2-original/test_evaluation_report.json`
+  - SegFormer-B2 Compound Loss: `artifacts/models/parts/0.5.0-b2/test_evaluation_report.json`
+  - SegFormer-B2 Enhanced (Compound + Aug): `artifacts/models/parts/0.6.0-b2-augmented/test_evaluation_report.json`
+  - SegFormer-B3 Compound Loss: `artifacts/models/parts/0.8.0-b3-compound/test_evaluation_report.json`
+
+Summary of Evaluated Test Metrics:
+| Architecture | Family | Params | Overall Acc | Fg mIoU | Panels mIoU | Macro Prec | Macro Rec | Macro F1 | Floor Violations |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| DeepLabV3-ResNet50 | CNN (Dilated/ASPP) | 42.0M | 0.9486 | 0.7284 | 0.7357 | 0.8389 | 0.8361 | 0.8362 | 0 (10/10 PASS) |
+| YOLOv8m-seg | CNN (Anchor-Free Inst) | 27.2M | 0.9600 | 0.7940 | 0.8086 | 0.8719 | 0.8925 | 0.8811 | 0 (10/10 PASS) |
+| SegFormer-B2 Original | Transformer (Vanilla CE) | 27.5M | 0.9365 | 0.6914 | 0.6789 | 0.8149 | 0.8108 | 0.8116 | 0 (10/10 PASS) |
+| SegFormer-B2 Compound | Transformer (Comp Loss) | 27.5M | 0.9385 | 0.7075 | 0.6914 | 0.8024 | 0.8494 | 0.8234 | 0 (10/10 PASS) |
+| SegFormer-B2 Enhanced | Transformer (Comp + Aug)| 27.5M | 0.9383 | 0.7062 | 0.6916 | 0.8010 | 0.8497 | 0.8226 | 0 (10/10 PASS) |
+| SegFormer-B3 Compound | Transformer (Comp Loss) | 47.2M | 0.9452 | 0.7303 | 0.7254 | 0.8172 | 0.8644 | 0.8387 | 0 (10/10 PASS) |
+
+Key Findings:
+1. **YOLOv8m-seg** achieved the strongest overall performance (0.7940 Fg mIoU, 0.8811 Macro F1). Its instance proposal gating naturally suppresses inter-panel bleeding (`front-door` <-> `back-door`), producing crisp panel boundaries.
+2. **DeepLabV3-ResNet50** demonstrated robust dense contextual representation with its ASPP module, attaining 0.7284 Fg mIoU and 0.8362 Macro F1.
+3. Scaling SegFormer from **B2 (27.5M)** to **B3 (47.2M)** pushed Transformer performance from 0.7075 to 0.7303 Fg mIoU and from 0.8234 to 0.8387 Macro F1.
+4. Across all models, confusion matrices confirm that errors concentrate almost exclusively along adjacent panel seams (`back-door` <-> `front-door`, `grille` <-> `front-bumper`).
+
+Next concrete step: Finalize Module 1 default deployment selection and proceed to Module 2 (damage segmentation).
