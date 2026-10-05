@@ -80,5 +80,6 @@ def test_segmenter_inference_on_real_photo(tmp_path: Path):
     assert transform.mask_frame == "model"
 
     # Quality check
-    assert quality.state in ("acceptable", "limited", "unusable")
+    assert quality.state in ("acceptable", "limited", "unusable", "not_assessed")
+    assert quality.exposure_state in ("normal", "under", "over", "not_assessed")
     assert quality.photo_id == "ph_01"

@@ -1,0 +1,16 @@
+# cmev-worker-parts: M1 Vehicle Part Segmentation worker container
+# Specification: docs/specs/module-01-vehicle-part-segmentation.md
+FROM python:3.12-slim-bookworm
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
+    CMEV_TAXONOMY_DIR=/srv/configs/taxonomy \
+    CMEV_MODEL_REGISTRY_PATH=/srv/artifacts/models \
+    CMEV_WORKER_ROLE=parts
+WORKDIR /srv
+COPY pyproject.toml README.md ./
+COPY src/claim_cmev ./src/claim_cmev
+COPY configs ./configs
+RUN pip install . && useradd --uid 10001 --create-home cmev \
+    && mkdir -p /srv/artifacts/models /tmp \
+    && chown -R 10001:10001 /srv/artifacts/models
+USER 10001:10001
+CMD ["python", "-m", "claim_cmev.worker", "run", "--role", "parts"]

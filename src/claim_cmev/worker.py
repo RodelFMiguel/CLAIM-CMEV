@@ -43,7 +43,7 @@ def startup_checks(database: Database, settings: RuntimeSettings, role: str,
                    consolidator: Consolidator | None) -> dict[str, Any]:
     """Refuse to start on a schema-head mismatch or an unloadable rule config / cost table."""
     info: dict[str, Any] = {"role": role, "profile": settings.profile, "schema_head": check_head(database.engine)}
-    if not settings.fixture_mode:
+    if not settings.fixture_mode and role != "parts":
         raise RuntimeError("CMEV_FIXTURE_MODE=false: only fixture stage producers exist; real inference is unavailable")
     if consolidator is None:
         raise RuntimeError("M8 rule configuration missing")

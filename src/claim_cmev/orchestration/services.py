@@ -25,7 +25,7 @@ from .consolidation import Consolidator
 from .orchestrator import GROUP as ORCHESTRATOR_GROUP, Orchestrator
 from .plan import VersionBundle
 
-ROLES = ("combined", "orchestrator", "producers", "consolidator")
+ROLES = ("combined", "orchestrator", "producers", "consolidator", "parts")
 REPO_COST_TABLES = Path(__file__).resolve().parents[3] / "artifacts" / "cost_tables"
 
 
@@ -78,6 +78,15 @@ def build_runtimes(session_factory: Any, role: str, *, versions: VersionBundle, 
             raise RuntimeError("only fixture producers exist; real module workers are not implemented")
         for group, handlers in FixtureProducers(versions).groups().items():
             runtimes.append(ConsumerRuntime(session_factory, group, handlers, service=group, **common))
+    if role == "parts":
+        from ..storage import Storage
+        from ..vision.parts.adapter import PartsSegmenter, make_parts_handler
+        storage = Storage()
+        segmenter = PartsSegmenter()
+        parts_handler = make_parts_handler(segmenter, storage)
+        runtimes.append(ConsumerRuntime(session_factory, "cmev-worker-parts",
+                                        {"cmev.cmd.parts-segment.v1": parts_handler},
+                                        service="cmev-worker-parts", **common))
     if role in ("combined", "consolidator"):
         runtimes.append(ConsumerRuntime(session_factory, "cmev-consolidator", consolidator.handlers(),
                                         service="cmev-consolidator", **common))
