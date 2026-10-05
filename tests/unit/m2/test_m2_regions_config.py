@@ -148,11 +148,12 @@ def test_default_configuration_is_the_proposed_specification_values():
             cfg.regions.max_components_per_photo) == (0.5, 256, 8, 50)
     rule = cfg.assignment
     assert (rule.assign_min_containment, rule.assign_ambiguity_margin, rule.assign_background_max,
-            rule.split_components) == (0.6, 0.2, 0.5, False)
+            rule.split_components, rule.split_min_pixels, rule.split_min_proportion) == (0.6, 0.2, 0.5, False, 400, 0.2)
 
 
 @pytest.mark.parametrize("change", [
-    {"assignment": {"split_components": True}},
+    {"assignment": {"split_min_pixels": 0}},
+    {"assignment": {"split_min_proportion": 0}},
     {"assignment": {"surprise": 1}},
     {"regions": {"connectivity": 6}},
     {"assignment": {"assign_min_containment": 0}},

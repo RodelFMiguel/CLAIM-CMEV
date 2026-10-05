@@ -1,0 +1,57 @@
+{
+  "status": "frozen",
+  "split_version": "0.1.0",
+  "created_at": "2026-10-03T15:53:04.931498+00:00",
+  "seed": 20260922,
+  "group_key": "content_sha256",
+  "ratios": {
+    "train": 0.7,
+    "val": 0.15,
+    "test": 0.15
+  },
+  "union_total_images": 1371,
+  "shared_images_with_parts": 441,
+  "damage_partition_counts": {
+    "train": 558,
+    "val": 124,
+    "test": 132
+  },
+  "total_damage_images": 814,
+  "per_class_object_support": {
+    "train": {
+      "missing-part": 436,
+      "broken-part": 1017,
+      "scratch": 2194,
+      "cracked": 52,
+      "dent": 1110,
+      "flaking": 217,
+      "paint-chip": 802,
+      "corrosion": 182
+    },
+    "val": {
+      "missing-part": 98,
+      "broken-part": 241,
+      "scratch": 471,
+      "cracked": 13,
+      "dent": 278,
+      "flaking": 48,
+      "paint-chip": 267,
+      "corrosion": 36
+    },
+    "test": {
+      "missing-part": 98,
+      "broken-part": 242,
+      "scratch": 577,
+      "cracked": 11,
+      "dent": 276,
+      "flaking": 72,
+      "paint-chip": 287,
+      "corrosion": 59
+    }
+  },
+  "partition_file_hashes": {
+    "train_jsonl_sha256": "23023e5f5a28b541c39f28aedc6f130af4a201134c811026e894eabf9c23d749",
+    "val_jsonl_sha256": "73b14708491202f636c046ce5d77619bdcde73ed2ff0b031f11c2392209074f4",
+    "test_jsonl_sha256": "f3d0e07ed1243c7bccb234915128e764f10e01c2c50693e79f29d37d6a21de74"
+  }
+}

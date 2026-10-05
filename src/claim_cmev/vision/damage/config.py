@@ -34,7 +34,9 @@ class AssignmentRule(_Strict):
     assign_min_containment: float = Field(gt=0, le=1)
     assign_ambiguity_margin: float = Field(ge=0, le=1)
     assign_background_max: float = Field(ge=0, le=1)
-    split_components: Literal[False]
+    split_components: bool
+    split_min_pixels: int = Field(ge=1)
+    split_min_proportion: float = Field(gt=0, le=1)
 
     def exact(self, name: str) -> Fraction:
         """A threshold as an exact fraction of its decimal text, so 0.7 - 0.5 >= 0.2 holds."""

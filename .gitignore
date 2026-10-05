@@ -60,7 +60,11 @@ Thumbs.db
 /artifacts/diagnostics/
 *.pt
 *.pth
+*.safetensors
+*.bin
+*.onnx
 /weights/
+
 
 # Local runtime state
 /runtime/

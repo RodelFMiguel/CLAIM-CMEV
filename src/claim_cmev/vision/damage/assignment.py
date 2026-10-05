@@ -313,26 +313,71 @@ def assign_damage_to_part(
     region_set: RegionSet = extract_regions(damage_mask, confidence, damage_classes, config.regions)
     denominator = int(grid[0] * grid[1])
     part_ref = context.part_mask_ref if part_mask is not None else None
+    code_to_class_id = {code: cid for cid, code in part_classes.items()}
     observations = []
     for region in region_set.regions:
-        decision = assign_component(region_set.labels == region.index, part_mask, part_classes, accepted_parts,
+        comp_mask = region_set.labels == region.index
+        decision = assign_component(comp_mask, part_mask, part_classes, accepted_parts,
                                     config.assignment)
-        observations.append(ImageDamageObservation(
-            claim_id=context.claim_id, input_revision=context.input_revision, provenance=context.provenance,
-            versions=dict(context.versions),
-            observation_id=deterministic_id("ob", context.job_key, context.photo_id, region.index),
-            photo_id=context.photo_id, damage_code=region.damage_code,
-            damage_confidence=min(1.0, max(0.0, round(region.mean_confidence, _STORE_DIGITS))),
-            assignment_status=decision.assignment_status, part_code=decision.part_code,
-            part_reason=decision.part_reason, side=SIDE, side_reason=SIDE_REASON,
-            candidates=list(decision.candidates), primary_containment=decision.primary_containment,
-            runner_up_containment=decision.runner_up_containment,
-            background_containment=decision.background_containment, area_pixels=region.pixel_count,
-            area_fraction=round(region.pixel_count / denominator, _STORE_DIGITS),
-            area_denominator_pixels=denominator,
-            damage_mask_ref=context.damage_mask_ref.model_copy(update={"component_index": region.index}),
-            part_mask_ref=part_ref, bbox_norm=bbox_to_original_norm(region.bbox_model, grid, transform),
-            assignment_config_version=config.config_version))
+        split_observations = []
+        if (config.assignment.split_components
+                and part_mask is not None
+                and decision.part_reason == "ambiguous_between_parts"):
+            containments, _ = measure_containment(comp_mask, part_mask, part_classes)
+            min_pixels = config.assignment.split_min_pixels
+            min_proportion = config.assignment.exact("split_min_proportion")
+            passing_parts = []
+            for part_code, containment in containments.items():
+                part_pixels = int(containment * region.pixel_count)
+                if part_pixels >= min_pixels and containment >= min_proportion:
+                    passing_parts.append(part_code)
+
+            if len(passing_parts) >= 2:
+                passing_parts.sort(key=lambda code: (-containments[code], _PART_ORDER.get(code, len(_PART_ORDER)), code))
+                for sub_idx, part_code in enumerate(passing_parts, start=1):
+                    cid = code_to_class_id[part_code]
+                    sub_mask = comp_mask & (part_mask == cid)
+                    sub_pixels = int(np.count_nonzero(sub_mask))
+                    sub_conf = float(np.mean(confidence[sub_mask]))
+                    ys, xs = np.where(sub_mask)
+                    sub_bbox = (int(xs.min()), int(ys.min()), int(xs.max() + 1), int(ys.max() + 1))
+                    sub_decision = assign_component(sub_mask, part_mask, part_classes, accepted_parts, config.assignment)
+                    split_observations.append(ImageDamageObservation(
+                        claim_id=context.claim_id, input_revision=context.input_revision, provenance=context.provenance,
+                        versions=dict(context.versions),
+                        observation_id=deterministic_id("ob", context.job_key, context.photo_id, region.index, sub_idx),
+                        photo_id=context.photo_id, damage_code=region.damage_code,
+                        damage_confidence=min(1.0, max(0.0, round(sub_conf, _STORE_DIGITS))),
+                        assignment_status=sub_decision.assignment_status, part_code=sub_decision.part_code,
+                        part_reason=sub_decision.part_reason, side=SIDE, side_reason=SIDE_REASON,
+                        candidates=list(sub_decision.candidates), primary_containment=sub_decision.primary_containment,
+                        runner_up_containment=sub_decision.runner_up_containment,
+                        background_containment=sub_decision.background_containment, area_pixels=sub_pixels,
+                        area_fraction=round(sub_pixels / denominator, _STORE_DIGITS),
+                        area_denominator_pixels=denominator,
+                        damage_mask_ref=context.damage_mask_ref.model_copy(update={"component_index": region.index}),
+                        part_mask_ref=part_ref, bbox_norm=bbox_to_original_norm(sub_bbox, grid, transform),
+                        assignment_config_version=config.config_version))
+
+        if split_observations:
+            observations.extend(split_observations)
+        else:
+            observations.append(ImageDamageObservation(
+                claim_id=context.claim_id, input_revision=context.input_revision, provenance=context.provenance,
+                versions=dict(context.versions),
+                observation_id=deterministic_id("ob", context.job_key, context.photo_id, region.index),
+                photo_id=context.photo_id, damage_code=region.damage_code,
+                damage_confidence=min(1.0, max(0.0, round(region.mean_confidence, _STORE_DIGITS))),
+                assignment_status=decision.assignment_status, part_code=decision.part_code,
+                part_reason=decision.part_reason, side=SIDE, side_reason=SIDE_REASON,
+                candidates=list(decision.candidates), primary_containment=decision.primary_containment,
+                runner_up_containment=decision.runner_up_containment,
+                background_containment=decision.background_containment, area_pixels=region.pixel_count,
+                area_fraction=round(region.pixel_count / denominator, _STORE_DIGITS),
+                area_denominator_pixels=denominator,
+                damage_mask_ref=context.damage_mask_ref.model_copy(update={"component_index": region.index}),
+                part_mask_ref=part_ref, bbox_norm=bbox_to_original_norm(region.bbox_model, grid, transform),
+                assignment_config_version=config.config_version))
 
     reasons = list(region_set.reasons)
     if part_mask is None:
