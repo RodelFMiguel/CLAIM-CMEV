@@ -1,6 +1,6 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-10-02 (Asia/Singapore), M2 recall/regularisation presets and validation background-offset tuning added; the 2026-09-27 application verification remains historical.
+Last updated: 2026-10-06 (Asia/Singapore), illustrated M1/M2/M3 workflow added; training handoffs remain dated 2026-10-02 and the 2026-09-27 application verification remains historical.
 - **Implementation baseline:** HEAD `343ef1a` on branch `image-worker` (training checkpoint commit). Application code last changed in `6e59bc2` on `code-skeleton`. No push has been verified.
 - **Read first for training:** the [M2 CarDD notebook handoff](#m2-cardd-notebook-and-converter-2026-10-02), the [M2 recall/regularisation handoff](#m2-recall-regularisation-presets-and-background-offset-2026-10-02), the [M2 failure-review handoff](#m2-failure-review-and-tiny-fitting-diagnostic-2026-10-02), then the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
 - **Application baseline:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
@@ -1513,6 +1513,24 @@ Uncommitted work, limitations and missing prerequisites:
 - An epoch at 640 px is expected to take roughly 10-15 minutes on the Mac.
 - Recoloured near-duplicates beyond the dHash threshold may remain undetected.
 Next concrete step and agreed owner (or unassigned): The user trains `damage_focus` from the CarDD notebook. Whether to exclude val `000790.jpg` is a team choice; excluding it would require a new prepared version.
+
+## Illustrated vision workflow (2026-10-06)
+
+Date/time and timezone: 2026-10-06, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: Draw the M1/M2 tensor and postprocessing workflow through M3 part summaries and coverage, at the user's request.
+Branch / baseline commit / resulting commit or PR: `image-worker` / `fef6da7` / uncommitted; no commit or push performed.
+Changed paths and completed behaviour:
+- `docs/diagrams/vision-tensor-workflow.dot`, `vision-summary-example.dot`: editable full workflow and illustrative two-photo summary drawings.
+- `docs/diagrams/vision-workflow-viewer.html`, `render_vision_workflow.py`: self-contained zoomable viewer template and Graphviz renderer. SVG/PDF/PNG/HTML exports live in ignored `artifacts/exports/vision-workflow/`.
+- `docs/specs/vision-workflow-illustrated.md`: legend, shape semantics, implementation boundaries, reproducible rendering command and source links. Linked from the specification index and the user's existing untracked `misc-design-explanations.md`; its existing content was preserved.
+Decisions (accepted/proposed) and references: Explanation only; no serving, taxonomy, threshold or runtime decisions changed. The drawing uses 512 as an example, distinguishes native logits from upsampled scores, shows M2 overlap before M3 grouping, and keeps coverage separate from damage summaries. Existing M1 adapter code supersedes older handoff statements that M1 has no code; this work does not establish adapter acceptance or live model integration.
+Checks actually run, results and artifact locations:
+- Graphviz rendered both diagrams to SVG/PDF/PNG with no warnings after correcting cross-cluster rank configuration; SVG XML parsed successfully.
+- Visually inspected PNG previews of both layouts. Verified all 25 guide link targets exist locally, generated exports are ignored, and `git diff --check` passes.
+- Checked generated viewer contains two embedded SVGs, unique IDs and no external assets; Node JavaScript syntax check passed. Browser interaction was not exercised: Playwright is not installed in this checkout.
+Uncommitted work, limitations and missing prerequisites: Documentation only, no models run and no accuracy measured. Serving preprocessing/padding reconciliation, live M2 adapter, HITL-to-serving taxonomy decisions, and runtime ownership of M3 pixel measurements remain pending. User `.gitignore` changes, presentation files and existing explanation text were preserved.
+Next concrete step and agreed owner (or unassigned): User reviews the drawings; integration owners (unassigned) reconcile the explicitly documented serving boundaries before connecting live M1/M2 outputs to M3.
 
 
 ## M1 serving and trainer fixes after branch review (2026-10-07)

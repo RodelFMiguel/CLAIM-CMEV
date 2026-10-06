@@ -1,0 +1,29 @@
+digraph SummaryExample {
+  graph [rankdir=TB, bgcolor="#F8FAFC", pad=0.4, nodesep=0.55, ranksep=0.45,
+    fontname="Helvetica", fontsize=23, fontcolor="#0F172A", labelloc=t,
+    label="Worked example  |  Two photos → one part summary\nIllustrative values only • no model result claimed\n "];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="#CBD5E1",
+    fontname="Helvetica", fontsize=14, fontcolor="#0F172A", margin="0.22,0.18", penwidth=1.4];
+  edge [color="#64748B", arrowsize=0.75, penwidth=1.5, fontname="Helvetica", fontsize=12];
+  a [label="PHOTO A • M1 + M2, aligned 512 × 512 masks\nM1: front-door is accepted; side unknown\nM2: scratch region rA = 1,000 pixels\nOverlap: door 85%, fender 10%, background 5%\n→ obs_A: scratch assigned to front-door\narea_fraction = 1000 / 262144 = 0.003815\ndamage_confidence = 0.82", fillcolor="#DBEAFE", color="#60A5FA"];
+  b [label="PHOTO B • M1 + M2, aligned 512 × 512 masks\nM1: front-door is accepted; side unknown\nM2: dent region rB = 1,500 pixels\nOverlap: door 90%, fender 6%, background 4%\n→ obs_B: dent assigned to front-door\narea_fraction = 1500 / 262144 = 0.005722\ndamage_confidence = 0.76", fillcolor="#FFEDD5", color="#FB923C"];
+  { rank=same; a; b; }
+  initial [label="M3 BEFORE REVIEW\nOne part_only group: (front-door, unknown)\nMembers = [obs_A, obs_B]; damage_codes = {dent, scratch}\nThis groups a category; same physical door is not established\nCoverage = unresolved: identity_not_resolved", fillcolor="#F1F5F9"];
+  a -> initial; b -> initial;
+  human [label="TWO DISTINCT HUMAN STATEMENTS\n1. Identity: A and B show the LEFT front door\n2. Coverage: A and B show enough of that part to judge\nAssume the named views pass the automatic quality screen\nCreate new input revision; reuse original observations", fillcolor="#FEF3C7", color="#D97706"];
+  initial -> human [label="surveyor reviews evidence"];
+  group [label="M3 GROUPING\nResolved key = (front-door, left)\nRetain obs_A and obs_B as separate source records\nUnion damage types; choose largest member area\nDo not add 1,000 + 1,500 pixels across views", fillcolor="#ECFDF5", color="#34D399"];
+  gate [label="M3 COVERAGE GATE\nSuccessful processing + resolved identity\nAccepted M1 views + passing quality signals\nPositive coverage confirmation names passing views\n→ adequate, with recorded confirmation reference", fillcolor="#ECFDF5", color="#34D399"];
+  human -> group; human -> gate;
+  { rank=same; group; gate; }
+  result [shape=plain, label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="12" COLOR="#A7F3D0" BGCOLOR="white">
+      <TR><TD COLSPAN="2" BGCOLOR="#D1FAE5"><B>REVIEW DISPLAY • combines two separate record types</B></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PartSummary</B></TD><TD ALIGN="LEFT"><B>PartCoverage</B></TD></TR>
+      <TR><TD ALIGN="LEFT">part_code: front-door<BR ALIGN="LEFT"/>side: left<BR ALIGN="LEFT"/>identity_status: resolved<BR ALIGN="LEFT"/>damage_codes: [dent, scratch]<BR ALIGN="LEFT"/>member_observation_ids: [obs_A, obs_B]<BR ALIGN="LEFT"/>supporting_photo_ids: [A, B]<BR ALIGN="LEFT"/>observation_count: 2<BR ALIGN="LEFT"/>representative_area_fraction: 0.005722<BR ALIGN="LEFT"/>representative_observation_id: obs_B<BR ALIGN="LEFT"/>max_confidence: 0.82 (from obs_A)<BR ALIGN="LEFT"/>aggregation_method: max_member<BR ALIGN="LEFT"/></TD>
+      <TD ALIGN="LEFT">part_code: front-door<BR ALIGN="LEFT"/>side: left<BR ALIGN="LEFT"/>state: adequate<BR ALIGN="LEFT"/>covering_photo_ids: [A, B]<BR ALIGN="LEFT"/>views: measured signals + screen results<BR ALIGN="LEFT"/>identity_confirmation_ids: retained<BR ALIGN="LEFT"/>coverage_confirmation_id: retained<BR ALIGN="LEFT"/>claim / input / config versions: retained<BR ALIGN="LEFT"/><BR ALIGN="LEFT"/>M8 still evaluates the repair claim.<BR ALIGN="LEFT"/>Coverage does not establish repair necessity.<BR ALIGN="LEFT"/></TD></TR>
+    </TABLE>>];
+  group -> result; gate -> result;
+  limits [label="WHAT CHANGES IN UNCERTAIN CASES?\nIf B is confirmed RIGHT: produce separate left and right groups.\nIf M2 cannot assign B's part: keep B in its own unresolved group; do not guess.\nIf views are blurry or coverage is unconfirmed: preserve the summary, withhold adequate coverage.\nTwo observations do not establish two physical damage instances.\nArea fraction is relative to an image frame, not physical panel area or severity.", fillcolor="#E2E8F0"];
+  result -> limits;
+}
