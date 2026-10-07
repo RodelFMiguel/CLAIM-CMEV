@@ -49,6 +49,7 @@ Thumbs.db
 
 # Generated artifacts
 /artifacts/models/**
+/artifacts/models/.cache/*
 !/artifacts/models/.gitkeep
 /artifacts/cost_tables/**
 !/artifacts/cost_tables/.gitkeep
@@ -56,6 +57,7 @@ Thumbs.db
 !/artifacts/evaluation/.gitkeep
 /artifacts/exports/**
 !/artifacts/exports/.gitkeep
+/artifacts/diagnostics/
 *.pt
 *.pth
 /weights/

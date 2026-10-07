@@ -3,8 +3,14 @@ name: claim-cmev
 # Profiles (technical specification 11.1): `lean` runs one combined worker; `full` runs the
 # orchestrator, the fixture stage producers and the consolidator as separate containers
 # from the same image. Both use the same handlers, topics and records.
+#
+# On its own this file is fixture-only: the fixture producer owns the parts stage and the M1
+# worker below is not started. To serve the trained model, add docker-compose.parts.yml as a
+# second -f file. That file starts the worker and switches every service together; the switch
+# is deliberately not read from .env, so it cannot be turned on without the worker.
 x-app-environment: &app-environment
   CMEV_FIXTURE_MODE: "true"
+  CMEV_PARTS_PRODUCER: fixture
   CMEV_DATABASE_URL: postgresql+psycopg://cmev:${CMEV_DB_PASSWORD:?Set CMEV_DB_PASSWORD in infra/compose/.env}@cmev-db:5432/cmev
   CMEV_KAFKA_BOOTSTRAP: cmev-kafka:9092
   STORAGE_BACKEND: s3
@@ -129,7 +135,7 @@ services:
       CMEV_PROFILE: full
 
   cmev-worker-parts:
-    profiles: [lean, full]
+    profiles: [parts]  # docker-compose.parts.yml adds lean and full
     build:
       context: ../..
       dockerfile: infra/Dockerfile.parts
@@ -143,8 +149,10 @@ services:
     environment:
       <<: *app-environment
       CMEV_WORKER_ROLE: parts
+      CMEV_PROFILE: ${CMEV_PROFILE:-lean}
     volumes:
-      - cost-tables:/srv/artifacts/cost_tables:ro
+      # The model registry: <host path>/parts/<version>/ with weights and manifest.json.
+      - ${CMEV_MODEL_REGISTRY_HOST_PATH:-../../artifacts/models}:/srv/artifacts/models:ro
     healthcheck:
       test: [CMD, python, -m, claim_cmev.worker, healthcheck]
       interval: 15s

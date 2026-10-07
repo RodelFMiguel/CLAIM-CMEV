@@ -1,19 +1,23 @@
 """Online serving adapter for M1 Vehicle Part Segmentation.
 
 Loads the trained SegFormer checkpoint, decodes vehicle photographs with EXIF
-orientation, prepares the 512x512 model frame, runs inference, saves paletted mask PNGs
-and display overlays to object storage, and produces PartPrediction and ImageQuality records
-conforming to CLAIM-CMEV data and integration contracts.
+orientation, prepares the 512x512 model frame, runs inference, and produces the paletted
+mask PNG, the display overlay, and PartPrediction and ImageQuality records conforming to
+CLAIM-CMEV data and integration contracts.
+
+``run_parts_segmentation`` is the one entry point and writes nothing. The consumer handler
+stores its artifacts, persists its rows and publishes the completion event.
 
 Specification: docs/specs/module-01-vehicle-part-segmentation.md
                docs/specs/integration_contracts.md section 5.4
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 import hashlib
 import io
+import json
 import logging
 from pathlib import Path
 import time
@@ -23,6 +27,7 @@ import numpy as np
 from PIL import Image
 import torch
 import torch.nn.functional as F
+import transformers
 from transformers import SegformerConfig, SegformerForSemanticSegmentation
 
 from claim_cmev.contracts.common import (
@@ -38,11 +43,12 @@ from claim_cmev.contracts.imaging import (
     MaskRef,
     PartPrediction,
 )
-from claim_cmev.messaging.consumer import Context, PermanentError
+from claim_cmev.messaging.consumer import Context, PermanentError, TransientError
+from claim_cmev.messaging.outbox import build_message
 from claim_cmev.persistence.store import insert_records
 from claim_cmev.review.overlays import render_photo_overlay
 from claim_cmev.storage import Storage
-from claim_cmev.vision.palette import ID_TO_PART_CODE, PART_CODE_TO_ID, build_palette
+from claim_cmev.vision.palette import ID_TO_PART_CODE, build_palette
 from claim_cmev.vision.transforms import decode_oriented, letterbox, plan_model_frame
 
 from .config import PartsConfig, load_parts_config
@@ -53,6 +59,10 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 ProcessingStatus = Literal["succeeded", "partial", "failed"]
+PARTS_EVENT_TOPIC = "cmev.evt.parts-segmented.v1"
+RETRYABLE_REASONS: frozenset[str] = frozenset()
+"""Per-photo failures worth another attempt. There are none: a hash mismatch and an
+undecodable photo fail the same way every time (module-01: a mismatch "is not silently re-fetched")."""
 
 
 @dataclass(frozen=True)
@@ -117,7 +127,10 @@ class PhotoSegmentationOutcome:
 
 @dataclass(frozen=True)
 class PartsSegmentResult:
-    """Batch result of M1 segmentation conforming to module specification."""
+    """Batch result of M1 segmentation conforming to module specification.
+
+    ``artifacts`` carry their bytes; the caller stores them at each artifact's ``key``.
+    """
 
     processing_status: ProcessingStatus
     reasons: tuple[Reason, ...]
@@ -129,12 +142,62 @@ class PartsSegmentResult:
     retryable: bool
 
 
+WEIGHT_FILES = ("model.safetensors", "pytorch_model.bin")
+
+
+class ModelUnavailable(RuntimeError):
+    """The configured checkpoint cannot be served, so the worker must refuse to start."""
+
+    def __init__(self, reason_code: str, reason_text: str):
+        super().__init__(f"{reason_code}: {reason_text}")
+        self.reason_code, self.reason_text = reason_code, reason_text
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1 << 20):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_checkpoint(model_dir: str | Path, config: PartsConfig) -> dict[str, Any]:
+    """Check a registry entry against its manifest and the configuration; returns the manifest.
+
+    Technical specification 9.3: a worker verifies the weight file's SHA-256 against its
+    manifest at start and refuses to start on a mismatch. Another model version, taxonomy
+    version or class numbering is refused as well, never remapped.
+    """
+    model_dir = Path(model_dir)
+    if not model_dir.is_dir():
+        raise ModelUnavailable("model_not_found", f"no registry entry at {model_dir}")
+    manifest_path = model_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise ModelUnavailable("model_manifest_missing", f"{manifest_path} does not exist")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("version") != config.model_version:
+        raise ModelUnavailable("model_version_mismatch", f"the manifest names {manifest.get('version')!r}, "
+                               f"the configuration {config.model_version!r}")
+    if manifest.get("taxonomy_version") != config.taxonomy_version:
+        raise ModelUnavailable("taxonomy_version_mismatch", f"the manifest names {manifest.get('taxonomy_version')!r}, "
+                               f"the configuration {config.taxonomy_version!r}")
+    weights = next((model_dir / name for name in WEIGHT_FILES if (model_dir / name).is_file()), None)
+    if weights is None:
+        raise ModelUnavailable("model_weights_missing", f"no weight file in {model_dir}")
+    if _sha256_file(weights) != manifest.get("weights_sha256"):
+        raise ModelUnavailable("model_weights_hash_mismatch", f"{weights.name} does not match its manifest hash")
+    labels = json.loads((model_dir / "config.json").read_text(encoding="utf-8")).get("id2label") or {}
+    if {int(class_id): code for class_id, code in labels.items()} != ID_TO_PART_CODE:
+        raise ModelUnavailable("label_map_mismatch", "the checkpoint's class map is not the parts taxonomy's")
+    return manifest
+
+
 class PartsSegmenter:
     """Inference engine for M1 vehicle part segmentation."""
 
     def __init__(
         self,
-        model_dir: str | Path = "artifacts/models/parts/0.1.0",
+        model_dir: str | Path,
         config: PartsConfig | None = None,
         device_str: str | None = None,
     ) -> None:
@@ -160,175 +223,58 @@ class PartsSegmenter:
 
         log.info(f"Loading SegFormer model from {self.model_dir} to {self.device}...")
         self.seg_config = SegformerConfig.from_pretrained(self.model_dir)
-        self.model = SegformerForSemanticSegmentation.from_pretrained(
+        model, loading = SegformerForSemanticSegmentation.from_pretrained(
             self.model_dir,
             config=self.seg_config,
-        ).to(self.device)
+            output_loading_info=True,
+        )
+        # from_pretrained only warns when tensor names differ, for example across transformers
+        # versions, and leaves those layers at random values. Such a model must not be served.
+        unloaded = sorted([*loading.get("missing_keys", ()), *loading.get("unexpected_keys", ()),
+                           *(entry[0] for entry in loading.get("mismatched_keys", ()))])
+        if unloaded:
+            saved_with = getattr(self.seg_config, "transformers_version", None) or "an unrecorded version"
+            raise ModelUnavailable(
+                "model_weights_incomplete",
+                f"{len(unloaded)} tensors of {self.model_dir} did not load (for example {unloaded[0]}). The checkpoint "
+                f"was saved with transformers {saved_with}; transformers {transformers.__version__} is installed")
+        self.model = model.to(self.device)
         self.model.eval()
 
         # Build ID to code mapping from model config
         self.id_to_part_code = {int(k): v for k, v in self.seg_config.id2label.items()}
 
-    def segment_photo(
-        self,
-        photo_bytes: bytes,
-        photo_id: str,
-        claim_id: str,
-        input_revision: int,
-        job_key: str,
-        versions: Mapping[str, str],
-        provenance: Mapping[str, Any],
-        storage: Storage,
-    ) -> tuple[list[PartPrediction], ImageQuality, MaskRef, ImageTransform]:
-        """Run segmentation on one photo and persist mask artifact to storage."""
-        # 1. Decode photo with EXIF orientation
-        try:
-            oriented_img, orientation, (sw, sh) = decode_oriented(photo_bytes)
-        except Exception as exc:
-            raise PermanentError("corrupt_photo", f"Failed to decode photo {photo_id}: {exc}") from exc
 
-        # 2. Plan model frame transform (longest_edge_pad)
-        transform_spec = plan_model_frame(
-            stored_width=sw,
-            stored_height=sh,
-            exif_orientation=orientation,
-            frame_size=self.config.input_size,
-            policy=self.config.resize_policy,
-        )
+def load_parts_segmenter(config: PartsConfig | None = None,
+                         registry_root: str | Path | None = None) -> PartsSegmenter:
+    """Load the configured registry entry after verifying it; raises ``ModelUnavailable`` otherwise."""
+    config = config or load_parts_config()
+    model_dir = config.model_dir(registry_root)
+    verify_checkpoint(model_dir, config)
+    return PartsSegmenter(model_dir=model_dir, config=config)
 
-        # 3. Letterbox image
-        letterboxed_img = letterbox(oriented_img, transform_spec, pad_value=0)
 
-        # 4. Normalize and create PyTorch tensor
-        img_float = letterboxed_img.astype(np.float32) / 255.0
-        normalized = (img_float - IMAGENET_MEAN) / IMAGENET_STD
-        tensor = torch.from_numpy(normalized).permute(2, 0, 1).unsqueeze(0).float().to(self.device)
+def render_parts_overlay(photo: bytes, photo_id: str, class_mask: np.ndarray, part_ids: Iterable[int],
+                         transform: ImageTransform) -> bytes:
+    """PNG of the photograph with one outline per listed part class.
 
-        # 5. Run inference
-        is_cuda = self.device.type == "cuda"
-        with torch.no_grad():
-            with torch.amp.autocast(device_type="cuda" if is_cuda else "cpu", enabled=is_cuda):
-                outputs = self.model(pixel_values=tensor)
-                logits = outputs.logits
+    ``class_mask`` is the model-frame class-index mask. Each listed part is outlined on its
+    own, so the seam between two neighbouring parts is drawn; other classes get no outline.
+    """
+    masks = {ID_TO_PART_CODE[part_id]: Image.fromarray(np.where(class_mask == part_id, 255, 0).astype(np.uint8))
+             for part_id in part_ids}
+    return render_photo_overlay(photo_image=photo, photo_id=photo_id, part_masks=masks, transform=transform,
+                                apply_exif=True, show_damage=False, show_parts=True)
 
-            upsampled = F.interpolate(
-                logits,
-                size=(self.config.input_size, self.config.input_size),
-                mode="bilinear",
-                align_corners=False,
-            )
-            probs = F.softmax(upsampled, dim=1)[0]  # shape: (num_classes, H, W)
-            preds = probs.argmax(dim=0).cpu().numpy().astype(np.uint8)
 
-        # 6. Save paletted mask PNG to storage
-        mask_pil = Image.fromarray(preds, mode="P")
-        mask_pil.putpalette(build_palette())
+def _failed(photo_id: str, reason: Reason) -> PhotoSegmentationOutcome:
+    return PhotoSegmentationOutcome(photo_id=photo_id, status="failed", reasons=(reason,), predictions=(),
+                                    quality=None, mask_ref=None, transform=None, artifacts=())
 
-        buf = io.BytesIO()
-        mask_pil.save(buf, format="PNG")
-        mask_bytes = buf.getvalue()
-        mask_sha256 = hashlib.sha256(mask_bytes).hexdigest()
 
-        # Both direct path and versioned path preserved to avoid collision on rerun
-        v_sig = version_signature(versions)
-        mask_key = f"claims/{claim_id}/{input_revision}/parts/{photo_id}/mask.png"
-        versioned_mask_key = f"claims/{claim_id}/{input_revision}/parts/{photo_id}/{v_sig}/mask.png"
-        storage.write(mask_key, mask_bytes, "image/png")
-        storage.write(versioned_mask_key, mask_bytes, "image/png")
-        mask_uri = storage.uri(mask_key)
-
-        mask_ref = MaskRef(
-            artifact_id=deterministic_id("pm", job_key, photo_id),
-            object_uri=mask_uri,
-            sha256=mask_sha256,
-            width=self.config.input_size,
-            height=self.config.input_size,
-            encoding="class_index_png",
-            source_photo_id=photo_id,
-        )
-
-        # 7. Construct ImageTransform
-        image_transform = ImageTransform(
-            stored_width=sw,
-            stored_height=sh,
-            exif_orientation=orientation,
-            model_width=self.config.input_size,
-            model_height=self.config.input_size,
-            scale=transform_spec.scale,
-            pad_left=float(transform_spec.pad_x),
-            pad_top=float(transform_spec.pad_y),
-            mask_frame="model",
-        )
-
-        # 8. Optional display overlay generation
-        if self.config.write_overlay:
-            try:
-                overlay_bytes = render_photo_overlay(
-                    photo_image=photo_bytes,
-                    photo_id=photo_id,
-                    part_masks={"parts": mask_bytes},
-                    transform=image_transform,
-                    apply_exif=True,
-                    show_damage=False,
-                    show_parts=True,
-                )
-                overlay_key = f"claims/{claim_id}/{input_revision}/parts/{photo_id}/overlay.png"
-                storage.write(overlay_key, overlay_bytes, "image/png")
-            except Exception as exc:
-                log.warning(f"Failed to generate overlay for {photo_id}: {exc}")
-
-        # 9. Build PartPrediction rows
-        predictions: list[PartPrediction] = []
-        for class_id, part_code in self.id_to_part_code.items():
-            if class_id == 0 or part_code == "background":
-                continue
-
-            class_mask = (preds == class_id)
-            pixel_count = int(class_mask.sum())
-            if pixel_count <= 0:
-                continue
-
-            mean_conf = float(probs[class_id, class_mask].mean().item())
-            accepted = (pixel_count >= self.config.min_part_pixels) and (mean_conf >= self.config.min_part_confidence)
-
-            pred = PartPrediction(
-                prediction_id=deterministic_id("pp", job_key, part_code),
-                photo_id=photo_id,
-                part_code=part_code,
-                side="unknown",
-                mask_ref=mask_ref,
-                mean_confidence=round(mean_conf, 4),
-                pixel_count=pixel_count,
-                accepted=accepted,
-                transform=image_transform,
-                claim_id=claim_id,
-                input_revision=input_revision,
-                versions=dict(versions),
-                provenance=Provenance.model_validate(provenance),
-            )
-            predictions.append(pred)
-
-        # 10. Honest quality reporting: unmeasured attributes report not_assessed
-        quality_state: Literal["acceptable", "limited", "unusable", "not_assessed"] = "not_assessed"
-        reasons: list[str] = ["quality_not_assessed"]
-        if sw < 200 or sh < 200:
-            quality_state = "limited"
-            reasons = ["resolution_low"]
-
-        quality = ImageQuality(
-            claim_id=claim_id,
-            input_revision=input_revision,
-            photo_id=photo_id,
-            state=quality_state,
-            blur_score=None,
-            exposure_state="not_assessed",
-            reasons=reasons,
-            config_version=self.config.config_version,
-            versions=dict(versions),
-            provenance=Provenance.model_validate(provenance),
-        )
-
-        return predictions, quality, mask_ref, image_transform
+def _artifact(artifact_id: str, key: str, uri_prefix: str, data: bytes) -> PartArtifact:
+    return PartArtifact(artifact_id=artifact_id, key=key, object_uri=f"{uri_prefix}{key}", media_type="image/png",
+                        sha256=hashlib.sha256(data).hexdigest(), byte_count=len(data), data=data)
 
 
 def run_parts_segmentation(
@@ -337,7 +283,11 @@ def run_parts_segmentation(
     config: PartsConfig | None = None,
     clock: Callable[[], float] = time.perf_counter,
 ) -> PartsSegmentResult:
-    """Pure adapter entry point processing a batch of photos for M1."""
+    """Adapter entry point: segment each photo of ``request`` and return its records and artifacts.
+
+    Nothing is written here. The caller stores the returned artifacts, persists the rows
+    and publishes the event (module-01, "Adapter entry point").
+    """
     started = clock()
     cfg = config or segmenter.config
     prov = (
@@ -345,11 +295,10 @@ def run_parts_segmentation(
         if isinstance(request.provenance, Provenance)
         else Provenance.model_validate(request.provenance)
     )
+    versions = dict(request.versions)
+    v_sig = version_signature(versions)
 
     outcomes: list[PhotoSegmentationOutcome] = []
-    all_predictions: list[PartPrediction] = []
-    all_qualities: list[ImageQuality] = []
-    all_artifacts: list[PartArtifact] = []
     batch_reasons: list[Reason] = []
 
     for photo_input in request.photos:
@@ -358,16 +307,7 @@ def run_parts_segmentation(
         actual_sha = hashlib.sha256(photo_input.data).hexdigest()
         if actual_sha != photo_input.sha256:
             r = Reason(code="artifact_hash_mismatch", message=f"Hash mismatch for {photo_id}: expected {photo_input.sha256}, got {actual_sha}")
-            outcomes.append(PhotoSegmentationOutcome(
-                photo_id=photo_id,
-                status="failed",
-                reasons=(r,),
-                predictions=(),
-                quality=None,
-                mask_ref=None,
-                transform=None,
-                artifacts=(),
-            ))
+            outcomes.append(_failed(photo_id, r))
             batch_reasons.append(r)
             continue
 
@@ -376,16 +316,7 @@ def run_parts_segmentation(
             oriented_img, orientation, (sw, sh) = decode_oriented(photo_input.data)
         except Exception as exc:
             r = Reason(code="corrupt_photo", message=f"Failed to decode photo {photo_id}: {exc}")
-            outcomes.append(PhotoSegmentationOutcome(
-                photo_id=photo_id,
-                status="failed",
-                reasons=(r,),
-                predictions=(),
-                quality=None,
-                mask_ref=None,
-                transform=None,
-                artifacts=(),
-            ))
+            outcomes.append(_failed(photo_id, r))
             batch_reasons.append(r)
             continue
 
@@ -417,41 +348,33 @@ def run_parts_segmentation(
             probs = F.softmax(upsampled, dim=1)[0]
             preds = probs.argmax(dim=0).cpu().numpy().astype(np.uint8)
 
-        # Paletted mask PNG
+        # The padding holds no photograph: it is background in the mask, so no part is counted there.
+        x0, y0, x1, y1 = transform_spec.content_box()
+        padding = np.ones(preds.shape, dtype=bool)
+        padding[y0:y1, x0:x1] = False
+        preds[padding] = 0
+
+        # Paletted mask PNG, stored under the version signature so a rerun with another
+        # checkpoint never overwrites the mask that earlier rows point at.
         mask_pil = Image.fromarray(preds, mode="P")
         mask_pil.putpalette(build_palette())
         buf = io.BytesIO()
         mask_pil.save(buf, format="PNG")
-        mask_bytes = buf.getvalue()
-        mask_sha256 = hashlib.sha256(mask_bytes).hexdigest()
-
-        v_sig = version_signature(request.versions)
-        mask_key = f"claims/{request.claim_id}/{request.input_revision}/parts/{photo_id}/mask.png"
-        mask_uri = f"{request.object_uri_prefix}{mask_key}"
-
+        folder = f"claims/{request.claim_id}/{request.input_revision}/parts/{photo_id}/{v_sig}"
+        mask_artifact = _artifact(deterministic_id("pm", request.job_key, photo_id), f"{folder}/mask.png",
+                                  request.object_uri_prefix, buf.getvalue())
         mask_ref = MaskRef(
-            artifact_id=deterministic_id("pm", request.job_key, photo_id),
-            object_uri=mask_uri,
-            sha256=mask_sha256,
+            artifact_id=mask_artifact.artifact_id,
+            object_uri=mask_artifact.object_uri,
+            sha256=mask_artifact.sha256,
             width=cfg.input_size,
             height=cfg.input_size,
             encoding="class_index_png",
             source_photo_id=photo_id,
         )
-
-        mask_artifact = PartArtifact(
-            artifact_id=mask_ref.artifact_id,
-            key=mask_key,
-            object_uri=mask_uri,
-            media_type="image/png",
-            sha256=mask_sha256,
-            byte_count=len(mask_bytes),
-            data=mask_bytes,
-        )
-
         photo_artifacts = [mask_artifact]
 
-        # Transform
+        # Transform. pad_left/pad_top are the photo's offset in the model frame, not the total padding.
         image_transform = ImageTransform(
             stored_width=sw,
             stored_height=sh,
@@ -459,40 +382,14 @@ def run_parts_segmentation(
             model_width=cfg.input_size,
             model_height=cfg.input_size,
             scale=transform_spec.scale,
-            pad_left=float(transform_spec.pad_x),
-            pad_top=float(transform_spec.pad_y),
+            pad_left=float(transform_spec.offset_x),
+            pad_top=float(transform_spec.offset_y),
             mask_frame="model",
         )
 
-        # Overlay artifact if requested
-        if cfg.write_overlay:
-            try:
-                overlay_bytes = render_photo_overlay(
-                    photo_image=photo_input.data,
-                    photo_id=photo_id,
-                    part_masks={"parts": mask_bytes},
-                    transform=image_transform,
-                    apply_exif=True,
-                    show_damage=False,
-                    show_parts=True,
-                )
-                overlay_key = f"claims/{request.claim_id}/{request.input_revision}/parts/{photo_id}/overlay.png"
-                overlay_uri = f"{request.object_uri_prefix}{overlay_key}"
-                overlay_artifact = PartArtifact(
-                    artifact_id=deterministic_id("art", request.job_key, photo_id, "overlay"),
-                    key=overlay_key,
-                    object_uri=overlay_uri,
-                    media_type="image/png",
-                    sha256=hashlib.sha256(overlay_bytes).hexdigest(),
-                    byte_count=len(overlay_bytes),
-                    data=overlay_bytes,
-                )
-                photo_artifacts.append(overlay_artifact)
-            except Exception as exc:
-                log.warning(f"Could not build overlay for {photo_id}: {exc}")
-
         # PartPredictions
         predictions: list[PartPrediction] = []
+        accepted_ids: list[int] = []
         for class_id, part_code in segmenter.id_to_part_code.items():
             if class_id == 0 or part_code == "background":
                 continue
@@ -503,8 +400,10 @@ def run_parts_segmentation(
 
             mean_conf = float(probs[class_id, class_mask].mean().item())
             accepted = (pixel_count >= cfg.min_part_pixels) and (mean_conf >= cfg.min_part_confidence)
+            if accepted:
+                accepted_ids.append(class_id)
             pred = PartPrediction(
-                prediction_id=deterministic_id("pp", request.job_key, part_code),
+                prediction_id=deterministic_id("pp", request.job_key, photo_id, part_code),
                 photo_id=photo_id,
                 part_code=part_code,
                 side="unknown",
@@ -515,10 +414,19 @@ def run_parts_segmentation(
                 transform=image_transform,
                 claim_id=request.claim_id,
                 input_revision=request.input_revision,
-                versions=dict(request.versions),
+                versions=versions,
                 provenance=prov,
             )
             predictions.append(pred)
+
+        # Overlay artifact if requested: one outline per accepted part, none when nothing was accepted
+        if cfg.write_overlay and accepted_ids:
+            try:
+                overlay_bytes = render_parts_overlay(photo_input.data, photo_id, preds, accepted_ids, image_transform)
+                photo_artifacts.append(_artifact(deterministic_id("art", request.job_key, photo_id, "overlay"),
+                                                 f"{folder}/overlay.png", request.object_uri_prefix, overlay_bytes))
+            except Exception as exc:
+                log.warning(f"Could not build overlay for {photo_id}: {exc}")
 
         # ImageQuality
         q_state: Literal["acceptable", "limited", "unusable", "not_assessed"] = "not_assessed"
@@ -536,11 +444,11 @@ def run_parts_segmentation(
             exposure_state="not_assessed",
             reasons=q_reasons,
             config_version=cfg.config_version,
-            versions=dict(request.versions),
+            versions=versions,
             provenance=prov,
         )
 
-        outcome = PhotoSegmentationOutcome(
+        outcomes.append(PhotoSegmentationOutcome(
             photo_id=photo_id,
             status="succeeded",
             reasons=(),
@@ -549,15 +457,12 @@ def run_parts_segmentation(
             mask_ref=mask_ref,
             transform=image_transform,
             artifacts=tuple(photo_artifacts),
-        )
-        outcomes.append(outcome)
-        all_predictions.extend(predictions)
-        all_qualities.append(quality)
-        all_artifacts.extend(photo_artifacts)
+        ))
 
     # Determine batch processing status
-    failed_count = sum(1 for o in outcomes if o.status == "failed")
-    if not outcomes or failed_count == len(outcomes):
+    succeeded = [o for o in outcomes if o.status == "succeeded"]
+    failed_count = len(outcomes) - len(succeeded)
+    if not succeeded:
         overall_status: ProcessingStatus = "failed"
     elif failed_count > 0:
         overall_status = "partial"
@@ -570,72 +475,88 @@ def run_parts_segmentation(
         processing_status=overall_status,
         reasons=tuple(batch_reasons),
         photo_outcomes=tuple(outcomes),
-        predictions=tuple(all_predictions),
-        qualities=tuple(all_qualities),
-        artifacts=tuple(all_artifacts),
+        predictions=tuple(p for o in succeeded for p in o.predictions),
+        qualities=tuple(o.quality for o in succeeded),
+        artifacts=tuple(a for o in succeeded for a in o.artifacts),
         metrics={"total_ms": elapsed_ms, "photos_processed": len(outcomes), "photos_failed": failed_count},
-        retryable=any(r.code in ("artifact_hash_mismatch",) for r in batch_reasons),
+        retryable=any(r.code in RETRYABLE_REASONS for r in batch_reasons),
     )
 
 
-def make_parts_handler(segmenter: PartsSegmenter, storage: Storage):
-    """Factory creating a ConsumerRuntime handler for cmev.cmd.parts-segment.v1."""
+def _storage_key(object_uri: str) -> str:
+    if object_uri.startswith("s3://"):
+        return object_uri.split("/", 3)[-1]
+    return object_uri.removeprefix("file://local-evidence/")
+
+
+def _read_photo(storage: Storage, object_uri: str, photo_id: str) -> bytes:
+    """Photo bytes by URI. An absent object is final; any other storage failure is worth a retry."""
+    try:
+        return storage.read(_storage_key(object_uri))
+    except Exception as exc:  # noqa: BLE001 - classified below
+        response = getattr(exc, "response", None)  # botocore's ClientError carries the S3 error code here
+        s3_code = response.get("Error", {}).get("Code") if isinstance(response, dict) else None
+        if isinstance(exc, FileNotFoundError) or s3_code in ("NoSuchKey", "404", "NotFound"):
+            raise PermanentError("artifact_missing", f"photo {photo_id} is not in the object store") from exc
+        raise TransientError("artifact_read_failed",
+                             f"could not read photo {photo_id}: {type(exc).__name__}") from exc
+
+
+def make_parts_handler(segmenter: PartsSegmenter, storage: Storage, versions: Mapping[str, str]):
+    """Factory creating a ConsumerRuntime handler for cmev.cmd.parts-segment.v1.
+
+    ``versions`` are the stage versions of the checkpoint ``segmenter`` loaded. A command
+    pinned to anything else, such as the fixture tags, is refused, so no row is recorded
+    under a version that did not produce it.
+    """
+    served = dict(versions)
 
     def handler(ctx: Context) -> dict[str, Any]:
-        payload = ctx.payload
-        photo_ref = payload["photo"]
+        env = ctx.envelope
+        if dict(env.versions) != served:
+            raise PermanentError("model_version_unsupported",
+                                 "this worker serves only commands pinned to the versions it loaded")
+        photo_ref = ctx.payload["photo"]
         photo_id = photo_ref["file_id"]
+        photo_bytes = _read_photo(storage, photo_ref["object_uri"], photo_id)
 
-        # Fetch image bytes from storage
-        object_uri = photo_ref.get("object_uri", "")
-        if object_uri.startswith("s3://"):
-            key = object_uri.split("/", 3)[-1]
-        elif object_uri.startswith("file://local-evidence/"):
-            key = object_uri.replace("file://local-evidence/", "")
-        else:
-            key = object_uri
-
-        try:
-            photo_bytes = storage.read(key)
-        except Exception as exc:
-            raise PermanentError("artifact_read_failed", f"Failed to read photo bytes for {photo_id}: {exc}") from exc
-
-        # Verify sha256 hash if provided
-        expected_sha = photo_ref.get("sha256")
-        if expected_sha:
-            actual_sha = hashlib.sha256(photo_bytes).hexdigest()
-            if actual_sha != expected_sha:
-                raise PermanentError("artifact_hash_mismatch", f"Hash mismatch for {photo_id}: expected {expected_sha}, got {actual_sha}")
-
-        # Run segmentation
-        predictions, quality, mask_ref, transform = segmenter.segment_photo(
-            photo_bytes=photo_bytes,
-            photo_id=photo_id,
-            claim_id=ctx.envelope.claim_id,
-            input_revision=ctx.envelope.input_revision,
-            job_key=ctx.envelope.job_key,
-            versions=ctx.envelope.versions,
-            provenance=ctx.provenance(producer_service="cmev-worker-parts"),
-            storage=storage,
+        # The wire contract carries one photograph per command.
+        request = PartsSegmentRequest(
+            claim_id=env.claim_id,
+            input_revision=env.input_revision,
+            job_key=env.job_key,
+            photos=(PhotoFileInput(file_id=photo_id, media_type=photo_ref["media_type"],
+                                   sha256=photo_ref["sha256"], data=photo_bytes),),
+            versions=env.versions,
+            provenance=ctx.provenance(),
+            object_uri_prefix=storage.uri(""),
         )
+        outcome = run_parts_segmentation(request, segmenter).photo_outcomes[0]
+        if outcome.status == "failed":
+            reason = outcome.reasons[0]
+            raise PermanentError(reason.code, reason.message)
+
+        for artifact in outcome.artifacts:
+            storage.write(artifact.key, artifact.data, artifact.media_type)
 
         # Persist rows to database
-        records: list[tuple[str, Any]] = [("image_quality", quality)]
-        for p in predictions:
+        records: list[tuple[str, Any]] = [("image_quality", outcome.quality)]
+        for p in outcome.predictions:
             records.append(("part_prediction", p))
 
         insert_records(
             ctx.session,
             records,
-            claim_id=ctx.envelope.claim_id,
-            input_revision=ctx.envelope.input_revision,
+            claim_id=env.claim_id,
+            input_revision=env.input_revision,
             stage="parts",
-            job_key=ctx.envelope.job_key,
+            job_key=env.job_key,
             now=ctx.now,
         )
 
-        # Build part_mask_ref matching envelope.v1.schema.json#/$defs/maskRef strictly
+        # part_mask_ref matching envelope.v1.schema.json#/$defs/maskRef strictly
         # (NO extra properties like source_photo_id)
+        mask_ref = outcome.mask_ref
         part_mask_ref_event: dict[str, Any] = {
             "artifact_id": mask_ref.artifact_id,
             "object_uri": mask_ref.object_uri,
@@ -644,15 +565,13 @@ def make_parts_handler(segmenter: PartsSegmenter, storage: Storage):
             "height": mask_ref.height,
             "encoding": mask_ref.encoding,
         }
-        if mask_ref.component_index is not None:
-            part_mask_ref_event["component_index"] = mask_ref.component_index
-
-        accepted_parts = [p for p in predictions if p.accepted]
+        accepted_parts = [p for p in outcome.predictions if p.accepted]
+        quality = outcome.quality
 
         event_payload = {
             "photo_id": photo_id,
             "part_mask_ref": part_mask_ref_event,
-            "transform": transform.model_dump(mode="json"),
+            "transform": outcome.transform.model_dump(mode="json"),
             "parts": [
                 {
                     "part_code": p.part_code,
@@ -661,7 +580,7 @@ def make_parts_handler(segmenter: PartsSegmenter, storage: Storage):
                 }
                 for p in accepted_parts
             ],
-            "part_prediction_ids": [p.prediction_id for p in predictions],
+            "part_prediction_ids": [p.prediction_id for p in outcome.predictions],
             "image_quality": {
                 "state": quality.state,
                 "blur_score": quality.blur_score,
@@ -671,21 +590,14 @@ def make_parts_handler(segmenter: PartsSegmenter, storage: Storage):
             "empty_result": len(accepted_parts) == 0,
         }
 
-        from claim_cmev.contracts.events import Envelope
-
-        topic = "cmev.evt.parts-segmented.v1"
-        out_envelope = Envelope.build(
-            topic=topic,
-            claim_id=ctx.envelope.claim_id,
-            input_revision=ctx.envelope.input_revision,
-            task="parts_segment",
-            versions=ctx.envelope.versions,
-            provenance=ctx.provenance(producer_service="cmev-worker-parts"),
-            trace_id=ctx.envelope.trace_id,
-            occurred_at=ctx.now,
-            target=photo_id,
-        )
-        ctx.emit(topic, out_envelope.message(event_payload), job_key=ctx.envelope.job_key)
+        # The same envelope every producer builds: this job's task, target and retry epoch,
+        # caused by the command.
+        job = ctx.job or {}
+        message = build_message(
+            PARTS_EVENT_TOPIC, claim_id=env.claim_id, input_revision=env.input_revision, task=job["task"],
+            versions=env.versions, target=job["target"], attempt_epoch=job["attempt_epoch"], trace_id=env.trace_id,
+            occurred_at=ctx.now, payload=event_payload, causation_id=env.dedup_key, provenance=ctx.provenance())
+        ctx.emit(PARTS_EVENT_TOPIC, message)
 
         return {
             "photo_id": photo_id,

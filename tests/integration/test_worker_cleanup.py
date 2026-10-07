@@ -6,7 +6,7 @@ from claim_cmev.messaging import kafka
 
 
 def test_partial_consumer_startup_closes_producer_and_created_consumers(monkeypatch):
-    settings = SimpleNamespace(cost_table_root="unused", profile="lean", source_kind="fixture")
+    settings = SimpleNamespace(cost_table_root="unused", profile="lean", source_kind="fixture", parts_producer="fixture")
     monkeypatch.setattr(worker.RuntimeSettings, "from_env", lambda: settings)
     monkeypatch.setattr(worker, "Database", lambda: SimpleNamespace(session=None))
     monkeypatch.setattr(worker, "Consolidator", lambda **_: object())

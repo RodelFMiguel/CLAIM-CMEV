@@ -9,10 +9,10 @@ def test_create_splits_disjoint_and_total():
     parts_records = [
         {
             "image_name": f"img_{i}.png",
-            "image_path": f"path/to/img_{i}.png",
+            "image_relative_path": f"File1/img/img_{i}.png",
             "image_sha256": f"hash_{i}",
-            "mask_path": f"path/to/mask_{i}.png",
-            "mask_sha256": f"maskhash_{i}",
+            "mask_relative_path": f"masks/img_{i}.png",
+            "mask_pixel_sha256": f"maskhash_{i}",
             "width": 640,
             "height": 480,
             "class_pixel_counts": {"hood": 100},
@@ -53,10 +53,10 @@ def test_create_splits_deterministic():
     parts_records = [
         {
             "image_name": f"img_{i}.png",
-            "image_path": f"path/to/img_{i}.png",
+            "image_relative_path": f"File1/img/img_{i}.png",
             "image_sha256": f"hash_{i}",
-            "mask_path": f"path/to/mask_{i}.png",
-            "mask_sha256": f"maskhash_{i}",
+            "mask_relative_path": f"masks/img_{i}.png",
+            "mask_pixel_sha256": f"maskhash_{i}",
             "width": 640,
             "height": 480,
             "class_pixel_counts": {"hood": 100},

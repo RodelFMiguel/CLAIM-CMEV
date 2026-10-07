@@ -24,13 +24,14 @@ dependencies = [
     "opencv-python-headless>=4.10,<5",
     "jsonschema>=4.23,<5",
     "pyyaml>=6,<7",
-    "torch>=2.0",
-    "torchvision>=0.15",
-    "transformers>=4.35",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
+# The M1 parts worker and the vision training scripts; no other service imports these.
+# transformers 5 renamed SegFormer's decode-head layers, so a checkpoint saved by 5.x does not
+# load under 4.x (the worker refuses it). The served checkpoint was saved by 5.17.
+vision = ["torch>=2.0", "torchvision>=0.15", "transformers>=5.17,<6"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

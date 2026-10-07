@@ -1,28 +1,42 @@
-# Configuration for M1: Vehicle Part Segmentation
+# Configuration for M1: Vehicle Part Segmentation. This is the file the M1 worker serves from.
+#
+# model_version names the registry folder the worker loads (artifacts/models/<model_version>) and is
+# pinned on every parts command. It is currently the SegFormer-B3 compound-loss checkpoint, so the
+# recipe below is that run's (the same as parts_v8_b3_compound.yaml). To serve another checkpoint,
+# copy its recipe file here and keep device "auto". The B0 baseline recipe is parts_v1_baseline.yaml.
 # Specifications: docs/specs/module-01-vehicle-part-segmentation.md
 #                 docs/specs/model_training_specification.md section 7.1
 
 model_id: "parts"
-model_version: "parts/0.1.0"
+model_version: "parts/0.8.0-b3-compound"
 taxonomy_version: "parts-1.0.0"
-config_version: "parts-cfg-0.1.0"
+config_version: "parts-cfg-0.8.0"
 
 # Architecture and Training Recipe
-architecture: "nvidia/mit-b0"
+architecture: "nvidia/mit-b3"
 num_labels: 22
 input_size: 512
 resize_policy: "longest_edge_pad"
 
 # Training Hyperparameters
-batch_size: 8
-gradient_accumulation_steps: 2
+batch_size: 4
+gradient_accumulation_steps: 4
 learning_rate_head: 6.0e-5
 learning_rate_encoder: 6.0e-6
 weight_decay: 0.01
-warmup_steps: 200
-num_epochs: 40
-early_stopping_patience: 8
+warmup_steps: 300
+num_epochs: 60
+early_stopping_patience: 10
 seed: 20260922
+
+# Loss Formulation (Compound Loss: Weighted CE + Soft Dice)
+loss_type: "compound"
+dice_lambda: 1.0
+loss_weighting: "inverse_sqrt_freq"
+background_weight: 0.50
+
+# Augmentation Mode
+augment_mode: "standard"
 
 # Serving and Inference Thresholds
 device: "auto"

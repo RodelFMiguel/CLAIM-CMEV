@@ -39,6 +39,7 @@ import yaml
 from claim_cmev.contracts.common import PART_CODES
 from pipelines.vision.convert_hitl import ID_TO_PART_CODE, PART_CODE_TO_ID
 from pipelines.vision.dataset import HitlPartsDataset
+from pipelines.vision.splits import split_file_hashes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -163,7 +164,7 @@ def sha256_file(path: Path) -> str:
 
 def train(
     config_path: str | Path = "configs/models/parts_resnet50.yaml",
-    split_dir: str | Path = "data/splits/parts/0.1.0",
+    split_dir: str | Path = "data/splits/parts/0.1.1",
     output_dir: str | Path = "artifacts/models/parts/resnet50",
 ) -> dict[str, Any]:
     config_path = Path(config_path)
@@ -365,8 +366,7 @@ def train(
 
     if split_manifest_path.exists():
         shutil.copy2(split_manifest_path, output_dir / "split_manifest.json")
-        split_manifest_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
-        split_hashes = split_manifest_data.get("split_hashes", {})
+        split_hashes = split_file_hashes(split_dir)
     else:
         split_hashes = {}
 
@@ -469,7 +469,7 @@ def train(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train DeepLabV3-ResNet50 on HITL vehicle parts")
     parser.add_argument("--config", type=str, default="configs/models/parts_resnet50.yaml", help="Path to config file")
-    parser.add_argument("--split-dir", type=str, default="data/splits/parts/0.1.0", help="Path to split directory")
+    parser.add_argument("--split-dir", type=str, default="data/splits/parts/0.1.1", help="Path to split directory")
     parser.add_argument("--output-dir", type=str, default="artifacts/models/parts/resnet50", help="Output artifact directory")
     args = parser.parse_args()
 

@@ -13,7 +13,13 @@ import hashlib
 import json
 import logging
 from pathlib import Path
+import sys
 from typing import Any
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import cv2
 import numpy as np
@@ -22,6 +28,7 @@ from PIL import Image
 from claim_cmev.contracts.common import PART_CODES
 from claim_cmev.taxonomy import load_parts
 from claim_cmev.taxonomy.hitl import classify_supervisely_meta
+from pipelines.vision.splits import find_hitl_folder, labels_dir, mask_pixel_sha256
 
 log = logging.getLogger("cmev.pipelines.convert_hitl")
 
@@ -175,17 +182,16 @@ def convert_dataset(
         pil_mask.putpalette(palette)
         pil_mask.save(mask_path, format="PNG", optimize=True)
 
-        # Hashes
-        img_sha = sha256_of_file(img_path)
-        mask_sha = sha256_of_file(mask_path)
-
+        # Paths are relative to the export and to the output folder, so the index and the splits
+        # built from it hold no workstation path. The mask is hashed by its pixels: the PNG
+        # bytes depend on the encoder version.
         index_records.append({
             "image_name": img_name,
-            "image_path": str(img_path),
-            "image_sha256": img_sha,
+            "image_relative_path": img_path.relative_to(raw_dir).as_posix(),
+            "image_sha256": sha256_of_file(img_path),
             "mask_name": mask_filename,
-            "mask_path": str(mask_path),
-            "mask_sha256": mask_sha,
+            "mask_relative_path": mask_path.relative_to(output_dir).as_posix(),
+            "mask_pixel_sha256": mask_pixel_sha256(mask),
             "width": int(ann_data["size"]["width"]),
             "height": int(ann_data["size"]["height"]),
             "class_pixel_counts": pixel_counts,
@@ -237,16 +243,18 @@ def convert_dataset(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert HITL Supervisely polygons to indexed part masks.")
-    parser.add_argument("--raw-dir", type=Path, default=Path("data/raw/Car damages dataset"),
-                        help="Path to raw HITL Car damages dataset folder.")
-    parser.add_argument("--output-dir", type=Path, default=Path("data/interim/hitl_parts"),
-                        help="Output directory for masks and index.")
+    parser.add_argument("--raw-dir", type=Path, default=None,
+                        help="The HITL parts export ('Car damages dataset'). Default: $CMEV_HITL_PARTS_DIR, "
+                             "else found under data/raw.")
+    parser.add_argument("--output-dir", type=Path, default=None,
+                        help="Output directory for masks and index. Default: $CMEV_HITL_PARTS_LABELS_DIR, "
+                             "else data/interim/hitl_parts.")
     parser.add_argument("--sample-verify", type=int, default=10,
                         help="Number of samples to verify against masks_machine.")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    convert_dataset(args.raw_dir, args.output_dir, args.sample_verify)
+    convert_dataset(find_hitl_folder("parts", args.raw_dir), labels_dir(args.output_dir), args.sample_verify)
 
 
 if __name__ == "__main__":
