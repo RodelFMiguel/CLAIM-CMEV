@@ -259,7 +259,7 @@ def evaluate_split(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate SegFormer-B0 part segmentation")
     parser.add_argument("--model-dir", type=str, default="artifacts/models/parts/0.1.0", help="Model checkpoint directory")
-    parser.add_argument("--split", type=str, default="data/splits/parts/0.1.0/test.jsonl", help="Split jsonl file")
+    parser.add_argument("--split", type=str, default="data/splits/parts/0.1.1/test.jsonl", help="Split jsonl file")
     parser.add_argument("--output", type=str, default="artifacts/models/parts/0.1.0/test_evaluation_report.json", help="Output report JSON")
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size")
     parser.add_argument("--device", type=str, default=None, help="Device to use (cuda/cpu)")

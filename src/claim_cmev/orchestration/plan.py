@@ -64,6 +64,21 @@ class VersionBundle:
         stages["summary"]["human_summary_config"] = load_summary_config().config_version
         return cls(stages=stages)
 
+    @classmethod
+    def for_runtime(cls, parts_producer: str = "fixture") -> VersionBundle:
+        """The bundle the orchestrator pins: the fixture tags, with the configured M1 checkpoint when parts are real.
+
+        Only the parts stage has a model worker. Its versions come from the parts configuration,
+        and that worker verifies them against the checkpoint it loads.
+        """
+        bundle = cls.fixture()
+        if parts_producer != "real":
+            return bundle
+        from ..vision.parts.config import load_parts_config
+
+        return cls(stages={**bundle.stages, "parts": load_parts_config().stage_versions(CODE_VERSION)},
+                   intake=bundle.intake)
+
 
 def consolidate_versions(rules_config_version: str, cost_table_version: str) -> dict[str, str]:
     """Exactly the map M8's ``job_key_for`` signs, so both compute one job key."""

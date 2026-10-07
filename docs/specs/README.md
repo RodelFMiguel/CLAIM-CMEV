@@ -1,5 +1,7 @@
 # Specification index
 
+> **Neural M5 planning update (2026-10-07):** the user plans to use a neural model for M5. The [document tensor workflow](../document-neural-workflow.md) illustrates the existing LayoutLMv3 candidate, input/output shapes, required OCR alignment, row assembly and M6 integration. Neural M5 is the intended path in that design; the exact recipe remains proposed and no implementation or training completion is implied. Older parser-core/stretch descriptions below record the preceding baseline.
+
 > Baseline implementation update (2026-09-22): the user requested a public information page, login and working claim dashboard, plus real FastAPI endpoints with explicitly mocked processing. New code lives in `src/workbench/` and `src/claim_cmev/api/`, superseding the earlier `apps/` locations for this implementation. See [ADR 0003](../adr/0003-fixture-ui-api-baseline.md) for the scoped extension; the specifications below remain the full target, not a claim that every requirement is implemented.
 
 Status: these specifications now derive from [proposal v2](../CLAIM-CMEV_project_proposal_v2.md). The v1 specifications are retired. The containerised, event-driven runtime is a change from v2 section 9.1 and is recorded in [ADR 0002](../adr/0002-containerised-event-runtime.md), which supersedes [ADR 0001](../adr/0001-prototype-runtime.md).

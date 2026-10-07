@@ -1,0 +1,28 @@
+# cmev-worker-parts: M1 Vehicle Part Segmentation worker container
+# Specification: docs/specs/module-01-vehicle-part-segmentation.md
+#
+# Opt-in: added to the stack by infra/compose/docker-compose.parts.yml, which also sets
+# CMEV_PARTS_PRODUCER=real on every service. The
+# image holds no weights: the model registry is mounted read-only at
+# CMEV_MODEL_REGISTRY_PATH and the worker refuses to start unless the entry named by
+# configs/models/parts.yaml is there and matches its manifest.
+#
+# This is the only image with the model libraries (the `vision` extra: PyTorch, transformers).
+# The package is installed non-editable, so the configuration this role reads is located
+# through CMEV_* variables: its own, the taxonomy, and the M9 overlay style. It reads
+# neither the M8 rules nor the M3 summary configuration.
+FROM python:3.12-slim-bookworm
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
+    CMEV_TAXONOMY_DIR=/srv/configs/taxonomy \
+    CMEV_PARTS_CONFIG=/srv/configs/models/parts.yaml \
+    CMEV_M9_REVIEW_CONFIG=/srv/configs/pipeline/m9_review.yaml \
+    CMEV_MODEL_REGISTRY_PATH=/srv/artifacts/models \
+    CMEV_WORKER_ROLE=parts
+WORKDIR /srv
+COPY pyproject.toml README.md ./
+COPY src/claim_cmev ./src/claim_cmev
+COPY configs ./configs
+RUN pip install ".[vision]" && useradd --uid 10001 --create-home cmev \
+    && mkdir -p /srv/artifacts/models
+USER 10001:10001
+CMD ["python", "-m", "claim_cmev.worker", "run", "--role", "parts"]

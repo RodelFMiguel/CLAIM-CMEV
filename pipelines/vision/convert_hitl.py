@@ -13,7 +13,13 @@ import hashlib
 import json
 import logging
 from pathlib import Path
+import sys
 from typing import Any
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import cv2
 import numpy as np
@@ -22,75 +28,13 @@ from PIL import Image
 from claim_cmev.contracts.common import PART_CODES
 from claim_cmev.taxonomy import load_parts
 from claim_cmev.taxonomy.hitl import classify_supervisely_meta
+from pipelines.vision.splits import find_hitl_folder, labels_dir, mask_pixel_sha256
 
 log = logging.getLogger("cmev.pipelines.convert_hitl")
 
 OVERLAP_POLICY = "descending_object_area"
 
-# Canonical part codes order: index 0 is background, indices 1..21 match PART_CODES
-PART_CODE_TO_ID: dict[str, int] = {code: i + 1 for i, code in enumerate(PART_CODES)}
-ID_TO_PART_CODE: dict[int, str] = {i + 1: code for i, code in enumerate(PART_CODES)}
-ID_TO_PART_CODE[0] = "background"
-
-
-def build_palette(meta_classes: list[dict[str, Any]] | None = None) -> list[int]:
-    """Generate a 256-color RGB palette (768 ints) for PIL 'P' mode masks.
-    
-    Index 0 is background (0, 0, 0). Indices 1..21 use the colors from meta.json if available.
-    """
-    palette = [0] * 768
-    # Default distinct colors if meta is not provided
-    default_colors = [
-        (0, 0, 0),        # 0: background
-        (233, 83, 83),    # 1: windshield
-        (150, 60, 61),    # 2: back-windshield
-        (144, 55, 101),   # 3: front-window
-        (145, 48, 33),    # 4: back-window
-        (254, 47, 192),   # 5: front-door
-        (154, 135, 207),  # 6: back-door
-        (64, 153, 61),    # 7: front-wheel
-        (130, 6, 219),    # 8: back-wheel
-        (74, 247, 120),   # 9: front-bumper
-        (124, 147, 218),  # 10: back-bumper
-        (50, 6, 152),     # 11: headlight
-        (46, 127, 98),    # 12: tail-light
-        (67, 85, 203),    # 13: hood
-        (229, 248, 58),   # 14: trunk
-        (144, 208, 146),  # 15: licence-plate
-        (188, 87, 78),    # 16: mirror
-        (135, 219, 0),    # 17: roof
-        (230, 45, 48),    # 18: grille
-        (193, 151, 68),   # 19: rocker-panel
-        (92, 117, 41),    # 20: quarter-panel
-        (213, 11, 180),   # 21: fender
-    ]
-    
-    color_map: dict[str, tuple[int, int, int]] = {}
-    if meta_classes:
-        for c in meta_classes:
-            hex_str = c.get("color", "").lstrip("#")
-            if len(hex_str) == 6:
-                r, g, b = int(hex_str[0:2], 16), int(hex_str[2:4], 16), int(hex_str[4:6], 16)
-                color_map[c["title"]] = (r, g, b)
-
-    parts_tax = load_parts()
-    title_to_code = {p["hitl_title"]: p["code"] for p in parts_tax.meta["parts"]}
-
-    for idx, (r, g, b) in enumerate(default_colors):
-        palette[idx * 3] = r
-        palette[idx * 3 + 1] = g
-        palette[idx * 3 + 2] = b
-
-    if color_map:
-        for hitl_title, code in title_to_code.items():
-            class_id = PART_CODE_TO_ID.get(code)
-            if class_id and hitl_title in color_map:
-                r, g, b = color_map[hitl_title]
-                palette[class_id * 3] = r
-                palette[class_id * 3 + 1] = g
-                palette[class_id * 3 + 2] = b
-
-    return palette
+from claim_cmev.vision.palette import ID_TO_PART_CODE, PART_CODE_TO_ID, build_palette
 
 
 def rasterize_annotation(
@@ -238,17 +182,16 @@ def convert_dataset(
         pil_mask.putpalette(palette)
         pil_mask.save(mask_path, format="PNG", optimize=True)
 
-        # Hashes
-        img_sha = sha256_of_file(img_path)
-        mask_sha = sha256_of_file(mask_path)
-
+        # Paths are relative to the export and to the output folder, so the index and the splits
+        # built from it hold no workstation path. The mask is hashed by its pixels: the PNG
+        # bytes depend on the encoder version.
         index_records.append({
             "image_name": img_name,
-            "image_path": str(img_path),
-            "image_sha256": img_sha,
+            "image_relative_path": img_path.relative_to(raw_dir).as_posix(),
+            "image_sha256": sha256_of_file(img_path),
             "mask_name": mask_filename,
-            "mask_path": str(mask_path),
-            "mask_sha256": mask_sha,
+            "mask_relative_path": mask_path.relative_to(output_dir).as_posix(),
+            "mask_pixel_sha256": mask_pixel_sha256(mask),
             "width": int(ann_data["size"]["width"]),
             "height": int(ann_data["size"]["height"]),
             "class_pixel_counts": pixel_counts,
@@ -300,16 +243,18 @@ def convert_dataset(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert HITL Supervisely polygons to indexed part masks.")
-    parser.add_argument("--raw-dir", type=Path, default=Path("data/raw/Car damages dataset"),
-                        help="Path to raw HITL Car damages dataset folder.")
-    parser.add_argument("--output-dir", type=Path, default=Path("data/interim/hitl_parts"),
-                        help="Output directory for masks and index.")
+    parser.add_argument("--raw-dir", type=Path, default=None,
+                        help="The HITL parts export ('Car damages dataset'). Default: $CMEV_HITL_PARTS_DIR, "
+                             "else found under data/raw.")
+    parser.add_argument("--output-dir", type=Path, default=None,
+                        help="Output directory for masks and index. Default: $CMEV_HITL_PARTS_LABELS_DIR, "
+                             "else data/interim/hitl_parts.")
     parser.add_argument("--sample-verify", type=int, default=10,
                         help="Number of samples to verify against masks_machine.")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    convert_dataset(args.raw_dir, args.output_dir, args.sample_verify)
+    convert_dataset(find_hitl_folder("parts", args.raw_dir), labels_dir(args.output_dir), args.sample_verify)
 
 
 if __name__ == "__main__":

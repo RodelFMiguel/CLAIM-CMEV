@@ -1,0 +1,38 @@
+# Configuration for M1: Vehicle Part Segmentation (SegFormer-B0 baseline: unweighted CE, the 0.1.0 run)
+# This recipe was configs/models/parts.yaml until that file became the served model's configuration.
+# Specifications: docs/specs/module-01-vehicle-part-segmentation.md
+#                 docs/specs/model_training_specification.md section 7.1
+
+model_id: "parts"
+model_version: "parts/0.1.0"
+taxonomy_version: "parts-1.0.0"
+config_version: "parts-cfg-0.1.0"
+
+# Architecture and Training Recipe
+architecture: "nvidia/mit-b0"
+num_labels: 22
+input_size: 512
+resize_policy: "longest_edge_pad"
+
+# Training Hyperparameters
+batch_size: 8
+gradient_accumulation_steps: 2
+learning_rate_head: 6.0e-5
+learning_rate_encoder: 6.0e-6
+weight_decay: 0.01
+warmup_steps: 200
+num_epochs: 40
+early_stopping_patience: 8
+seed: 20260922
+
+# Serving and Inference Thresholds
+device: "auto"
+min_part_pixels: 512
+min_part_confidence: 0.50
+max_photos_per_job: 20
+max_attempts: 3
+skip_superseded_revisions: true
+write_overlay: true
+
+# Supported Panel List for Coverage
+supported_panel_list: "all"

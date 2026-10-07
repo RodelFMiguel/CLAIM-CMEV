@@ -32,6 +32,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+import transformers
 from transformers import (
     SegformerConfig,
     SegformerForSemanticSegmentation,
@@ -42,6 +43,7 @@ import yaml
 from claim_cmev.contracts.common import PART_CODES
 from pipelines.vision.convert_hitl import ID_TO_PART_CODE, PART_CODE_TO_ID
 from pipelines.vision.dataset import HitlPartsDataset
+from pipelines.vision.splits import read_split, split_file_hashes, split_version
 
 logging.basicConfig(
     level=logging.INFO,
@@ -74,6 +76,21 @@ def set_seed(seed: int) -> None:
     torch.backends.cudnn.benchmark = False
 
 
+def resolve_device(name: str = "auto") -> torch.device:
+    """Turn a config ``device`` value into a torch device.
+
+    ``"auto"`` is what the shared parts config uses for serving; here it picks CUDA, then
+    the Apple GPU, then the CPU. Any other value is passed to torch unchanged.
+    """
+    if name != "auto":
+        return torch.device(name)
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def compute_confusion_matrix(preds: torch.Tensor, targets: torch.Tensor, num_classes: int = 22) -> torch.Tensor:
     """Compute confusion matrix of shape (num_classes, num_classes).
     
@@ -87,6 +104,20 @@ def compute_confusion_matrix(preds: torch.Tensor, targets: torch.Tensor, num_cla
     return cm.reshape(num_classes, num_classes)
 
 
+def training_pixel_counts(train_split_path: Path | str) -> np.ndarray:
+    """Pixels per class over the training masks: background first, then the parts in taxonomy order.
+
+    Summed from the split records, at each photograph's own resolution. Background is every
+    pixel no part covers.
+    """
+    counts = np.zeros(len(PART_CODES) + 1, dtype=np.int64)
+    for record in read_split(train_split_path):
+        for index, code in enumerate(PART_CODES, start=1):
+            counts[index] += record["class_pixel_counts"].get(code, 0)
+        counts[0] += record["width"] * record["height"] - sum(record["class_pixel_counts"].values())
+    return counts
+
+
 def compute_class_weights(
     train_split_path: Path,
     weighting_type: str = "none",
@@ -98,12 +129,7 @@ def compute_class_weights(
         return None
 
     if weighting_type == "inverse_sqrt_freq":
-        # Exact training pixel counts across all 706 training masks
-        counts = np.array([
-            130262704, 8251968, 3206149, 4020753, 3803488, 13796839, 9407824,
-            7837884, 5422967, 17626360, 9164679, 4012362, 2249440, 13617414,
-            5147621, 982040, 1363353, 2133505, 2841408, 1835137, 7772521, 9917856
-        ], dtype=np.float64)
+        counts = training_pixel_counts(train_split_path).astype(np.float64)
 
         inv_sqrt = 1.0 / np.sqrt(counts)
         fg_weights = inv_sqrt[1:] / inv_sqrt[1:].mean()
@@ -245,6 +271,35 @@ def evaluate(
     return mean_loss, miou_foreground, per_class_report, cm_cpu
 
 
+def dependency_versions() -> dict[str, str]:
+    """The library versions this run was trained with."""
+    return {"torch": torch.__version__, "transformers": transformers.__version__}
+
+
+def base_checkpoint_licence(cfg: dict[str, Any]) -> str:
+    """The configured licence, else NVIDIA's for its published checkpoints, else not recorded."""
+    if cfg.get("base_checkpoint_licence"):
+        return cfg["base_checkpoint_licence"]
+    if str(cfg.get("architecture", "nvidia/mit-b0")).startswith("nvidia/"):
+        return "NVIDIA Source Code License - Non-commercial"
+    return "not-recorded"
+
+
+def notice_text(cfg: dict[str, Any]) -> str:
+    """NOTICE.md for a run: the checkpoint and version that were actually trained."""
+    architecture = cfg.get("architecture", "nvidia/mit-b0")
+    return f"""# Model Notice: SegFormer Vehicle Part Segmentation
+
+- **Model ID**: {cfg.get("model_id", "parts")}
+- **Version**: {cfg.get("model_version", "parts/0.1.0")}
+- **Base Checkpoint**: {architecture}
+- **Base Checkpoint Licence**: {base_checkpoint_licence(cfg)}
+- **Dataset**: HITL Car Parts Dataset (Supervisely polygon annotations converted to indexed semantic masks)
+- **Dataset Access and Licence Evidence**: data/manifests/dataset_sources.json, entry `hitl`
+- **Side Resolution**: HITL labels carry no left/right side. All predictions assign side='unknown' per CLAIM-CMEV invariant.
+"""
+
+
 def get_git_revision() -> str:
     """Get current git commit hash."""
     try:
@@ -265,7 +320,7 @@ def sha256_file(path: Path) -> str:
 
 def train(
     config_path: str | Path = "configs/models/parts.yaml",
-    split_dir: str | Path = "data/splits/parts/0.1.0",
+    split_dir: str | Path = "data/splits/parts/0.1.1",
     output_dir: str | Path = "artifacts/models/parts/0.1.0",
 ) -> dict[str, Any]:
     """Execute complete SegFormer-B0 training loop and save artifacts."""
@@ -279,9 +334,8 @@ def train(
     seed = cfg.get("seed", 20260922)
     set_seed(seed)
 
-    device_str = cfg.get("device", "cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device(device_str)
-    log.info(f"Using device: {device} ({torch.cuda.get_device_name(0) if device.type == 'cuda' else 'CPU'})")
+    device = resolve_device(cfg.get("device", "auto"))
+    log.info(f"Using device: {device} ({torch.cuda.get_device_name(0) if device.type == 'cuda' else device.type.upper()})")
 
     # Datasets and Loaders
     train_split = split_dir / "train.jsonl"
@@ -293,8 +347,9 @@ def train(
         image_size=cfg.get("input_size", 512),
         is_train=True,
         augment_mode=cfg.get("augment_mode", "standard"),
+        verify=True,
     )
-    val_dataset = HitlPartsDataset(val_split, image_size=cfg.get("input_size", 512), is_train=False)
+    val_dataset = HitlPartsDataset(val_split, image_size=cfg.get("input_size", 512), is_train=False, verify=True)
 
     batch_size = cfg.get("batch_size", 8)
     train_loader = DataLoader(
@@ -503,13 +558,11 @@ def train(
     }
     (output_dir / "preprocessing.json").write_text(json.dumps(preprocessing, indent=2), encoding="utf-8")
 
-    # Copy split_manifest.json
+    # Copy split_manifest.json; the run records the split it actually read
     if split_manifest_path.exists():
         shutil.copy2(split_manifest_path, output_dir / "split_manifest.json")
-        split_manifest_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
-        split_hashes = split_manifest_data.get("split_hashes", {})
-    else:
-        split_hashes = {}
+    split_hashes = split_file_hashes(split_dir)
+    trained_split_version = split_version(split_dir) or "not-recorded"
 
     # Copy config.yaml
     shutil.copy2(config_path, output_dir / "config.yaml")
@@ -527,7 +580,7 @@ def train(
     eval_report = {
         "report_version": "1.0.0",
         "split_evaluated": "validation",
-        "split_version": cfg.get("split_version", "0.1.0"),
+        "split_version": trained_split_version,
         "best_epoch": best_epoch,
         "mIoU_foreground": round(best_miou, 4),
         "target_mIoU": ">=0.60",
@@ -540,17 +593,7 @@ def train(
     (output_dir / "evaluation_report.json").write_text(json.dumps(eval_report, indent=2), encoding="utf-8")
 
     # Write NOTICE.md
-    notice_text = f"""# Model Notice: SegFormer-B0 Vehicle Part Segmentation
-
-- **Model ID**: parts
-- **Version**: {cfg.get("model_version", "parts/0.1.0")}
-- **Base Checkpoint**: nvidia/mit-b0
-- **Base Checkpoint Licence**: NVIDIA Source Code License - Non-commercial
-- **Dataset**: HITL Car Parts Dataset (Supervisely polygon annotations converted to indexed semantic masks)
-- **Dataset Licence & Consent**: Research use
-- **Side Resolution**: HITL labels carry no left/right side. All predictions assign side='unknown' per CLAIM-CMEV invariant.
-"""
-    (output_dir / "NOTICE.md").write_text(notice_text, encoding="utf-8")
+    (output_dir / "NOTICE.md").write_text(notice_text(cfg), encoding="utf-8")
 
     # Write manifest.json
     manifest = {
@@ -562,7 +605,7 @@ def train(
         "task": "semantic_segmentation",
         "architecture": cfg.get("architecture", "nvidia/mit-b0"),
         "base_checkpoint": cfg.get("architecture", "nvidia/mit-b0"),
-        "base_checkpoint_licence": "NVIDIA Source Code License - Non-commercial",
+        "base_checkpoint_licence": base_checkpoint_licence(cfg),
         "weights_sha256": weights_sha256,
         "recipe": {
             "loss_type": loss_type,
@@ -581,7 +624,7 @@ def train(
         "preprocessing_version": "1.0.0",
         "dataset_ids": ["hitl-car-parts"],
         "dataset_access_evidence": "data/manifests/dataset_sources.json",
-        "split_version": cfg.get("split_version", "0.1.0"),
+        "split_version": trained_split_version,
         "split_hashes": split_hashes,
         "conversion_version": "0.1.0",
         "seed": seed,
@@ -591,10 +634,7 @@ def train(
             "pytorch_version": torch.__version__,
             "cuda_version": torch.version.cuda if torch.cuda.is_available() else "None",
         },
-        "dependency_versions": {
-            "torch": torch.__version__,
-            "transformers": "5.17.0",
-        },
+        "dependency_versions": dependency_versions(),
         "code_revision": get_git_revision(),
         "training_duration_s": round(training_duration_s, 2),
         "metrics": {
@@ -630,7 +670,7 @@ def train(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train SegFormer-B0 on HITL vehicle parts")
     parser.add_argument("--config", type=str, default="configs/models/parts.yaml", help="Path to config file")
-    parser.add_argument("--split-dir", type=str, default="data/splits/parts/0.1.0", help="Path to split directory")
+    parser.add_argument("--split-dir", type=str, default="data/splits/parts/0.1.1", help="Path to split directory")
     parser.add_argument("--output-dir", type=str, default="artifacts/models/parts/0.1.0", help="Output artifact directory")
     args = parser.parse_args()
 

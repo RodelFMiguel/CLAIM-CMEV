@@ -13,14 +13,27 @@ import json
 import logging
 from pathlib import Path
 import random
+import sys
 from typing import Any
 
+# Ensure project root is in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from claim_cmev.contracts.common import PART_CODES
+from pipelines.vision.splits import (
+    find_hitl_folder,
+    labels_dir,
+    membership,
+    split_file_hashes,
+    split_version as version_of,
+)
 
 log = logging.getLogger("cmev.pipelines.build_splits")
 
 DEFAULT_SEED = 20260922
-DEFAULT_SPLIT_VERSION = "0.1.0"
+DEFAULT_SPLIT_VERSION = "0.1.1"
 
 
 def sha256_of_file(path: Path) -> str:
@@ -87,11 +100,11 @@ def create_splits(
         is_shared = h in shared_hashes
         entry = {
             "example_id": rec["image_name"],
-            "source_path": rec["image_path"],
+            "image_relative_path": rec["image_relative_path"],
             "content_sha256": h,
             "group_key": h,
-            "mask_path": rec["mask_path"],
-            "mask_sha256": rec["mask_sha256"],
+            "mask_relative_path": rec["mask_relative_path"],
+            "mask_pixel_sha256": rec["mask_pixel_sha256"],
             "width": rec["width"],
             "height": rec["height"],
             "class_pixel_counts": rec["class_pixel_counts"],
@@ -124,7 +137,15 @@ def build_and_save_splits(
     split_version: str = DEFAULT_SPLIT_VERSION,
     train_ratio: float = 0.70,
     val_ratio: float = 0.15,
+    same_membership_as: Path | str | None = None,
 ) -> dict[str, Any]:
+    """Build and write the split.
+
+    ``damage_raw_dir=None`` means there is no damage export: the shuffle then runs over the
+    part images alone, which gives a different split from one built with it.
+    ``same_membership_as`` names an existing split folder; the new split must put every image
+    in the same partition, or nothing is written.
+    """
     parts_index_path = Path(parts_index_path)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -140,6 +161,13 @@ def build_and_save_splits(
     log.info(f"Union image hashes: {len(union_hashes)}, Shared with damage: {len(shared_hashes)}")
 
     splits = create_splits(parts_records, union_hashes, shared_hashes, seed, train_ratio, val_ratio)
+    if same_membership_as is not None:
+        expected = membership(same_membership_as)
+        built = {r["example_id"]: (name, r["content_sha256"]) for name, rows in splits.items() for r in rows}
+        moved = sum(1 for key in expected.keys() | built.keys() if expected.get(key) != built.get(key))
+        if moved:
+            raise ValueError(f"membership differs from {same_membership_as}: {moved} images are missing, new, "
+                             "changed or in another partition")
 
     file_hashes: dict[str, str] = {}
     partition_counts: dict[str, int] = {}
@@ -180,7 +208,15 @@ def build_and_save_splits(
         "total_parts_images": len(parts_records),
         "per_class_object_support": per_class_support,
         "file_hashes": file_hashes,
+        "record_paths": {
+            "image_relative_path": "relative to the HITL parts export, the folder whose meta.json lists the part classes",
+            "mask_relative_path": "relative to the output folder of pipelines/vision/convert_hitl.py",
+        },
+        "mask_pixel_sha256": "sha256 of '<height>x<width>:' followed by the mask's uint8 class indices",
     }
+    if same_membership_as is not None:
+        manifest["same_membership_as"] = {"split_version": version_of(same_membership_as),
+                                          "file_hashes": split_file_hashes(same_membership_as)}
 
     manifest_path = output_dir / "split_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -190,12 +226,15 @@ def build_and_save_splits(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create group-aware train/val/test splits for HITL parts.")
-    parser.add_argument("--parts-index", type=Path, default=Path("data/interim/hitl_parts/index.jsonl"),
-                        help="Path to parts index.jsonl produced by convert_hitl.py.")
-    parser.add_argument("--damage-raw-dir", type=Path, default=Path("data/raw/Car parts dataset"),
-                        help="Path to raw HITL damage folder to identify shared images.")
-    parser.add_argument("--output-dir", type=Path, default=Path("data/splits/parts/0.1.0"),
-                        help="Output directory for split manifest and partition jsonl files.")
+    parser.add_argument("--parts-index", type=Path, default=None,
+                        help="index.jsonl produced by convert_hitl.py. Default: in its default output folder.")
+    parser.add_argument("--damage-raw-dir", type=Path, default=None,
+                        help="The HITL damage export ('Car parts dataset'), needed to keep shared images together. "
+                             "Default: $CMEV_HITL_DAMAGE_DIR, else found under data/raw; the build fails without it.")
+    parser.add_argument("--output-dir", type=Path, default=None,
+                        help="Output directory. Default: data/splits/parts/<split-version>.")
+    parser.add_argument("--same-membership-as", type=Path, default=None,
+                        help="An existing split folder whose partition of every image the new split must keep.")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed for deterministic splitting.")
     parser.add_argument("--split-version", type=str, default=DEFAULT_SPLIT_VERSION, help="Split version string.")
     parser.add_argument("--train-ratio", type=float, default=0.70, help="Fraction for training split.")
@@ -204,13 +243,14 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     build_and_save_splits(
-        args.parts_index,
-        args.damage_raw_dir,
-        args.output_dir,
+        args.parts_index or labels_dir() / "index.jsonl",
+        find_hitl_folder("damage", args.damage_raw_dir),
+        args.output_dir or Path("data/splits/parts") / args.split_version,
         seed=args.seed,
         split_version=args.split_version,
         train_ratio=args.train_ratio,
         val_ratio=args.val_ratio,
+        same_membership_as=args.same_membership_as,
     )
 
 

@@ -43,6 +43,11 @@ def _split(value: str | None) -> tuple[str, str]:
     return name, version or value
 
 
+def _preprocess_version(parts_versions: Mapping[str, str]) -> str:
+    """The parts stage's preprocessing version; the real M1 configuration carries it as ``parts_config``."""
+    return parts_versions.get("preprocess_config") or parts_versions.get("parts_config") or "not-recorded"
+
+
 class Orchestrator:
     def __init__(self, versions: VersionBundle, rules_config_version: str):
         self.versions, self.rules_config_version = versions, rules_config_version
@@ -168,7 +173,7 @@ class Orchestrator:
         v = self.versions.for_stage("parts")
         model_id, model_version = _split(v.get("parts_model"))
         return {"photo": dict(photo), "model_id": model_id, "model_version": model_version,
-                "preprocess_config_version": v.get("preprocess_config", "not-recorded"),
+                "preprocess_config_version": _preprocess_version(v),
                 "taxonomy_version": v.get("taxonomy", "not-recorded")}
 
     def _damage_payload(self, parts_job: Mapping[str, Any]) -> dict[str, Any]:
@@ -177,7 +182,7 @@ class Orchestrator:
         result = parts_job["result_ref"] or {}
         return {"photo": parts_job["command"]["payload"]["photo"], "part_mask_ref": result["part_mask_ref"],
                 "transform": result["transform"], "model_id": model_id, "model_version": model_version,
-                "preprocess_config_version": self.versions.for_stage("parts").get("preprocess_config", "not-recorded"),
+                "preprocess_config_version": _preprocess_version(self.versions.for_stage("parts")),
                 "assignment_config_version": v.get("assignment_config", "not-recorded"),
                 "taxonomy_version": v.get("taxonomy", "not-recorded")}
 

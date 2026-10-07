@@ -211,3 +211,27 @@ Targets are hypotheses from v2 section 13.1, not measured results. Report counts
 | Final `min_part_pixels` and `min_part_confidence` values | Lane 1 | Validation split, frozen day 6 |
 | Whether overlays are generated here or on demand by `cmev-api` | Lane 1 with Lane 5 | Day 3 |
 | Partition count for `cmev.cmd.parts-segment.v1` and replica count for this container | Lane 5 | Day 2, see [integration contracts](integration_contracts.md) |
+
+### Serving wiring as implemented (2026-10-07)
+
+These are **proposed** choices made while making the worker startable. They narrow the tables above; they do not change the record or message contracts.
+
+- **Opt-in container.** `cmev-worker-parts` is added to the stack by a second Compose file, `infra/compose/docker-compose.parts.yml`, not by the base file's `lean` and `full` profiles. That file starts the worker and sets `CMEV_PARTS_PRODUCER=real` on every service together. With `real` the orchestrator pins the configured checkpoint and the fixture producers leave `cmev.cmd.parts-segment.v1` to this worker. Without it the stack is fixture-only, and a parts worker started on its own refuses to run, because it would share the `cmev-worker-parts` consumer group with the fixture producer. The switch is not read from `.env`, so it cannot be on while the worker is absent.
+- **Pinned versions.** `versions` on a parts command are `parts_model`, `parts_config`, `taxonomy` and `code`, taken from `configs/models/parts.yaml`. The command's `preprocess_config_version` is the `parts_config` value, since that file also holds the input size and resize policy. The worker serves only commands pinned to the versions it loaded and dead-letters any other with reason `model_version_unsupported`.
+- **Registry entry.** The checkpoint folder is `<CMEV_MODEL_REGISTRY_PATH>/<model_version>`, for example `artifacts/models/parts/0.1.0`. The configuration file is located by `CMEV_PARTS_CONFIG`; a missing file is an error, not a fallback to built-in defaults.
+- **Start-up verification.** The checkpoint is loaded once, before any message is consumed. The worker exits with code 1 when the entry, its `manifest.json` or its weights are missing, when the manifest names another model or taxonomy version, when the weight SHA-256 differs from the manifest, or when the class map is not the parts taxonomy's. It no longer needs the M8 rules or the M3 configuration.
+- **Provenance.** Rows and events from this worker carry `source_kind = real` whatever `CMEV_FIXTURE_MODE` says.
+- **Not done.** Warm-up inference before readiness, the job-run duplicate and superseded handling specific to this module, multi-photo commands, `image_preprocessing` rows and the latency measurement are still open. M2 and M3 do not read real M1 output yet.
+
+### Adapter behaviour as implemented (2026-10-07)
+
+**Proposed**, like the notes above. Two of these differ from the tables earlier in this document.
+
+- **One entry point.** `run_parts_segmentation` is the only segmentation function and writes nothing. The handler reads the photograph, calls it with that one photograph (the wire contract carries one per command), stores the returned artifacts, persists the rows and publishes the event.
+- **Artifact keys differ from the table above.** The mask is `claims/{claim_id}/{input_revision}/parts/{photo_id}/{version_signature}/mask.png`, and the overlay sits beside it. The signature is the job key's last segment. A rerun under another checkpoint therefore never overwrites the mask that earlier rows reference. M4 keys its page artifacts the same way.
+- **Padding.** Model-frame pixels outside the photograph are background in the stored mask and are not counted in `pixel_count` or `mean_confidence`.
+- **Overlay.** One outline per accepted part, drawn with the M9 renderer. It is written only when `write_overlay` is true and at least one part is accepted. Rejected parts are in the rows and the mask but are not outlined.
+- **Read failures.** A photograph that is not in the object store fails at once with `artifact_missing`. Any other storage error is retried under the consumer's policy with reason `artifact_read_failed`. A hash mismatch and an undecodable photograph are final (`artifact_hash_mismatch`, `corrupt_photo`).
+- **Event.** Built with the shared message builder: the job's task, target and retry epoch, with the command's `dedup_key` as `causation_id`.
+- **Strict loading.** The worker refuses a checkpoint when any tensor fails to load (`model_weights_incomplete`). transformers only warns in that case and leaves the layer at random values; it happens when the checkpoint was saved by another major version (5 renamed SegFormer's decode-head layers).
+- **Served checkpoint and libraries.** `configs/models/parts.yaml` now names `parts/0.8.0-b3-compound`, a SegFormer-B3, not the B0 this document specifies; the B0 baseline recipe is `parts_v1_baseline.yaml`. The model libraries are the package's `vision` extra, installed only in the parts image, with transformers pinned to 5.17 or later because that checkpoint was saved by 5.17.

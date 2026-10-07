@@ -23,6 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from claim_cmev.contracts.common import PART_CODES
 from claim_cmev.taxonomy import load_parts
 from pipelines.vision.convert_hitl import PART_CODE_TO_ID
+from pipelines.vision.splits import find_hitl_folder
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("cmev.pipelines.export_yolo_parts")
@@ -34,6 +35,7 @@ def export_split(
     output_img_dir: Path,
     output_lbl_dir: Path,
     title_to_yolo_id: dict[str, int],
+    images_root: Path | None = None,
 ) -> int:
     output_img_dir.mkdir(parents=True, exist_ok=True)
     output_lbl_dir.mkdir(parents=True, exist_ok=True)
@@ -42,9 +44,12 @@ def export_split(
     count = 0
 
     for rec in records:
-        src_path = Path(rec["source_path"])
-        if not src_path.is_absolute():
-            src_path = PROJECT_ROOT / src_path
+        if "image_relative_path" in rec:  # portable record: relative to the HITL parts export
+            src_path = images_root / rec["image_relative_path"]
+        else:  # split 0.1.0: a repository-relative path
+            src_path = Path(rec["source_path"])
+            if not src_path.is_absolute():
+                src_path = PROJECT_ROOT / src_path
 
         ann_file = raw_ann_dir / f"{src_path.name}.json"
         if not ann_file.exists():
@@ -94,12 +99,13 @@ def export_split(
 
 
 def main(
-    split_dir: str | Path = "data/splits/parts/0.1.0",
-    raw_ann_dir: str | Path = "data/raw/Car damages dataset/File1/ann",
+    split_dir: str | Path = "data/splits/parts/0.1.1",
+    raw_ann_dir: str | Path | None = None,
     output_dir: str | Path = "data/interim/yolo_parts",
 ) -> None:
     split_dir = Path(split_dir)
-    raw_ann_dir = Path(raw_ann_dir)
+    images_root = find_hitl_folder("parts")
+    raw_ann_dir = Path(raw_ann_dir) if raw_ann_dir else images_root / "File1" / "ann"
     output_dir = Path(output_dir)
 
     parts_tax = load_parts()
@@ -110,7 +116,7 @@ def main(
         s_file = split_dir / f"{split_name}.jsonl"
         o_img = output_dir / "images" / split_name
         o_lbl = output_dir / "labels" / split_name
-        n = export_split(s_file, raw_ann_dir, o_img, o_lbl, title_to_yolo_id)
+        n = export_split(s_file, raw_ann_dir, o_img, o_lbl, title_to_yolo_id, images_root)
         log.info(f"Exported {n} examples for {split_name} split.")
 
     # Write dataset.yaml
@@ -132,8 +138,9 @@ names:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export YOLO parts dataset")
-    parser.add_argument("--split-dir", type=str, default="data/splits/parts/0.1.0")
-    parser.add_argument("--raw-ann-dir", type=str, default="data/raw/Car damages dataset/File1/ann")
+    parser.add_argument("--split-dir", type=str, default="data/splits/parts/0.1.1")
+    parser.add_argument("--raw-ann-dir", type=str, default=None,
+                        help="Default: File1/ann of the HITL parts export ($CMEV_HITL_PARTS_DIR, else found under data/raw).")
     parser.add_argument("--output-dir", type=str, default="data/interim/yolo_parts")
     args = parser.parse_args()
 

@@ -266,7 +266,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train and evaluate YOLOv8m-seg on vehicle parts")
     parser.add_argument("--data", type=str, default="data/interim/yolo_parts/dataset.yaml")
     parser.add_argument("--output-dir", type=str, default="artifacts/models/parts/yolov8m-seg")
-    parser.add_argument("--test-split", type=str, default="data/splits/parts/0.1.0/test.jsonl")
+    parser.add_argument("--test-split", type=str, default="data/splits/parts/0.1.1/test.jsonl")
     parser.add_argument("--epochs", type=int, default=60)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--skip-train", action="store_true", help="Skip training and only evaluate")

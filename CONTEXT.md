@@ -1303,3 +1303,227 @@ Key Findings:
 4. Across all models, confusion matrices confirm that errors concentrate almost exclusively along adjacent panel seams (`back-door` <-> `front-door`, `grille` <-> `front-bumper`).
 
 Next concrete step: Finalize Module 1 default deployment selection and proceed to Module 2 (damage segmentation).
+
+
+## M1 serving and trainer fixes after branch review (2026-10-07)
+
+Date/time and timezone: 2026-10-07, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request, after reviewing `e815164`.
+Task and relevant module: M1. Four defects found in the review of this branch (mask geometry, duplicate prediction IDs, a broken test fixture, the trainer rejecting the default config) and the tests that were missing for them.
+Branch / baseline commit / resulting commit or PR: local `feat/m1-implementation` (same commit as `origin/M1-Implementation`) / `e815164` / uncommitted.
+Changed paths and completed behaviour:
+- `src/claim_cmev/vision/parts/adapter.py`:
+  - The recorded `ImageTransform` now takes `pad_left`/`pad_top` from the planned frame's content offset. It used the total padding, so every non-square photo had its mask mapped back to the photo shifted by the padding (160 photo pixels for a 640x480 photo).
+  - `prediction_id` now includes the photo ID. In `run_parts_segmentation` the same part on two photos of one request had the same ID.
+  - Both fixes apply to `segment_photo` and `run_parts_segmentation`.
+- `pipelines/vision/train_segformer.py`: new `resolve_device`. `device: "auto"` picks CUDA, then the Apple GPU, then the CPU. The default `configs/models/parts.yaml` says `auto` since `e815164`, and the trainer passed that string to `torch.device`, which rejects it.
+- `tests/unit/test_parts_adapter.py`:
+  - The dummy SegFormer fixture now sets `num_attention_heads=[1, 2, 4, 8]` and a fixed seed. With the default heads, five tests errored on transformers 4.57.6.
+  - 11 new tests. Nine check that the recorded transform and an overlay drawn with it land on the photo region the network actually received, for a landscape, a portrait and an EXIF-rotated photo. Two check that each photo gets its own prediction IDs.
+- `tests/unit/test_train_eval_segformer.py`: 8 new tests for device selection, including one that runs `train()` with the default config past device setup.
+Decisions (accepted/proposed) and references:
+- Proposed: prediction IDs are `deterministic_id("pp", job_key, photo_id, part_code)` on both entry points. This changes the IDs the handler path would produce. No real M1 rows exist yet, because the worker has not run.
+- Proposed: in the trainer, `auto` may select the Apple GPU. The serving adapter still resolves `auto` to CUDA or the CPU only.
+- Reference: [M1 specification](docs/specs/module-01-vehicle-part-segmentation.md), acceptance rows "Masks align on the original photograph" and the `part_prediction` row definition.
+Checks actually run, results and artifact locations:
+- Every new test was run and seen to fail before its fix, for the intended reason.
+- Full Python suite on this working tree: 1447 passed, 4 skipped, 1 failed. On pristine `e815164`: 1423 passed, 4 skipped, 1 failed, 5 errors.
+- The one failure is `tests/unit/m7/test_m7_config.py::test_pipeline_entrypoints_generate_and_build` on both. Its subprocess cannot import `claim_cmev` in this workstation's environment; it passes when the package and dependencies are on the subprocess path.
+- Environment: the workstation `venv` (torch 2.14.0, transformers 4.57.6) with the application dependencies added from a temporary directory. No single documented environment installs both sets.
+- Smoke run, not a model result: 14 HITL images, one epoch, `device: "auto"`, SegFormer-B2 from the local cache. It trained on the Apple GPU in 25 s, and the serving adapter loaded the output and reported `pad_left = pad_top = 0` for a 637x419 photo. Outputs were written outside the repository.
+- Not run: Docker, Kafka, PostgreSQL, any full training run, any evaluation.
+Uncommitted work, limitations and missing prerequisites:
+- The other review findings on this branch are still open. The worker image cannot start (`infra/Dockerfile.parts` lacks the M8/M3 config variables), no checkpoint is mounted, the real worker shares a consumer group with the fixture parts producer, real predictions carry fixture versions, and the model path is hardcoded.
+- Also open: the overlay merges all parts into one outline, padding pixels count towards part statistics, the versioned mask copy is never referenced, and the handler does not call `run_parts_segmentation`.
+- The M1 specification task "Add tests for duplicate delivery, superseded revision, hash mismatch, corrupt photo, empty accepted set and overlay alignment" is only partly met, so it stays unticked.
+- `train_resnet.py`, `train_eval_yolo.py` and `eval_segmentation.py` still know only CUDA and the CPU.
+- This file has no entry for `e815164` itself, and its status tables predate the M1 code.
+Next concrete step and agreed owner (or unassigned): Unassigned. Fix worker startup and model loading (the first four open items above) before enabling `cmev-worker-parts` in Compose.
+
+
+## Neural M5 document tensor workflow drawings (2026-10-07)
+
+Date/time and timezone: 2026-10-07, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: Explain M4–M6 at the same tensor/transform detail as the existing M1–M3 drawing, using the user's planned neural M5.
+Branch / baseline commit / resulting commit or PR: `feat/m1-implementation` / inspected `e815164` / uncommitted; no commit or push performed. Concurrent M1 contributor work was preserved.
+Changed paths and completed behaviour:
+- `scripts/render_document_workflow.py`: reproducible Graphviz source for the full tensor workflow, a worked estimate example and model-training/target diagram. Generates a local tabbed/zoomable viewer plus SVG, PNG, PDF, DOT and PNG previews in ignored `artifacts/exports/document-workflow/`.
+- `docs/document-neural-workflow.md`: shape/coordinate definitions, primary-source references, model-versus-module boundaries, training targets, alignment limitations and regeneration instructions.
+- `docs/specs/README.md`: prominent pointer recording the user's neural-M5 planning direction; older parser-core/stretch status remains explicitly historical for this design.
+Decisions/status:
+- Accepted user direction: plan a neural M5. LayoutLMv3 is the illustrated existing candidate; exact architecture, BIO-11 example, window/subword policies and thresholds remain proposed. This task implements explanatory artifacts, not model serving or training.
+- M4 currently exposes line segments. Verified word geometry/alignment is a prerequisite for the illustrated word-based M5 route; the diagram does not invent word boxes or imply this adapter exists.
+- Distinguish M5 token logits from assembled line items; distinguish M6 class logits/box deltas from public detections and pending mark records. M6 geometry linking and human-confirmed amounts remain separate.
+Checks actually run, results and artifact locations:
+- All three diagrams rendered to SVG, PNG and PDF with Graphviz 14.1.1; previews visually inspected. SVG XML parses, PDF/PNG file signatures validate, and escaped-Unicode labels were checked after correction.
+- Renderer Python syntax checked; all 13 viewer links resolve; inline SVG/HTML IDs are unique. Tab selection, accessible selected state, zoom bounds and fit-width control exercised with a Node DOM stub (not a browser end-to-end run).
+- Model tensor interfaces checked against upstream PaddleOCR 2.10 inference code, Hugging Face LayoutLMv3 documentation/4.57.1 model source and torchvision detection source; sources are linked in the guide. No checkpoint inference or shape smoke test was run.
+- `git diff --check` passed for the documentation changes. No application tests or model training were needed for these diagrams.
+Uncommitted work, limitations and missing prerequisites: Generated exports are ignored and require the tracked source/script to regenerate elsewhere. Neural M5 alignment, training and row assembly adapters, and M6 real detector integration remain pending; no new accuracy or end-to-end acceptance claim. Existing broader specifications still need a deliberate implementation-plan revision when the neural recipe is selected.
+Next concrete step and agreed owner (or unassigned): Document lane (unassigned): select/validate the OCR word-alignment path, then pin M5 label encoding, chunking/assembly policy and training data before implementing the neural adapter.
+
+
+## M1 worker start-up, model loading and opt-in switch (2026-10-07)
+
+Date/time and timezone: 2026-10-07, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request. Follows the entry "M1 serving and trainer fixes after branch review (2026-10-07)"; these are review items 1 to 6 for `e815164`.
+Task and relevant module: M1 serving. Make `cmev-worker-parts` able to start, find and verify its checkpoint, stop competing with the fixture parts producer, and label its output honestly.
+Branch / baseline commit / resulting commit or PR: local `feat/m1-implementation` / `e815164` plus the uncommitted fixes of that earlier entry / uncommitted.
+Changed paths and completed behaviour:
+- Switch: `CMEV_PARTS_PRODUCER` (`fixture` by default, `real`), read by every service through `RuntimeSettings` in `src/claim_cmev/orchestration/services.py`.
+  - With `real`, `VersionBundle.for_runtime` (`orchestration/plan.py`) pins the configured checkpoint on parts commands, and the fixture producers no longer consume `cmev.cmd.parts-segment.v1`.
+  - The API reports the same bundle at `/api/v1/version`. Its seed drain always runs the complete fixture pipeline.
+- `src/claim_cmev/worker.py`: the `parts` role no longer builds the M8 consolidator or the fixture bundle (which loads the M3 configuration). It loads and verifies the checkpoint once before the Kafka loop and exits with code 1 on any failure. It refuses to start unless the switch is `real`.
+- `src/claim_cmev/vision/parts/config.py`: `load_parts_config` follows the M3/M8 pattern (path, `CMEV_PARTS_CONFIG`, repository default) and a missing file is now an error. New `PartsConfig.stage_versions` and `PartsConfig.model_dir`; the checkpoint folder is `<CMEV_MODEL_REGISTRY_PATH>/<model_version>`.
+- `src/claim_cmev/vision/parts/adapter.py`:
+  - New `verify_checkpoint` and `load_parts_segmenter`. They refuse a missing entry, manifest or weight file, another model or taxonomy version, a weight hash that differs from the manifest, and a class map that is not the parts taxonomy's.
+  - `PartsSegmenter` no longer has a hardcoded default folder.
+  - `make_parts_handler` takes the versions it serves and refuses any command pinned to others with reason `model_version_unsupported`.
+- `src/claim_cmev/vision/parts/__init__.py`: adapter names load on first use, so the orchestrator and API can read the parts configuration without importing PyTorch.
+- `src/claim_cmev/orchestration/orchestrator.py`: the parts and damage commands take `preprocess_config_version` from `parts_config` when the parts stage is real.
+- `infra/Dockerfile.parts`, `infra/Dockerfile.api`, `infra/compose/docker-compose.yml`, `infra/compose/.env.example`: the parts worker is in its own opt-in Compose profile `parts`, mounts the model registry read-only, and its image locates its own configuration, the taxonomy and the overlay style. It no longer mounts cost tables.
+- Tests: new `tests/unit/test_parts_serving.py` (16), `tests/integration/test_parts_worker.py` (12) and `tests/backend/test_parts_mode.py` (2). `tests/unit/test_parts_adapter.py` and `tests/integration/test_worker_cleanup.py` were adjusted for the changed handler factory and settings object.
+- Notes appended to `docs/specs/module-01-vehicle-part-segmentation.md` and a new section in `infra/README.md`.
+Decisions (accepted/proposed) and references:
+- All proposed. The M1 specification lists the container under the `lean` and `full` profiles; it is now opt-in instead, because M2 to M8 are fixtures that do not read M1 output and the seed claims have no photo bytes.
+- A parts worker's rows and events carry `source_kind = real` whatever `CMEV_FIXTURE_MODE` says.
+- The stage versions are `parts_model`, `parts_config`, `taxonomy` and `code`, as in the M1 specification's message table.
+- A manifest is required, following technical specification 9.3. A checkpoint exported without `manifest.json` cannot be served.
+Checks actually run, results and artifact locations:
+- Each new test was seen to fail first, including exact reproductions of the two start-up defects: the worker raising on the missing M8 configuration, and a missing checkpoint being retried like a broker outage.
+- Full Python suite: 1477 passed, 4 skipped, 1 failed. The failure is the same environment-related `tests/unit/m7/test_m7_config.py::test_pipeline_entrypoints_generate_and_build` as in that earlier entry.
+- The integration test runs one claim with stored photo bytes through the orchestrator, the real parts handler (a tiny random-weight SegFormer) and the fixture stages over SQLite and the in-memory transport. M1 rows carry `real` provenance and the pinned versions; the assessment stays labelled a fixture.
+- `docker compose config`: `lean` and `full` no longer include `cmev-worker-parts`; `lean` with `parts` does, with the registry mounted read-only and the switch reaching the API and the combined worker.
+- The parts image was built (3.43 GB) and run on its own with a migrated SQLite database and no broker:
+  - without the switch it exits 1 naming `CMEV_PARTS_PRODUCER`;
+  - with the switch and no registry it exits 1 with `model_not_found`;
+  - with a registry entry written by `train_segformer.py` it loads it, logs the pinned versions, stays up and reports not ready while no broker is reachable.
+  - Inside the image it segmented a photograph on the CPU and wrote the mask and overlay. The image was removed afterwards.
+- Not run: the whole Compose stack with the profile on, Kafka, PostgreSQL, MinIO, a trained model, latency or memory.
+Uncommitted work, limitations and missing prerequisites:
+- No trained checkpoint is in the registry on this workstation; the container check used a one-epoch smoke model.
+- With the switch on, a photograph without stored bytes fails its parts stage with `artifact_read_failed`. That affects the seed claims when they are processed or reassessed, including CLM-24020 on a fresh database.
+- Changing the switch changes the pinned versions, so a claim's parts stage is rerun rather than reused.
+- Still open from the review: the overlay merges all parts into one outline, padding pixels count towards part statistics, the versioned mask copy is never referenced, storage errors are classified as permanent, the handler does not call `run_parts_segmentation`, the event is built without `causation_id` or the retry epoch, and PyTorch is an unbounded core dependency (so the shared image installs it too).
+- Readiness does not yet include a warm-up inference.
+Next concrete step and agreed owner (or unassigned): Unassigned. Place a trained, manifest-bearing checkpoint in the registry and run the `lean` and `parts` profiles together with an uploaded claim.
+
+
+## M1 adapter, trainer records and portable split (2026-10-07)
+
+Date/time and timezone: 2026-10-07, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request. Review items 9 to 12, 15, 16, 18 and 19 for `e815164`; follows "M1 worker start-up, model loading and opt-in switch (2026-10-07)".
+Task and relevant module: M1 serving adapter and offline training data.
+Branch / baseline commit / resulting commit or PR: local `feat/m1-implementation` / `e815164` plus the uncommitted work of the two earlier M1 entries / uncommitted.
+Changed paths and completed behaviour:
+- `src/claim_cmev/vision/parts/adapter.py`:
+  - `run_parts_segmentation` is the only segmentation function and writes nothing. `PartsSegmenter.segment_photo` is removed. The handler calls the entry point with the command's one photograph, then stores artifacts, persists rows and publishes the event.
+  - Model-frame padding is background in the stored mask and is not counted in pixel counts or confidence.
+  - The mask is stored only under `.../parts/{photo_id}/{version_signature}/`, with the overlay beside it.
+  - The overlay outlines each accepted part separately (new `render_parts_overlay`) and is written only when a part is accepted.
+  - A missing photograph is `artifact_missing` and final. Other storage errors are retried as `artifact_read_failed`. A hash mismatch is no longer marked retryable.
+  - The completion event uses the shared `build_message`, so it carries `causation_id` and the retry epoch.
+- New `pipelines/vision/splits.py`: finds the HITL exports under `data/raw` (directly or one folder down, or by environment variable), reads split files, and hashes a mask by its pixels.
+- `pipelines/vision/convert_hitl.py`, `build_splits.py`, `dataset.py`, `export_yolo_parts.py`: index and split records carry paths relative to the export and to the converter's output, and a pixel-based mask hash. The dataset loader names missing files and how to get them, and can verify masks. Split 0.1.0 records are still readable where their paths exist.
+- `pipelines/vision/build_splits.py`: the command now fails when the damage export is absent, and `--same-membership-as` refuses any change of partition.
+- `data/splits/parts/0.1.1/`: the same 706/145/147 membership as 0.1.0, in the portable format. 0.1.0 is unchanged.
+- `pipelines/vision/train_segformer.py`: class weights are computed from the training split records; the manifest records the installed library versions, the split version and file hashes of the split it read; the notice names the configured checkpoint. `train_resnet.py` reads the split hashes from the right key. All scripts default to split 0.1.1.
+- Tests: new `tests/unit/test_vision_splits.py` (14); additions to `tests/unit/test_parts_adapter.py` (10) and `tests/unit/test_train_eval_segformer.py` (6); `tests/unit/test_parts_segmenter_live.py` rewritten for the single entry point.
+- Notes in `docs/specs/module-01-vehicle-part-segmentation.md` and a new M1 section in `pipelines/README.md`.
+Decisions (accepted/proposed) and references:
+- Accepted by the user on 2026-10-07: keep the split membership and publish it as a new version; outline each accepted part in the existing overlay colour; store the mask under the versioned key only. The key differs from the artifact table in the M1 specification, which now says so.
+- Proposed: padding forced to background in the mask; `artifact_missing` for an absent photograph, the reason code the integration contracts already name; rejected parts are not outlined.
+- Evidence behind the split format:
+  - Regenerating all 998 masks on this workstation matched the 0.1.0 records on image hash and per-class pixel counts for every image, but only 2 of 998 mask file hashes matched, because PNG bytes depend on the encoder version.
+  - With the damage export found, the builder reproduced the 0.1.0 partition for 998 of 998 images. With its old default path, which is absent here, it silently produced a different split (302 of 998 in the same partition).
+  - The class pixel counts the trainer used to hardcode equal the sums over the split's training records exactly, so computing them changes no weight.
+Checks actually run, results and artifact locations:
+- Each new test was seen to fail first for the intended reason.
+- Full Python suite: 1503 passed, 4 skipped, 1 failed (the same environment-related `tests/unit/m7/test_m7_config.py::test_pipeline_entrypoints_generate_and_build`).
+- `convert_hitl.py` and `build_splits.py --same-membership-as data/splits/parts/0.1.0` were run with no path arguments to produce `data/interim/hitl_parts` (ignored by Git) and split 0.1.1.
+- Smoke run, not a model result: 16 training images of split 0.1.1, one epoch, SegFormer-B2 with the compound loss and computed weights, `device: "auto"` (Apple GPU, 31 s), no data path arguments. The manifest recorded split 0.1.1, its file hashes, torch 2.14.0 and transformers 4.57.6. The evaluator read the portable test records. The serving loader verified that manifest; the mask's padding rows were all background and the artifacts sat under the version signature.
+- Not run: a full training run, any evaluation for a result, Docker (the image was not rebuilt after the adapter change), Kafka, PostgreSQL.
+Uncommitted work, limitations and missing prerequisites:
+- The 0.1.0 test split was used to choose between ten runs. Split 0.1.1 has the same membership, so it is not a clean final test either.
+- `tests/contracts/test_taxonomy.py` still looks for the HITL data at a fixed path and skips on this workstation.
+- `train_resnet.py`, `train_eval_yolo.py` and `eval_segmentation.py` still support only CUDA and the CPU by default.
+- Still open from the review: PyTorch as an unbounded core dependency, the overlay rendered inside the handler's database transaction, unused configuration keys (`batch_size`, `max_photos_per_job`, `skip_superseded_revisions`), and no warm-up inference before readiness.
+Next concrete step and agreed owner (or unassigned): Unassigned. Train a checkpoint on split 0.1.1, select on validation only, place it in the registry and run the `lean` and `parts` Compose profiles with an uploaded claim.
+
+
+## M1 served checkpoint connected and run in the Compose stack (2026-10-07)
+
+Date/time and timezone: 2026-10-07, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request, after the user placed the teammate's trained checkpoint in the registry.
+Task and relevant module: M1. Connect the trained SegFormer-B3 checkpoint to the worker and run it through the real stack.
+Branch / baseline commit / resulting commit or PR: local `M1-Implementation` / `e815164` plus the uncommitted work of the three earlier M1 entries / uncommitted.
+Changed paths and completed behaviour:
+- `artifacts/models/parts/0.8.0-b3-compound/` (ignored by Git): the teammate's run folder, placed by the user. Its `manifest.json` hash matches `model.safetensors`.
+- `configs/models/parts.yaml`: now the served model's configuration, `parts/0.8.0-b3-compound`, with that run's recipe and `device: "auto"`. The B0 baseline recipe it used to hold is `configs/models/parts_v1_baseline.yaml`.
+- `src/claim_cmev/vision/parts/adapter.py`: loading is strict. A checkpoint with any missing, unexpected or mismatched tensor is refused with `model_weights_incomplete`, naming the library version that saved it and the one installed.
+- `pyproject.toml`, `infra/Dockerfile.parts`: PyTorch, torchvision and transformers moved from the core dependencies to a `vision` extra that only the parts image installs. transformers is pinned to 5.17 or later, below 6.
+- `tests/unit/test_parts_serving.py`: one new test for the strict loading. Notes in `infra/README.md`, `pipelines/README.md` and the M1 specification.
+Decisions (accepted/proposed) and references:
+- Proposed: serve SegFormer-B3 (`parts/0.8.0-b3-compound`). The M1 specification names B0.
+- Proposed: transformers 5.17 or later for the worker and the vision scripts. Reason: transformers 5 names SegFormer's decode-head projection layers `linear_projections`, and 4.x names them `linear_c`. This checkpoint was saved by 5.17. Under 4.57.6 it loaded with those layers at random values and only a warning, and scored 0.0 foreground mIoU. A checkpoint saved by 4.57.6 did load under 5.19.
+- The user's workstation `venv` has transformers 4.57.6 and was left unchanged, so the worker refuses this checkpoint there. `pip install -e ".[vision]"` would upgrade it.
+Checks actually run, results and artifact locations:
+- Evaluation of the checkpoint on split 0.1.1 with transformers 5.19 in a temporary overlay, masks regenerated on this workstation: validation foreground mIoU 0.7253, test 0.7303, test pixel accuracy 0.9452, macro F1 0.8387. These equal the teammate's `evaluation_report.json` and `test_evaluation_report.json` to four decimals. The test split was used earlier to choose between runs, so this confirms her numbers and is not a clean final result.
+- Full Python suite in the workstation `venv`: 1504 passed, 4 skipped, 1 failed (the same environment-related `tests/unit/m7/test_m7_config.py::test_pipeline_entrypoints_generate_and_build`). The M1 modules under transformers 5.19: 89 passed, none skipped, including the test that loads the real checkpoint.
+- Compose stack, run in an isolated project with its own image tags and volumes: `lean` and `parts` profiles, `CMEV_PARTS_PRODUCER=real`, without `cmev-web`. PostgreSQL, Redpanda, MinIO, the API, the combined worker and the parts worker were all healthy. The application image was 703 MB without PyTorch; the parts image 3.43 GB.
+  - One claim was created over the HTTP API with three HITL test photographs and reached `in_review` with an assessment in 9 seconds.
+  - The three parts jobs succeeded on the first attempt, pinned to `parts/0.8.0-b3-compound` and `parts-cfg-0.8.0`. PostgreSQL held 50 `part_prediction` and 3 `image_quality` rows with `source_kind = real`, producer `cmev-worker-parts` and that model version. 14 to 16 parts were accepted per photograph.
+  - MinIO held a mask and an overlay per photograph under the version signature; each mask's hash equalled its row's. Against ground truth the three masks had 0.93 to 0.95 pixel accuracy, and their padding was all background. One overlay was inspected: the outlines follow the car's parts.
+  - The damage and summary rows and the assessment stayed `fixture`. The two seed claims the API drains at start got fixture assessments. The seed left for the worker was dead-lettered with `artifact_missing`, as documented.
+  - Each parts job finished within 3 seconds of dispatch on the CPU; the parts container used about 1.05 GiB.
+- The stack, its volumes and its images were removed afterwards. The user's existing `claim-cmev` project was not touched.
+- Not run: `cmev-web` and the browser, the `full` profile, duplicate delivery, superseded revisions, broker or store outages, a GPU.
+Uncommitted work, limitations and missing prerequisites:
+- M2 and M3 are fixtures and do not read the M1 mask or rows.
+- Image quality is still `not_assessed`. The other open items of the previous M1 entry stand.
+- The parts image installs a CUDA build of PyTorch although it runs on the CPU.
+Next concrete step and agreed owner (or unassigned): Unassigned. Agree the transformers version for every workstation, then start on M2 reading the real part mask.
+
+
+## Workstation environment on transformers 5 and a single Compose switch for the M1 worker (2026-10-08)
+
+Date/time and timezone: 2026-10-08, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request.
+Task and relevant module: M1 serving. Remove what stood between the trained B3 checkpoint and being served: the workstation's library version, and a Compose switch that could be half-set.
+Branch / baseline commit / resulting commit or PR: local `M1-Implementation` / `e815164` plus the uncommitted work of the earlier M1 entries / uncommitted.
+Changed paths and completed behaviour:
+- Workstation `venv` (not in Git): `pip install -e ".[vision,dev]"`. transformers went from 4.57.6 to 5.19.0, huggingface_hub from 0.36.2 to 1.33.0 and tokenizers from 0.22.2 to 0.23.2; the application packages were added; torch 2.14.0, torchvision and numpy did not change. The previous package list is in `runtime/venv-freeze-before-vision-extra-20261008.txt` (ignored by Git).
+- New `infra/compose/docker-compose.parts.yml`. Adding it as a second `-f` file starts `cmev-worker-parts` with the `lean` and `full` profiles and sets `CMEV_PARTS_PRODUCER=real` on every service.
+- `infra/compose/docker-compose.yml`: `CMEV_PARTS_PRODUCER` is the literal `fixture`. It is no longer read from `.env`.
+- `infra/compose/.env.example`, `infra/Dockerfile.parts`, `infra/README.md`, the M1 specification note and the worker's refusal message describe the new switch.
+Decisions (accepted/proposed) and references:
+- Accepted by the user on 2026-10-08: serving this model takes priority over the notebooks. transformers 5 is the version for this work; the notebooks on `image-worker`, which were run under 4.57.6, may need adjusting later.
+- Proposed, replacing the switch described in the entry "M1 worker start-up, model loading and opt-in switch (2026-10-07)": one Compose file is the whole switch. Before, `CMEV_PARTS_PRODUCER=real` in `.env` and the `parts` profile were two settings. With the first set and the second forgotten, the fixture producer left the parts topic and nothing consumed it, so new claims waited in processing without an error.
+Checks actually run, results and artifact locations:
+- Full Python suite with the plain command `venv/bin/python -m pytest -q`: 1506 passed, 3 skipped, none failed. This is the first run on this workstation without a temporary dependency overlay. The test that loads the real checkpoint runs, and `tests/unit/m7/test_m7_config.py::test_pipeline_entrypoints_generate_and_build`, which had failed only because the package was not installed, passes.
+- `pipelines/vision/eval_segmentation.py` in the `venv` on the Apple GPU, split 0.1.1: validation foreground mIoU 0.7253, test 0.7303. The six headline test figures equal the teammate's report; the largest per-class IoU difference is 0.0003.
+- `docker compose config` for four cases: the base file alone is fixture-only even with a stale `CMEV_PARTS_PRODUCER=real` in the environment file; the base and parts files give the worker and `real` on every service for `lean` and for `full`; the base file with the bare `parts` profile starts a worker that refuses to run.
+- The stack was run again in an isolated project with the base and parts files and only `--profile lean`. A claim uploaded over the HTTP API with three photographs reached an assessment in 9 seconds; PostgreSQL held 50 `part_prediction` rows labelled `real` for `parts/0.8.0-b3-compound`, 46 of them accepted. The stack and its images were removed afterwards and the user's `claim-cmev` project was not touched.
+- A small throwaway Compose project showed that `up` with the base file alone, even with `--remove-orphans`, leaves the worker's container running. `infra/README.md` says to run `down` with both files before going back to fixtures.
+- In the parts image, 3.3 GB of 5.7 GB of installed Python packages are NVIDIA CUDA libraries, and `torch.cuda.is_available()` is false there.
+Uncommitted work, limitations and missing prerequisites:
+- The user's own Compose stack was not started or rebuilt. Its application image is three days old and from another branch.
+- A workstation still on transformers 4 cannot serve this checkpoint; the worker refuses it there.
+- The other limits of the previous M1 entry stand: M2 and M3 are fixtures, image quality is `not_assessed`, the seed claims have no photo bytes.
+Next concrete step and agreed owner (or unassigned): Unassigned. Start the user's stack with the two Compose files, then begin M2 on the real part mask.
+
+
+## Check-in of the M1 work and the document workflow drawings (2026-10-08)
+
+Date/time and timezone: 2026-10-08, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request.
+Task and relevant module: Check in the pending changes on this branch. No behaviour changed in this step.
+Branch / baseline commit / resulting commit or PR: `M1-Implementation` / `e815164` / two local commits, the one containing this entry and the one before it. Use Git history for their identifiers.
+Changed paths and completed behaviour:
+- First commit: Codex's neural M5 workflow guide, its renderer and the specification index pointer, with that work's own entry in this file.
+- Second commit: the M1 work described in the five M1 entries above (2026-10-07 and 2026-10-08), two ignore rules for the model cache and diagnostics, and this entry.
+- Entries above that say "uncommitted" were written before this check-in.
+Checks actually run, results and artifact locations: the full Python suite passed immediately before the check-in (1506 passed, 3 skipped). The candidates were screened for credential-like strings and large files; none were found.
+Uncommitted work, limitations and missing prerequisites: not pushed. Two presentation files under `docs/` (about 13 MB each, never tracked on any branch) were left untracked. Model weights, converted masks and the environment snapshot stay in ignored locations.
+Next concrete step and agreed owner (or unassigned): the user decides when to push or open a pull request.
