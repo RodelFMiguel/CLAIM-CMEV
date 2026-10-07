@@ -1303,3 +1303,26 @@ Key Findings:
 4. Across all models, confusion matrices confirm that errors concentrate almost exclusively along adjacent panel seams (`back-door` <-> `front-door`, `grille` <-> `front-bumper`).
 
 Next concrete step: Finalize Module 1 default deployment selection and proceed to Module 2 (damage segmentation).
+
+
+## Neural M5 document tensor workflow drawings (2026-10-07)
+
+Date/time and timezone: 2026-10-07, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: Explain M4–M6 at the same tensor/transform detail as the existing M1–M3 drawing, using the user's planned neural M5.
+Branch / baseline commit / resulting commit or PR: `feat/m1-implementation` / inspected `e815164` / uncommitted; no commit or push performed. Concurrent M1 contributor work was preserved.
+Changed paths and completed behaviour:
+- `scripts/render_document_workflow.py`: reproducible Graphviz source for the full tensor workflow, a worked estimate example and model-training/target diagram. Generates a local tabbed/zoomable viewer plus SVG, PNG, PDF, DOT and PNG previews in ignored `artifacts/exports/document-workflow/`.
+- `docs/document-neural-workflow.md`: shape/coordinate definitions, primary-source references, model-versus-module boundaries, training targets, alignment limitations and regeneration instructions.
+- `docs/specs/README.md`: prominent pointer recording the user's neural-M5 planning direction; older parser-core/stretch status remains explicitly historical for this design.
+Decisions/status:
+- Accepted user direction: plan a neural M5. LayoutLMv3 is the illustrated existing candidate; exact architecture, BIO-11 example, window/subword policies and thresholds remain proposed. This task implements explanatory artifacts, not model serving or training.
+- M4 currently exposes line segments. Verified word geometry/alignment is a prerequisite for the illustrated word-based M5 route; the diagram does not invent word boxes or imply this adapter exists.
+- Distinguish M5 token logits from assembled line items; distinguish M6 class logits/box deltas from public detections and pending mark records. M6 geometry linking and human-confirmed amounts remain separate.
+Checks actually run, results and artifact locations:
+- All three diagrams rendered to SVG, PNG and PDF with Graphviz 14.1.1; previews visually inspected. SVG XML parses, PDF/PNG file signatures validate, and escaped-Unicode labels were checked after correction.
+- Renderer Python syntax checked; all 13 viewer links resolve; inline SVG/HTML IDs are unique. Tab selection, accessible selected state, zoom bounds and fit-width control exercised with a Node DOM stub (not a browser end-to-end run).
+- Model tensor interfaces checked against upstream PaddleOCR 2.10 inference code, Hugging Face LayoutLMv3 documentation/4.57.1 model source and torchvision detection source; sources are linked in the guide. No checkpoint inference or shape smoke test was run.
+- `git diff --check` passed for the documentation changes. No application tests or model training were needed for these diagrams.
+Uncommitted work, limitations and missing prerequisites: Generated exports are ignored and require the tracked source/script to regenerate elsewhere. Neural M5 alignment, training and row assembly adapters, and M6 real detector integration remain pending; no new accuracy or end-to-end acceptance claim. Existing broader specifications still need a deliberate implementation-plan revision when the neural recipe is selected.
+Next concrete step and agreed owner (or unassigned): Document lane (unassigned): select/validate the OCR word-alignment path, then pin M5 label encoding, chunking/assembly policy and training data before implementing the neural adapter.
