@@ -1,5 +1,7 @@
 # Evaluation plan
 
+> **Offline experiment update (2026-09-30):** the user selected SegFormer-B2 and HITL parts/damage for two manual training notebooks. See the [recorded experiment scope](../training-hitl-notebooks.md) for shared splits, the separate eight-class HITL damage taxonomy, evaluation objectives and limits. This experiment does not change serving contracts or claim CarDD benchmark results.
+
 Status: measurement plan for proposal v2. No experiment has been run. Every number below is a target, that is a hypothesis, not a result.
 Owner: Lane 5 coordinates the harness and the service checks. Each module owner produces their own module results. Lane 4 owns the consolidation and cost experiments. Named members are unassigned.
 Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 3.4, 11.5, 11.8, 12.2, 13.1 to 13.6. Module targets are copied unchanged from v2 section 13.1. Runtime checks follow [ADR 0002](../adr/0002-containerised-event-runtime.md).

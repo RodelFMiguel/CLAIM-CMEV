@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M1, M2 and M3 — illustrated workflow</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f8fafc; color: #0f172a; font: 16px system-ui, sans-serif; }
+    header { padding: 24px 32px 16px; background: white; border-bottom: 1px solid #cbd5e1; }
+    h1 { margin: 0 0 8px; font-size: 26px; }
+    p { margin: 6px 0 16px; color: #475569; max-width: 1000px; line-height: 1.5; }
+    nav, .zoom { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button { font: inherit; border: 1px solid #94a3b8; border-radius: 7px; padding: 9px 14px; background: white; color: #0f172a; cursor: pointer; }
+    button[aria-pressed="true"] { background: #0f172a; color: white; border-color: #0f172a; }
+    button:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+    .zoom { margin-top: 12px; }
+    #scale { min-width: 110px; }
+    main { overflow: auto; height: calc(100vh - 245px); min-height: 350px; padding: 18px; }
+    .drawing { width: 100%; }
+    .drawing svg { display: block; width: 100%; height: auto; }
+    .drawing[hidden] { display: none; }
+    @media print { header { display: none; } main { height: auto; overflow: visible; padding: 0; } .drawing { width: 100% !important; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>From photographs to parts with damage</h1>
+    <p>Follow the full M1 → M2 → M3 workflow, or explore a two-photo example. The drawings distinguish tensor predictions, evidence records and human confirmations. Values in the example are illustrative.</p>
+    <nav aria-label="Choose a drawing">
+      <button type="button" data-view="tensor" aria-controls="tensor" aria-pressed="true">1. Full tensor workflow</button>
+      <button type="button" data-view="example" aria-controls="example" aria-pressed="false">2. Part summary example</button>
+    </nav>
+    <div class="zoom" aria-label="Drawing zoom">
+      <button type="button" id="out" aria-label="Zoom out">−</button>
+      <button type="button" id="in" aria-label="Zoom in">+</button>
+      <button type="button" id="fit">Fit width</button>
+      <span id="scale" role="status">100% of width</span>
+    </div>
+  </header>
+  <main id="canvas" tabindex="0" aria-label="Scrollable diagram">
+    <section class="drawing" id="tensor" aria-label="Detailed M1 M2 M3 tensor workflow">@@TENSOR_SVG@@</section>
+    <section class="drawing" id="example" aria-label="Two photo summary example" hidden>@@EXAMPLE_SVG@@</section>
+  </main>
+  <script>
+    let zoom = 100;
+    function setZoom(value) {
+      zoom = Math.min(300, Math.max(50, value));
+      document.querySelectorAll('.drawing').forEach(d => d.style.width = zoom + '%');
+      document.getElementById('scale').textContent = zoom + '% of width';
+    }
+    document.querySelectorAll('[data-view]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+        document.querySelectorAll('.drawing').forEach(d => d.hidden = d.id !== button.dataset.view);
+        setZoom(100);
+        document.getElementById('canvas').scrollTo(0, 0);
+      });
+    });
+    document.getElementById('in').addEventListener('click', () => setZoom(zoom + 25));
+    document.getElementById('out').addEventListener('click', () => setZoom(zoom - 25));
+    document.getElementById('fit').addEventListener('click', () => setZoom(100));
+  </script>
+</body>
+</html>

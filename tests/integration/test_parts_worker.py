@@ -58,6 +58,9 @@ def registry(tmp_path: Path) -> Path:
     (model_dir / "manifest.json").write_text(json.dumps({
         "model_id": config.model_id, "version": config.model_version, "taxonomy_version": config.taxonomy_version,
         "weights_sha256": hashlib.sha256(weights).hexdigest(), "status": "candidate"}), encoding="utf-8")
+    (model_dir / "preprocessing.json").write_text(json.dumps({
+        "preprocessing_version": "1.0.0", "input_size": 512, "resize_policy": "longest_edge_pad", "color_space": "RGB",
+        "pixel_mean": [0.485, 0.456, 0.406], "pixel_std": [0.229, 0.224, 0.225], "pad_value": 0}), encoding="utf-8")
     return tmp_path / "registry"
 
 

@@ -83,6 +83,7 @@ The parts worker refuses to start, with exit code 1 and the reason in its log, w
 - the manifest names another model or taxonomy version than the configuration;
 - the weight file's SHA-256 differs from the manifest;
 - the checkpoint's class map is not the parts taxonomy's;
+- the entry has no `preprocessing.json`, or that file records another input size, resize policy, normalisation or padding value than the worker uses;
 - any tensor fails to load. This happens when the checkpoint was saved by another major version of transformers: version 5 renamed SegFormer's decode-head layers, and version 4 then leaves them at random values with only a warning.
 
 It also dead-letters, with reason `model_version_unsupported`, any parts command pinned to other versions than the ones it loaded.

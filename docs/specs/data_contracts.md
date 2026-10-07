@@ -1,5 +1,7 @@
 # Shared data contracts
 
+> **Offline experiment update (2026-09-30):** the user selected SegFormer-B2 and HITL parts/damage for two manual training notebooks. See the [recorded experiment scope](../training-hitl-notebooks.md) for shared splits, the separate eight-class HITL damage taxonomy, evaluation objectives and limits. This experiment does not change serving contracts or claim CarDD benchmark results.
+
 Status: **proposed** contract baseline for v2, target schema version `0.2.0`. Nothing here is implemented. These are field specifications to build into shared schemas and database migrations; they are not yet executable validators. Owner: Lane 5 coordinates; Lane 4 owns taxonomy, cost and finding semantics; each module owner owns its own records. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 2.2 and 2.3 (marks and amounts), 8 (decision rules), 9.3 (records), 9.6 (failure handling), 10 (modules), 11.6 (cost data) and 16 (transition).
 
 Transport, topic payloads, adapter signatures and the HTTP surface are in [integration contracts](integration_contracts.md). Runtime mechanics are in the [technical specification](technical_specification.md) under [ADR 0002](../adr/0002-containerised-event-runtime.md).

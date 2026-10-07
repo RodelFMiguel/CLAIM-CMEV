@@ -1,5 +1,7 @@
 # Model training specification
 
+> **Offline experiment update (2026-09-30):** the user selected SegFormer-B2 and HITL parts/damage for two manual training notebooks. See the [recorded experiment scope](../training-hitl-notebooks.md) for shared splits, the separate eight-class HITL damage taxonomy, evaluation objectives and limits. This experiment does not change serving contracts or claim CarDD benchmark results.
+
 Status: proposed implementation baseline. Not implemented, not measured. Aligned to [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 9.4, 9.5, 10, 11, 12.3, 12.4 and 13. Owners: Lane 1 (vision models), Lane 2 (document extraction), Lane 3 (mark synthesis and detector), Lane 4 (cost references), Lane 5 (registry contract and serving handover). Written 2026-09-22 against branch `project-structure`, HEAD `0c5ed2e`.
 
 This document is the offline counterpart to the online runtime. It says what is trained, on what data, with what recipe, and what files a run must produce. Every numeric recipe value below is **proposed** until a lane owner records a validation result. Targets quoted from the proposal are hypotheses, not results.

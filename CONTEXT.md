@@ -1,8 +1,10 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-09-27 (Asia/Singapore), status corrected by Claude Code after independent verification.
-- **Implementation baseline:** HEAD `6e59bc2` on branch `code-skeleton`, which sits on top of `f280209`. Both are local commits, and no push has been verified.
-- **Read first:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
+Last updated: 2026-10-08 (Asia/Singapore), notebook pipeline joined to the M1 serving path on `image-worker`; the 2026-09-27 application verification remains historical.
+- **Implementation baseline:** branch `image-worker`, which the user rebased onto `M1-Implementation` (`92d9d69`). The 2026-10-08 notebook/serving changes are in the commit that contains this line, on top of `2929064`; use Git history for its identifier. The rebase rewrote the branch, so publishing it replaces the earlier `origin/image-worker`; `git status -sb` shows whether the remote has it.
+- **Read first for M1:** the [notebook-to-serving handoff](#notebook-pipeline-joined-to-the-m1-serving-path-2026-10-08), then the [served-checkpoint handoff](#m1-served-checkpoint-connected-and-run-in-the-compose-stack-2026-10-07) and the [worker start-up handoff](#m1-worker-start-up-model-loading-and-opt-in-switch-2026-10-07).
+- **Read first for training:** the [M2 CarDD notebook handoff](#m2-cardd-notebook-and-converter-2026-10-02), the [M2 recall/regularisation handoff](#m2-recallregularisation-presets-and-background-offset-2026-10-02), the [M2 failure-review handoff](#m2-failure-review-and-tiny-fitting-diagnostic-2026-10-02), then the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
+- **Application baseline:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
 - **Older entries:** the chronological handoffs below keep their original status, which is sometimes superseded.
 
 This file is the team's maintained handoff, not an automatically synchronised chat transcript. Share it with the skills and source changes through the team's normal version-control workflow.
@@ -22,11 +24,12 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 | --- | --- |
 | Repository | The pipeline is in `f280209`. The defect remediation, specification notes and this file are in `6e59bc2`. Both are local commits, and no push has been verified |
 | Specifications | The full target is broader than the implementation. Only three M9 checklist boxes are ticked, and all three are supported by code. The ticking understates progress, because several implemented items are still unticked |
-| Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes |
+| Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes. Since 2026-10-07 an optional real M1 worker, `cmev-worker-parts`, can replace the fixture parts producer through `infra/compose/docker-compose.parts.yml`. It last ran in an isolated Compose project on 2026-10-07, before the 2026-10-08 frame check was added |
 | Application | Connected to the API/workbench: typed review actions, M6 decision replay, M3 reruns after human identity/coverage confirmations, pinned cost lookup, review-state overlays (dismissals and accepted scope), durable request retry, stage retry and frozen M9 reports. The evidence image overlays (`review/overlays.py`) are a library only; no endpoint or UI serves them |
-| Data and models | No trained model exists. M1 has **no code**: `vision/parts/` holds only `.gitkeep`. The M2 assignment, M4 raster/geometry/OCR, M5 parser and M6 linker are libraries covered by unit tests only; the pipeline never calls them. Derived masks and pages are placeholder URIs. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
+| Data and models | M1 has a serving adapter and worker (`vision/parts/`) and serves the teammate-trained SegFormer-B3 `parts/0.8.0-b3-compound` when the opt-in Compose file is used; the weights are local and not in Git. M2 to M8 do not read real M1 output, so every assessment is still a fixture. No M2 or M6 model is integrated. The M2 assignment, M4 raster/geometry/OCR, M5 parser and M6 linker are libraries covered by unit tests only; the pipeline never calls them. Derived masks and pages are placeholder URIs. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
+| Offline vision training (2026-10-08) | Two M1 pipelines. Scripts (`train_segformer.py`): SegFormer-B3 `parts/0.8.0-b3-compound`, validation foreground mIoU 0.7253 and test 0.7303 on split 0.1.1; that test partition was used to compare runs. Notebooks (`training.py`): SegFormer-B2 `f9be9131`, validation 0.799 on prepared data v2 in the centred frame; not comparable with the B3 figures (other labels, other split, and 109 of its training photographs are in the 0.1.1 test partition). Since 2026-10-08 the notebooks prepare v3 on the published split, M1 trains in the worker's frame and a run can be exported as a registry candidate; **no run exists on v3 yet**. M2 HITL: 0.222, 0.232 and 0.250 validation (`6203ed59`, `eacada43`, `3f7eb21b`). M2 CarDD: run `7981a76f`, validation foreground mIoU 0.737 on CarDD's official validation split (810 images). All notebook figures are validation results; their test splits are unused. No M2 runtime adapter exists |
 | Shared agent workflows | Canonical skills remain under `.agents/skills`, with no workflow changes |
-| Validation | At `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. Docker has not been re-run since `6e59bc2`. Independent verification found remaining and new defects; see the 2026-09-27 section |
+| Validation | On the 2026-10-08 working tree: the full Python suite has 1605 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript build, the browser tests and Docker were not re-run for it. Earlier, at `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. The `full` profile and the browser tests have not been re-run in Docker since `6e59bc2`; the lean stack with the M1 worker ran in an isolated Compose project on 2026-10-07. Independent verification found remaining and new defects; see the 2026-09-27 section |
 | Evaluation | No model accuracy, real price calibration, real claim outcome, usability comparison or financial benefit measured |
 
 
@@ -1305,6 +1308,232 @@ Key Findings:
 Next concrete step: Finalize Module 1 default deployment selection and proceed to Module 2 (damage segmentation).
 
 
+## Manual HITL training notebook handoff (2026-09-30)
+
+Date/time and timezone: 2026-09-30, Asia/Singapore.
+Contributor / coding agent: Codex, with three explicitly requested parallel agents for data preparation, shared training, and notebooks.
+Task and relevant module: Prepare separate manually runnable M1 part and M2 damage training notebooks with SegFormer-B2, editable backbones/settings, HITL data and GPU portability.
+Branch / baseline commit / resulting commit or PR: `code-skeleton`, inspected HEAD `b13e250`; local uncommitted changes, no commit or push performed.
+Changed paths and completed behaviour:
+- `notebooks/M1_HITL_parts_training.ipynb`, `M2_HITL_damage_training.ipynb`, their companion Markdown and notebook README; architecture/head explanations, editable training settings, validation metrics/confusions/overlays, checkpoint reload, model comparisons and opt-in final test.
+- `pipelines/vision/{hitl_data,training,extract_hitl}.py`, `requirements-training.txt`, three targeted unit-test modules; shared immutable preparation, union-level grouping, portable CUDA/MPS/CPU training/evaluation and safe archive extraction.
+- `data/manifests/hitl_training_{source,preparation}_20260930.json`, `docs/training-hitl-notebooks.md`, six scoped proposal/specification notes and `docs/verification/hitl-notebooks-2026-09-30.md`.
+Decisions (accepted/proposed): User selected SegFormer-B2 for both experiments and HITL damage under distinct `damage-hitl-1.0.0`. Serving contracts remain CarDD-based; this does not merge taxonomies or establish CarDD acceptance. Default split seed 20260922 and 70/15/15 group fractions; M1 all 21 foreground labels, M2 all 8. HITL M2 evaluation is descriptive, without transferring the CarDD numerical target.
+Checks actually run, results and artifact locations:
+- User supplied original 3.1 GB archive and extracted files in `data/raw/`; no network dataset download was necessary after supply. All 3,626 metadata/annotation/image entries matched archive CRC/size. Source receipt/archive SHA256 recorded.
+- Prepared 1,812 samples into `data/processed/hitl/v1`: M1 train 711 / val 147 / test 140; M2 train 558 / val 132 / test 124. 441 shared images stay together across both tasks; 1,371 union groups. Manifest `ea054e856b9f2bf71abe67eebb514e6b704b0291247fc5ec156cc70b54469f49`. Repeat preparation and artifact/split hashes verified.
+- 24 targeted tests passed, including bounded synthetic train/checkpoint/reload/evaluation/plot tests. Both notebooks validate/compile; all 7 pre-training cells each executed against real HITL. Six training overlays visually inspected.
+- Mac MPS selected outside sandbox; cached pretrained B2 with 22/9-class heads and random-init ResNet50/101 passed 64×64 forward/backward checks. No CUDA test. Python 3.12 `.venv` prepared; pip dependency check passes. Generated evidence in `artifacts/evaluation/notebook-validation/`.
+Uncommitted work, limitations and missing prerequisites: Full HITL fitting and held-out evaluation intentionally left for manual notebook execution. No new trained model or runtime integration claimed. No vehicle IDs or assignment reservations supplied; zero dHash candidates does not prove vehicle independence. Publisher raster mask palettes did not match sampled metadata colors, so conversion uses annotated polygons and does not claim raster agreement. Other HF semantic architectures untested. Existing untracked presentation files were preserved.
+Next concrete step and owner: User runs `.venv/bin/jupyter lab notebooks/`, selects the environment kernel, reviews grouping/reservations and settings, and starts M1/M2 training manually. Validation selects configurations; final tests remain unused until the protocol is frozen.
+
+
+### VS Code kernel repair (2026-09-30)
+
+- Current local environment is `venv`, with Python 3.12.14, ipykernel 7.4.0, PyTorch 2.14.0 and Transformers 4.57.6. The earlier `.venv` path no longer exists; previous setup notes describe the earlier environment.
+- The registered `claim-cmev` kernel still pointed at the absent `.venv/bin/python`. Re-registered it as **CLAIM-CMEV (Python 3.12)** using the current `venv/bin/python`. Kernel registration is local user configuration, outside Git.
+- Validation: launched the named kernel, executed a cell confirming its interpreter and ipykernel import, then shut it down successfully. Updated `notebooks/README.md` with the current launch command and VS Code selection steps. Preserved the user's notebook edits and outputs.
+- Next step: reload the VS Code window and select the named CLAIM-CMEV kernel for each notebook. Full training was not started by this repair.
+
+
+## HITL label preparation v2 and recipe presets (2026-10-01)
+
+Date/time and timezone: 2026-10-01, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request after a design review of the M1/M2 notebooks.
+Task and relevant module: Fix HITL mask conversion and apply the reviewed training-recipe changes; offline M1/M2 experiments.
+Branch / baseline commit / resulting commit or PR: `image-worker` / `abad09f` / uncommitted.
+Changed paths and completed behaviour:
+- `pipelines/vision/hitl_data.py`:
+  - New default `nested` overlap policy (`hitl-polygons-1.1.0`). When at least 80% of the smaller polygon lies inside a larger different-class polygon, the smaller one keeps the shared pixels. Other different-class overlaps stay 255.
+  - `overlap_policy="ignore_all"` keeps the v1 configuration hash byte-identical.
+  - Each record now carries per-record overlap stats.
+- `pipelines/vision/training.py`:
+  - `lr_schedule` (`cosine_epoch` legacy default, `poly`, `cosine`) with `warmup_epochs`, stepped after every optimizer update.
+  - Training-only `scale_range` random scale/crop, `rotation_degrees` and `saturation`.
+  - A `show_targets` audit helper that shows rare-class examples with ignored pixels in magenta.
+  - A `model_summary` helper. Both notebooks gained an "Inspect the model architecture" cell before training: parameter counts per module, encoder vs head, a blank-image test pass, and an optional full module printout.
+  - Saved runs reload unchanged because the new fields default to the old behaviour.
+- Both notebooks and their `.md` companions:
+  - `PREPARED_DIR` is now v2, with `OVERLAP_POLICY` and `NESTED_CONTAINMENT` settings.
+  - The audit cell uses `show_targets`.
+  - `RECIPE` presets: `baseline` (the first v1 run's recipe), `fixed` (encoder/head learning rates 6e-5/6e-4, two-epoch warmup, per-update poly decay, 100 epochs, patience 15) and the default `fixed_aug` (`fixed` plus scale 0.5-2x with crop, 10-degree rotation, saturation 0.15).
+  - Cells whose code changed had their stale outputs cleared. The M1 training-cell output from the v1 run is retained.
+- `data/processed/hitl/v2` (ignored) and `data/manifests/hitl_training_preparation_20261001.json`.
+- `docs/training-hitl-notebooks.md` and `notebooks/README.md`.
+- Tests in `tests/unit/test_hitl_training_data.py` and `tests/unit/test_vision_training.py`.
+Decisions (accepted/proposed) and references:
+- The overlap rule follows the training specification's proposed smaller-region-on-top policy, with a partial-overlap exclusion. The 0.8 threshold is proposed; it was chosen from the measured, strongly bimodal containment distribution.
+- The v1 conversion discarded 88% of front-window, 84% of licence-plate, 77% of mirror and 63% of back-window annotated pixels. Those classes had the lowest v1 validation IoU (0.28, 0.03, 0.31, 0.46).
+- v1 and v2 metrics are not comparable.
+Checks actually run, results and artifact locations:
+- 33 vision unit tests pass.
+- v1 reloads with its original manifest hash `ea054e85...`.
+- v2 manifest `d28a613c...`:
+  - All hashes were verified by `load_prepared`.
+  - Split files are identical to v1.
+  - Ignored training pixels fell from 10.27M to 0.99M for parts and from 1.51M to 0.31M for damage.
+  - Front-window training pixels grew 7.3x, licence-plate 5.4x and mirror 4.5x.
+- Audit overlays for both tasks were inspected visually.
+- Pre-training cells of both notebooks executed on v2.
+- A 2-epoch, 24-image SegFormer-B2 smoke run of `fixed_aug` completed on MPS. Its output went to the scratchpad; it is not a model result.
+- The completed v1 M1 run is `artifacts/models/parts/parts-segformer-20260930T135639Z-6ab8335a`.
+Uncommitted work, limitations and missing prerequisites:
+- Everything above is uncommitted.
+- No full-data run exists for v2 or the new recipes.
+- The damage overlaps between dent and broken-part (median containment about 0.25) remain ignored by design.
+- The supported-panel list for the M1 0.40 floor is still not frozen.
+- The test split remains unused.
+Next concrete step and agreed owner (or unassigned): The user runs M1 manually with `RECIPE="fixed_aug"` on v2. For attribution, optionally also run `baseline` on v2 (label effect) and `fixed` (recipe effect). Then compare on validation and run M2 the same way.
+
+## M2 damage-focused notebook adjustments (2026-10-01)
+
+Date/time and timezone: 2026-10-01, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: Apply the reviewed M2 training adjustments following the low validation score; remove duplicate notebook Markdown files. Offline M2 training/evaluation only.
+Branch / baseline commit / resulting commit or PR: `image-worker` / `abad09f` / local uncommitted changes; no commit or push performed.
+Changed paths and completed behaviour:
+- `notebooks/M2_HITL_damage_training.ipynb`: default `focused_640` transfers the ADE20K SegFormer-B2 encoder/decoder with a new nine-class classifier, allows decoder BatchNorm adaptation, uses mixed full-image/random/damage-focused crops, and reduces learning rates on validation plateaus after warmup. Staged `previous`, `bn_only`, `ade`, `plateau`, `focused_512`, `focused_640`, `rare_sampling` and `convnext` presets retain editable controls. Includes rare-class label/source audit, actual crop previews, binary foreground metrics, common-resolution validation comparisons and disabled final test.
+- `pipelines/vision/training.py`: opt-in crop mixture and capped training-only repeat sampling, plateau scheduling with early-stop grace after an LR reduction, collapsed binary foreground metrics, and explicit evaluation-resolution overrides with separate artifacts/provenance checks. Existing defaults preserve older runs and M1 behavior.
+- Deleted `notebooks/M1_HITL_parts_training.md` and `notebooks/M2_HITL_damage_training.md` as requested. Updated `notebooks/README.md`, `docs/training-hitl-notebooks.md` and `tests/unit/test_vision_training.py`. M1 notebook and the existing v2 converter edits were preserved.
+- Backed up the original M2 notebook and outputs to ignored `artifacts/exports/notebook-backups/M2-before-adjustments-20261001T150000Z.ipynb`, then cleared stale M2 outputs. Existing model runs remain intact.
+Decisions (accepted/proposed) and references:
+- The earlier statement that no full v2 run exists is superseded by completed M2 run `damage-segformer-20261001T003540Z-6203ed59`: best validation foreground mIoU 0.2224 at epoch 9; stopped after 24 epochs. Final training mIoU 0.5565 and validation 0.1966 suggest a generalization problem, without proving an architecture limitation. Prepared manifest remains `d28a613cc29735304987f1bc4c806585856a09af0666bb736613f1f1a91beed8`.
+- `focused_640` is a combined candidate recipe, not an individually attributed accuracy improvement. Optional rare sampling and UperNet–ConvNeXt remain separate comparisons. Label corrections require a new prepared version; no annotations or splits were changed.
+- Validation/test retain deterministic whole-image letterboxing. Resolution comparisons require the same declared evaluation grid and write `val_size<N>_*` artifacts without replacing original metrics. Binary metrics collapse multiclass argmax, not a separately tuned threshold or assignment evaluation.
+Checks actually run, results and artifact locations:
+- `MPLBACKEND=Agg MPLCONFIGDIR="$PWD/artifacts/evaluation/notebook-validation/mpl" venv/bin/python -m pytest -q tests/unit/test_vision_training.py tests/unit/test_hitl_training_data.py tests/unit/test_extract_hitl.py`: **43 passed**. Coverage includes tiny-target retention/alignment, train-only crops/sampling, binary confusion, LR reductions/early-stop grace, BN adaptation, and common-resolution provenance/plots.
+- Both notebooks validate with nbformat and their code cells parse. Eight revised M2 pre-training cells ran against the real immutable v2 data (558 training images); all eight presets instantiate and original annotation paths resolve. Generated crop previews visually inspected.
+- Downloaded the ADE20K B2 checkpoint to the ignored Hugging Face cache under `artifacts/models/.cache/`; resolved revision `de01bae28967510f9ddd496c60a969357195400c`. One synthetic 2x128x128 forward/backward check passed on Apple MPS with nine-class logits, finite gradients and changing decoder BN statistics. Only the expected final classifier weights were reinitialized.
+- Evidence: `artifacts/evaluation/m2-adjustments-20261001/`, plus `artifacts/evaluation/m2-adjustments-validation.log` and `m2-adjustments-pretrained.log`. `git diff --check` passed.
+Uncommitted work, limitations and missing prerequisites: No full fit, new validation score or final-test evaluation was run. Default 640 training memory/throughput and the optional ConvNeXt model were not benchmarked. Exact interrupted-run resume and native-resolution tiled inference remain future work. No serving integration or accuracy improvement is claimed. Existing unrelated changes remain in the working tree.
+Next concrete step and agreed owner: User restarts the project `venv` kernel to load the changed helper module, reviews the audit/crop cells and runs M2 manually. Use `focused_640` for the combined candidate or the staged presets for attribution; compare validation at the same resolution before freezing the test protocol.
+
+## M2 failure review and tiny fitting diagnostic (2026-10-02)
+
+Date/time and timezone: 2026-10-02, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: Make the proposed 20–30-example flaking/paint-chip audit and small reviewed-training-subset fitting test executable for the user; offline M2 diagnosis.
+Branch / baseline commit / resulting commit or PR: `image-worker`; inspected HEAD moved from `abad09f` to `343ef1a` during work. Existing contributor changes/commit preserved; this agent made no commit or push.
+Changed paths and completed behaviour:
+- `notebooks/M2_HITL_failure_audit.ipynb` and `pipelines/vision/diagnostics.py`: load a frozen M2 checkpoint; rank class-present train/val images by missed class pixels; distinguish background/type misses and labels erased by resizing; export distinct class-balanced review images with native close-ups and original annotation locators.
+- Editable review CSV requires a human `clean` decision. A separate manual fitting cell accepts only explicitly selected, unchanged original training images; preserves all nine labels; fits a fresh pretrained model without augmentation; reports same-image loss, per-class IoU and overlays. Test/reserved images are refused by the audit; validation/test records cannot enter fitting.
+- `tests/unit/test_vision_diagnostics.py`, `notebooks/README.md`, `docs/training-hitl-notebooks.md`, `.gitignore` (new ignored `artifacts/diagnostics/`). Main M1/M2 notebooks and source annotations were not changed by this task.
+Decisions/status:
+- The reference M2 run `damage-segformer-20261001T151123Z-eacada43` is now completed (34 epochs, best epoch 19; best foreground validation mIoU 0.2324). This supersedes the earlier handoff saying the revised recipe had no full fit. The user ran that fit; this task did not retrain it.
+- Memorization scores are explicitly diagnostic, not held-out metrics or serving candidates. No split is fabricated to masquerade as validation, and no annotations are automatically corrected. A failed/ambiguous human review is never automatically accepted.
+Checks actually run, results and artifact locations:
+- Four vision test modules: **49 passed**, including class-balanced unique selection, ignored pixels, human-review/provenance gates, train-only fitting, failure status and fixture checkpoint/history output. Fixture fitting is not evaluated model performance.
+- New notebook schema validates and all code cells parse. All six code cells ran with real HITL and the tiny-fit switch disabled; the saved-review resume path was also exercised.
+- Actual saved-checkpoint inference on Apple MPS scored 232 class-present training images. Exported 24 distinct failure pages: 12 flaking, 12 paint-chip. Review decisions are all blank. No selected target was entirely erased by resizing; this does not prove visual clarity or correct annotation.
+- Review packet: `artifacts/diagnostics/m2/20261001T163333Z-train-f5c955/` (`review.csv`, `all_focus_scores.csv`, `audit.json`, 24 PNGs). Visually inspected pages from both focus classes. Logs: `artifacts/evaluation/m2-failure-audit-validation.log` and `m2-failure-audit-render.log`. Generated artifacts are Git-ignored; `git diff --check` passed.
+Limitations: Human label review and real-image tiny fitting remain pending. No label quality verdict, new generalization score, test evaluation, or CarDD integration is claimed. The chosen failures are a biased diagnostic sample, not an estimate of overall annotation error.
+Next concrete step and owner: User reviews the 24 PNGs and fills `review.csv`, then opens the audit notebook, loads the existing packet, explicitly chooses 4–8 clean training IDs and enables `RUN_TINY_FIT`. Inspect focus-class curves and masks before choosing the next full training experiment.
+
+
+## M2 recall/regularisation presets and background offset (2026-10-02)
+
+Date/time and timezone: 2026-10-02, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request after reviewing why M2 does not improve.
+Task and relevant module: M2 damage segmentation training recipe (offline).
+Branch / baseline commit / resulting commit or PR: `image-worker` / `343ef1a` / uncommitted.
+Diagnosis (validation, from saved metrics):
+- Runs `6203ed59` (0.2224) and `eacada43` (`focused_640` with ADE20K checkpoint and damage-aware crops, 0.2324) are within validation noise of each other.
+- Both overfit after about epoch 10: training mIoU rises to 0.56-0.69 while validation stays at 0.20-0.23.
+- Both miss about half of the damage pixels as background. Any-damage recall is 0.53-0.63.
+- Merging the 8 classes into 4 groups (from the confusion matrix) only reaches about 0.33 mIoU, so damage-vs-background is the bottleneck rather than type confusion.
+Changed paths and completed behaviour:
+- `pipelines/vision/training.py`. All new fields default to off, so saved runs reload unchanged.
+  - `class_weighting="sqrt_inverse"` with `class_weight_cap`: cross-entropy weights sqrt(f_background / f_class) from TRAINING pixel counts only, recorded in the run manifest.
+  - `drop_path_rate` and `classifier_dropout`, applied to the SegFormer config.
+  - `ema_decay`: averaged weights with a decay warmup of min(decay, (1+n)/(10+n)). Validation and checkpoints use the averaged weights; `raw_model` keeps the trained ones.
+  - Per-epoch `val_binary_iou`, `val_binary_recall` and `val_binary_precision` in the history and printout, plotted when present.
+  - `tune_background_offset`: validation only, one pass, saved as `val[_sizeN]_background_offset.json`. `evaluate_run`, `plot_confusion` and `show_predictions` accept `background_offset` and write separate `_bg<offset>` reports.
+- `notebooks/M2_HITL_damage_training.ipynb`:
+  - New presets `weighted_loss` (`rare_sampling` + class weights) and the default `damage_focus` (+ drop path 0.2, decoder dropout 0.2, weight decay 0.05, EMA 0.995).
+  - A class-weight table in the config cell.
+  - A new background-offset tuning section after the comparison cell.
+  - The final test reuses the validation-selected offset.
+  - Code cells whose source changed were cleared.
+- `tests/unit/test_vision_training.py`: 9 new tests.
+- `notebooks/README.md` and `docs/training-hitl-notebooks.md`.
+- Not touched: the user's uncommitted `M2_HITL_failure_audit.ipynb`, `pipelines/vision/diagnostics.py` edits and `artifacts/diagnostics/`.
+Decisions (accepted/proposed) and references: All recipe values are proposed starting points. The background offset is a post-hoc validation choice and must not be tuned on test. CarDD is not used: consent and files are still absent from `data/raw/`.
+Checks actually run, results and artifact locations:
+- 57 vision unit tests pass.
+- The M2 notebook validates, and its setup cells run on v2. On v2 the class weights are broken-part 4.56, dent 6.87, and 10 (the cap) for the other damage classes.
+- Real SegFormer-B2 (ADE20K) smoke runs on MPS completed with all new controls (16 train and 8 val images, output in the scratchpad, not a model result). They exposed an early-averaging lag, fixed with the decay warmup and re-checked.
+- Offset tuning on existing models (validation, 640 px):
+  - `eacada43`: 0.232 -> 0.240 at offset +1.0, any-damage IoU 0.435 -> 0.467, recall 0.53 -> 0.61.
+  - `6203ed59`: 0.221 -> 0.222 at -0.25.
+  - Reports are in each run's `artifacts/evaluation/<run>/val_size640_*`.
+  - These gains are optimistic, because the offset was chosen and scored on the same validation set.
+Uncommitted work, limitations and missing prerequisites: Uncommitted. No full `weighted_loss` or `damage_focus` run exists, so the effect of the new presets is unknown. Validation noise between epochs is about ±0.02 mIoU.
+Next concrete step and agreed owner (or unassigned): The user restarts the kernel and runs M2 with `damage_focus`. For attribution, optionally also run `weighted_loss`. Then tune the background offset at 640 and compare against `eacada43` with `compare_runs`. CarDD pretraining waits for consent and files.
+
+
+## M2 CarDD notebook and converter (2026-10-02)
+
+Date/time and timezone: 2026-10-02, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request while the user copies CarDD into `data/raw/CarDD_release/`.
+Task and relevant module: M2 damage segmentation on CarDD, the specified M2 dataset (offline).
+Branch / baseline commit / resulting commit or PR: `image-worker` / `343ef1a` / uncommitted.
+Status before this work: the best HITL M2 run, `damage-segformer-20261002T004306Z-3f7eb21b` (`damage_focus`), reached 0.241 validation mIoU at epoch 44 with any-damage IoU about 0.50. It was still training when this entry was written. HITL stays the documented contingency.
+Changed paths and completed behaviour:
+- New `pipelines/vision/cardd_data.py`:
+  - `inspect_cardd` is a read-only check of a CarDD copy.
+  - `prepare_cardd` converts COCO instance annotations into `data/processed/cardd/<version>` in the HITL-compatible layout. Files are discovered by category names; the split comes from the file name; polygons and list/compressed RLE are supported; different-class overlaps go to the smaller instance; `iscrowd` regions become ignore 255; EXIF orientation is aligned or rejected.
+  - Official splits are kept, but cross-split exact or pixel duplicates stay only in the earliest of train, val and test. Unchanged originals are byte copies; `max_side` stores optional downscaled copies.
+  - `load_prepared` is reused from `hitl_data`.
+- `pipelines/vision/training.py`: a `TASKS` table adds `damage_cardd`, with artifacts under `artifacts/models/damage-cardd/` and `dataset: CarDD`.
+- New `notebooks/M2_CarDD_damage_training.ipynb` (31 cells):
+  - Inspection, preparation, support and label audit, crop preview, architecture, training, validation, 640-pixel comparison, background-offset tuning, reload and an opt-in final test.
+  - Recipes `focused_640`, `weighted_loss`, default `damage_focus` and `convnext`, with 60 epochs maximum and patience 10.
+- New `tests/unit/test_cardd_data.py`: 7 tests.
+- `notebooks/README.md`, `docs/training-hitl-notebooks.md`.
+Decisions (accepted/proposed) and references:
+- The M2 specification and contracts use CarDD; this follows them.
+- Overlap and crowd handling follow the M2 specification's smaller-area-wins rule.
+- The cross-split duplicate policy and the `damage_focus` carry-over are proposed.
+- CarDD consent remains the team's responsibility; the converter records but does not verify it.
+Checks actually run, results and artifact locations:
+- 59 vision tests pass.
+- Every code cell of the new notebook ran end to end against a synthetic CarDD-format dataset in the scratchpad. This included real SegFormer-B2 ADE20K training for 2 epochs at 128 px on MPS, plus validation, comparison, offset tuning and reload.
+- Real release (`data/raw/CarDD_release/`, 5.7 GB including the unused `CarDD_SOD` folder):
+  - `inspect_cardd` found `CarDD_COCO/annotations/instances_{train,val,test}2017.json` with 2,816/810/374 images and 6,211/1,744/785 polygon instances.
+  - There are no crowd or RLE annotations and no missing images. The longer side is at most 1,000 px (median 1000x667), so `max_side` is not needed.
+- `data/processed/cardd/v1` (manifest `fc89ec07...`) was created by the user's notebook kernel at 12:25.
+  - A concurrent preparation by Claude Code failed safely at the final atomic rename and left no files.
+  - `load_prepared` verified every hash, and `prepare_cardd` reloads v1 unchanged.
+  - All 4,000 images are kept as byte copies with EXIF orientation 1, and nothing was excluded.
+  - Background is 74.6% of labelled pixels (HITL: about 92%). The rarest class, tire-flat, appears in 219 training images. 739 images have different-class overlap.
+- The near-duplicate audit flagged 4 pairs at dHash distance 3 or less. All are the same stock photograph with recolouring or tone changes (for example a blue car versus a red car). One pair crosses splits: train `000473.jpg` and val `000790.jpg`. It is left in place and only recorded, because the policy acts on exact duplicates only. No test image is involved.
+- Label overlays for tire-flat, lamp-broken, glass-shatter, scratch, dent and crack were inspected and align with the photographs.
+Uncommitted work, limitations and missing prerequisites:
+- Uncommitted.
+- No CarDD model result exists.
+- An epoch at 640 px is expected to take roughly 10-15 minutes on the Mac.
+- Recoloured near-duplicates beyond the dHash threshold may remain undetected.
+Next concrete step and agreed owner (or unassigned): The user trains `damage_focus` from the CarDD notebook. Whether to exclude val `000790.jpg` is a team choice; excluding it would require a new prepared version.
+
+## Illustrated vision workflow (2026-10-06)
+
+Date/time and timezone: 2026-10-06, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: Draw the M1/M2 tensor and postprocessing workflow through M3 part summaries and coverage, at the user's request.
+Branch / baseline commit / resulting commit or PR: `image-worker` / `fef6da7` / uncommitted; no commit or push performed.
+Changed paths and completed behaviour:
+- `docs/diagrams/vision-tensor-workflow.dot`, `vision-summary-example.dot`: editable full workflow and illustrative two-photo summary drawings.
+- `docs/diagrams/vision-workflow-viewer.html`, `render_vision_workflow.py`: self-contained zoomable viewer template and Graphviz renderer. SVG/PDF/PNG/HTML exports live in ignored `artifacts/exports/vision-workflow/`.
+- `docs/specs/vision-workflow-illustrated.md`: legend, shape semantics, implementation boundaries, reproducible rendering command and source links. Linked from the specification index and the user's existing untracked `misc-design-explanations.md`; its existing content was preserved.
+Decisions (accepted/proposed) and references: Explanation only; no serving, taxonomy, threshold or runtime decisions changed. The drawing uses 512 as an example, distinguishes native logits from upsampled scores, shows M2 overlap before M3 grouping, and keeps coverage separate from damage summaries. Existing M1 adapter code supersedes older handoff statements that M1 has no code; this work does not establish adapter acceptance or live model integration.
+Checks actually run, results and artifact locations:
+- Graphviz rendered both diagrams to SVG/PDF/PNG with no warnings after correcting cross-cluster rank configuration; SVG XML parsed successfully.
+- Visually inspected PNG previews of both layouts. Verified all 25 guide link targets exist locally, generated exports are ignored, and `git diff --check` passes.
+- Checked generated viewer contains two embedded SVGs, unique IDs and no external assets; Node JavaScript syntax check passed. Browser interaction was not exercised: Playwright is not installed in this checkout.
+Uncommitted work, limitations and missing prerequisites: Documentation only, no models run and no accuracy measured. Serving preprocessing/padding reconciliation, live M2 adapter, HITL-to-serving taxonomy decisions, and runtime ownership of M3 pixel measurements remain pending. User `.gitignore` changes, presentation files and existing explanation text were preserved.
+Next concrete step and agreed owner (or unassigned): User reviews the drawings; integration owners (unassigned) reconcile the explicitly documented serving boundaries before connecting live M1/M2 outputs to M3.
+
+
 ## M1 serving and trainer fixes after branch review (2026-10-07)
 
 Date/time and timezone: 2026-10-07, Asia/Singapore.
@@ -1527,3 +1756,70 @@ Changed paths and completed behaviour:
 Checks actually run, results and artifact locations: the full Python suite passed immediately before the check-in (1506 passed, 3 skipped). The candidates were screened for credential-like strings and large files; none were found.
 Uncommitted work, limitations and missing prerequisites: not pushed. Two presentation files under `docs/` (about 13 MB each, never tracked on any branch) were left untracked. Model weights, converted masks and the environment snapshot stay in ignored locations.
 Next concrete step and agreed owner (or unassigned): the user decides when to push or open a pull request.
+
+
+## Notebook pipeline joined to the M1 serving path (2026-10-08)
+
+Date/time and timezone: 2026-10-08, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request, after the user rebased `image-worker` onto `M1-Implementation`.
+Task and relevant module: M1 offline training and serving. The rebase put two M1 pipelines side by side: the notebooks (`pipelines/vision/training.py`) and the scripts that trained the served checkpoint (`train_segformer.py`). They used different library versions, splits and model frames, and a notebook run could not reach the worker.
+Branch / baseline commit / resulting commit or PR: `image-worker` / `2929064` / the commit containing this entry; use Git history for its identifier.
+
+Changed paths and completed behaviour:
+- `pipelines/vision/training.py`:
+  - `load_run` translates tensor names saved under transformers 4 with the library's own rename table. Before this, every saved notebook run failed to reload under transformers 5 with several hundred missing and unexpected keys. Loading stays strict.
+  - `TrainingConfig(frame="serving")` builds the M1 worker's model frame: photograph top-left, black padding, the application's resize. The default stays `"centred"`, so saved runs reload unchanged. A serving-frame run records `input_size`, `resize_policy`, `pixel_mean`, `pixel_std` and `pad_value`.
+- New `pipelines/vision/registry.py`: `export_parts_run(run_dir, "parts/<name>")` writes a notebook run as a registry entry with status `candidate`. It refuses a run of another task, architecture, class order, frame or size, and never replaces an entry. Before the entry appears it is loaded with the worker's verification and loader, and its logits are compared with the run's.
+- `src/claim_cmev/vision/parts/adapter.py`: `verify_checkpoint` reads the entry's `preprocessing.json` and refuses the entry when it is missing (`preprocessing_missing`) or records another input size, resize policy, normalisation or padding value (`preprocessing_mismatch`). The script trainer already wrote that file; nothing read it.
+- `pipelines/vision/hitl_data.py`: `prepare_hitl(..., split_from=<published split folder>)` gives every parts photograph, and the same photograph in the damage subset, its published partition. The seed and ratios place only the remaining photographs. Without `split_from` the configuration hash is unchanged.
+- `requirements-training.txt`: transformers 5.17 or later, like the `vision` extra.
+- `tests/contracts/test_taxonomy.py`: the real-HITL-folder test looked only directly under `data/raw` and skipped although the export was present one folder down. It now looks where the pipelines look.
+- Notebooks:
+  - M1 and M2 HITL prepare `data/processed/hitl/v3` with `SPLIT_FROM = data/splits/parts/0.1.1`.
+  - M1 sets `frame="serving"` and has a new opt-in export section.
+  - The outputs of the changed code cells were cleared. The other outputs, including the training outputs, are from the earlier v2 runs.
+  - The CarDD notebook only gained a sentence on reloading.
+- New `data/manifests/hitl_training_preparation_20261008.json`, the tracked record of v3.
+- Documentation: the M1 specification gained a dated note; `pipelines/README.md`, `notebooks/README.md`, `docs/training-hitl-notebooks.md` and `infra/README.md` describe the changes. `docs/specs/vision-workflow-illustrated.md` and `docs/diagrams/vision-tensor-workflow.dot` named a removed function and described the frames as unreconciled. The 13 absolute workstation links in `docs/specs/misc-design-explanations.md` are now relative.
+- Tests: `tests/unit/test_vision_registry_export.py` (new), additions to `test_vision_training.py`, `test_hitl_training_data.py` and `test_parts_serving.py`.
+
+Decisions (accepted/proposed) and references:
+- Accepted by the user on 2026-10-08: new notebook runs use the published parts split 0.1.1.
+- Proposed: the worker refuses a registry entry without a matching `preprocessing.json`.
+- Proposed: a centred-frame run is not exportable. The measured cost of the mismatch is small (see below), but its recorded score would not describe what is served.
+- The M1 specification's step 5 proposes mean-pixel padding; the worker and every registry entry pad with black. The note in the specification records this without editing the step.
+
+Checks actually run, results and artifact locations:
+- Full Python suite in the workstation `venv` (torch 2.14.0, transformers 5.19.0): 1605 passed, 1 skipped (the optional real-PaddleOCR test). Before this work on the rebased branch: 1570 passed, 3 skipped.
+- All six saved notebook runs reload under transformers 5.19. Two were re-evaluated on validation, in scratch copies so the recorded artifacts were not overwritten:
+
+| Run | Recorded foreground mIoU | Reloaded under transformers 5 |
+| --- | --- | --- |
+| `parts-segformer-20260930T161904Z-f9be9131` (147 images, v2) | 0.798910 | 0.798910 |
+| `damage_cardd-segformer-20261002T043059Z-7981a76f` (810 images) | 0.737395 | 0.737395 |
+
+- The pretrained `nvidia/mit-b2` and `nvidia/segformer-b2-finetuned-ade-512-512` encoders load completely under transformers 5; only the new head or classifier is initialised.
+- A unit test holds a serving-frame validation tensor equal to the tensor the worker passes to its model for the same photograph.
+- `data/processed/hitl/v3` was prepared on the real export (manifest `21afa6b37cf13286...`, 64 s):
+  - Parts 706/145/147, damage 565/119/130.
+  - No parts photograph and none of the 441 shared damage photographs is off its published partition.
+  - Every mask hash equals v2.
+  - v1 and v2 reload with their original manifest hashes.
+- In v2, 109 parts photographs of the training partition are in the published test partition. This is why v2 runs cannot be scored on that partition.
+- Frame cost: run `f9be9131` scores 0.7989 validation foreground mIoU in its own frame and 0.7929 when the same photographs are fed in the serving frame. The largest per-class drop is 0.018 (mirror).
+- Smoke run, not a model result: 16 training photographs of v3, one epoch, SegFormer-B2, `frame="serving"`, in a scratch folder. It was exported, loaded by `load_parts_segmenter` and run on one real photograph (status succeeded, side unknown).
+- The real `parts/0.8.0-b3-compound` entry passes the new frame check (`tests/unit/test_parts_segmenter_live.py`).
+- The setup cells of all four notebooks ran from a script against the real data, without saving outputs.
+- Not run: Docker, the browser tests and the TypeScript build. The parts image has not been rebuilt with the frame check.
+
+Uncommitted work, limitations and missing prerequisites:
+- Committed on 2026-10-08 at the user's request, who also asked for the branch to be pushed. Because of the rebase the push replaces the earlier `origin/image-worker` (tip `cf0e237`). Its five commits are the pre-rebase copies of the user's own commits: every file that only they touched is identical in the rebased branch. `git status -sb` shows whether the remote has the new branch.
+- Not committed: two presentation files under `docs/`, left untracked as before. A leftover `autostash` entry with a one-line `.gitignore` change is in the stash list and was not touched.
+- No model has been trained on v3 or in the serving frame. The existing B2 `f9be9131` cannot be exported.
+- The published test partition was used to compare the script pipeline's runs, so it is not an untouched test set for either pipeline.
+- The notebook and script evaluators are not comparable: the notebook masks use the `nested` overlap policy and leave padding out of the metrics; `eval_segmentation.py` labels padding as background and counts it.
+- The M2 notebooks keep the centred frame. M2 will need the M1 frame when its masks are overlaid on part masks, and the CarDD run `7981a76f` was trained in the centred frame.
+- Notebook outputs of unchanged cells still show v2 figures until the notebooks are rerun.
+- Earlier notes that are still open: the parts image installs a CUDA PyTorch build on CPU, the overlay is rendered inside the handler's transaction, three configuration keys are unused, and there is no warm-up inference.
+
+Next concrete step and agreed owner (or unassigned): the user reruns the M1 notebook on v3 (`fixed_aug`, `frame="serving"`), compares on validation, and exports the chosen run with the notebook's last section. Whether a notebook B2 or the script B3 is served, and on which evaluation, is a team decision. Unassigned: decide the M2 frame before an M2 worker is written.

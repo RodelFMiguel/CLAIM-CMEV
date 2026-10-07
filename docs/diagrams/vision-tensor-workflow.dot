@@ -1,0 +1,76 @@
+digraph VisionWorkflow {
+  graph [rankdir=TB, newrank=true, bgcolor="#F8FAFC", pad=0.45, nodesep=0.65, ranksep=0.42,
+    fontname="Helvetica", fontsize=24, fontcolor="#0F172A", labelloc=t,
+    label="M1 + M2 → M3  |  From photographs to part evidence\nDetailed data flow • 512 × 512 example • intended serving path\n "];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="#CBD5E1",
+    fontname="Helvetica", fontsize=13, fontcolor="#0F172A", margin="0.22,0.15", penwidth=1.3];
+  edge [color="#64748B", arrowsize=0.75, penwidth=1.4, fontname="Helvetica", fontsize=11, fontcolor="#475569"];
+
+  raw [label="ORIGINAL EVIDENCE\nJPEG / PNG bytes → RGB uint8 [H₀, W₀, 3]\nOne photo ID per image; preserve original bytes and hash\nB = number of photos in a batch; predictions stay separate", fillcolor="#E2E8F0"];
+  prep [label="PREPROCESS FOR THE SELECTED CHECKPOINT\nDecode + EXIF orientation → aspect-preserving resize → pad\nExample: 1200 × 800 → 512 × 341 → 512 × 512\nRGB / 255; normalize each channel: (value − mean) / std\nmean = (0.485, 0.456, 0.406); std = (0.229, 0.224, 0.225)\nHWC → CHW; stack photos → float32 [B, 3, 512, 512]\nKeep orientation, scale and padding transform T", fillcolor="#E2E8F0"];
+  raw -> prep;
+
+  subgraph cluster_m1 {
+    label="M1  |  Vehicle parts"; fontsize=19; fontcolor="#1D4ED8";
+    color="#93C5FD"; style="rounded,filled"; fillcolor="#EFF6FF"; margin=20;
+    pnet [label="TRAINED PART MODEL • separate weights\nMiT encoder → segmentation decoder / class head\nInput: float [B, 3, 512, 512]\nC₁ = 22: background + 21 part classes", fillcolor="#DBEAFE", color="#60A5FA"];
+    plog [label="NATIVE NETWORK OUTPUT: LOGITS\nfloat [B, 22, h₁, w₁]\n22 unnormalized class scores per output location\nh₁, w₁ depend on the network; not assigned labels"];
+    pup [label="BILINEAR UPSAMPLE • align_corners = false\n[B, 22, h₁, w₁] → [B, 22, 512, 512]\nResize score maps, before selecting class IDs"];
+    psoft [label="SOFTMAX OVER CLASS DIMENSION (dim = 1)\nProbabilities: float [B, 22, 512, 512]\nAt each pixel, the 22 probabilities sum to 1"];
+    pmask [label="ARGMAX OVER CLASSES (dim = 1)\nPart class IDs P: integer [B, 512, 512]\nSplit batch → one indexed PNG [512, 512] per photo\n0 = background; other IDs follow the saved class map", fillcolor="#DBEAFE"];
+    prec [label="PART POSTPROCESSING → PartPrediction records\nFor each present non-background class:\ncount pixels; mean probability on that class's pixels\nApply minimum area + confidence; retain rejected rows\nphoto_id, part_code, accepted, pixel_count, mean_confidence\nmask reference + transform T + versions; side = unknown\nAlso return photo-level ImageQuality (limited in current adapter)", fillcolor="#DBEAFE"];
+    pnet -> plog -> pup -> psoft -> pmask -> prec;
+  }
+
+  subgraph cluster_m2 {
+    label="M2  |  Damage + part assignment"; fontsize=19; fontcolor="#C2410C";
+    color="#FDBA74"; style="rounded,filled"; fillcolor="#FFF7ED"; margin=20;
+    dnet [label="TRAINED DAMAGE MODEL • separate weights\nMiT encoder → segmentation decoder / class head\nInput: float [B, 3, 512, 512]; M1 mask is NOT a neural input\nC₂ = 7 CarDD classes incl. background; HITL variant = 9", fillcolor="#FFEDD5", color="#FB923C"];
+    dlog [label="NATIVE NETWORK OUTPUT: LOGITS\nfloat [B, C₂, h₂, w₂]\nC₂ unnormalized damage scores per output location\nCarDD: dent, scratch, crack, glass-shatter,\nlamp-broken, tire-flat + background"];
+    dup [label="BILINEAR UPSAMPLE • align_corners = false\n[B, C₂, h₂, w₂] → [B, C₂, 512, 512]\nBoth models' output grids must align to the same photo"];
+    dsoft [label="SOFTMAX OVER CLASS DIMENSION (dim = 1)\nProbabilities: float [B, C₂, 512, 512]\nDiagram shows standard path with no background offset"];
+    dmask [label="MAX OVER CLASSES → TWO ARRAYS\nDamage class IDs D: integer [B, 512, 512]\nWinning probability Q: float [B, 512, 512]\nSplit batch → D and Q each [512, 512] per photo", fillcolor="#FFEDD5"];
+    regions [label="REGION EXTRACTION • per photo / per damage class\nQ < 0.50 → background; extract 8-connected components\nDrop regions < 256 pixels; keep largest 50 if cap exceeded\nPROPOSED thresholds: validation / resolution calibration pending\nOutput: uint16 component IDs R [512, 512] + region list\nEach region: type, pixel area, mean confidence, bounding box\nRecord dropped pixel / region counts", fillcolor="#FFEDD5"];
+    assign [label="FIRST COMBINATION: DAMAGE ↔ PART MASK OVERLAP\nInputs: D, Q, P, accepted parts, transform T; same photo / revision\nFor each retained region r and candidate part p:\ncontainment(p) = pixels(r ∩ p) / pixels(r)\nPROPOSED: best ≥ 0.60; best − runner-up ≥ 0.20; background ≤ 0.50\nBest part must be accepted by M1; otherwise keep unknown part\nDo not split boundary-crossing regions; retain ranked candidates", fillcolor="#FED7AA", color="#EA580C", penwidth=2];
+    obs [label="M2 OUTPUT → ImageDamageObservation[]\nOne record per retained region, including unresolved assignments\nphoto_id, damage_code, damage_confidence; part_code or null\nassignment status / reason; candidates and containment scores\narea_pixels; area_fraction = pixels / (512 × 512); side = unknown\nOriginal-photo normalized bbox via T; mask / component references\nDamage PNG + component PNG; versions + filtering counts", fillcolor="#FFEDD5"];
+    dnet -> dlog -> dup -> dsoft -> dmask -> regions -> assign -> obs;
+  }
+
+  prep -> pnet; prep -> dnet;
+  { rank=same; pnet; dnet; }
+  { rank=same; plog; dlog; }
+  { rank=same; pup; dup; }
+  { rank=same; psoft; dsoft; }
+  { rank=same; pmask; dmask; }
+  { rank=same; prec; regions; }
+  pmask -> assign [color="#2563EB", label="part mask P", constraint=false];
+  prec -> assign [color="#2563EB", label="accepted parts + T"];
+
+  subgraph cluster_m3 {
+    label="M3  |  Deterministic rules across photos • no neural model"; fontsize=19; fontcolor="#047857";
+    color="#6EE7B7"; style="rounded,filled"; fillcolor="#ECFDF5"; margin=20;
+    validate [label="COLLECT ONE CLAIM / INPUT REVISION\nM2 observations + M1 predictions + view signals + processing status\nValidate identity / allowed revisions / config versions / provenance\nBuild effective identity and coverage confirmation index"];
+    human [label="RECORDED HUMAN CONFIRMATIONS\nIdentity: photo + part → physical part / side\nCoverage: named views cover enough of that part\nKeep corrections, conflicts and superseded history", fillcolor="#FEF3C7", color="#D97706"];
+    group [label="GROUP EVERY DISTINCT OBSERVATION\nConfirmed identity → (part_code, side): resolved\nAssigned category only → (part_code, unknown): part_only\nNo assigned part → one group per observation: unresolved\nDeduplicate identical record IDs, not physical damage across photos\nM3 never guesses left / right from image position"];
+    screen [label="COVERAGE • INCLUDING PARTS WITH NO DETECTED DAMAGE\nUse accepted M1 views of each part / confirmed side\nScreen: part size, sharpness, lighting, border cropping\nMissing measurements → not_run; failure never means absence\nNo identity / processing failure → unresolved\nResolved identity but no accepted view → not_visible\nNo passing view or insufficient / missing confirmation → inadequate\nPassing confirmed view + resolved identity → adequate"];
+    summary [label="PartSummary[] • structured evidence groups\npart_code + side + identity_status; all observation IDs\ndamage_codes = set of member types; photo / mask references\nobservation_count = number of member observations\nrepresentative_area_fraction = largest single member fraction\nmax_confidence = highest member damage confidence\nNo summed areas, no unique dent count, no severity inference", fillcolor="#D1FAE5", color="#10B981"];
+    coverage [label="PartCoverage[] • separate from the damage summary\npart_code + side; adequate / inadequate / not_visible / unresolved\nPer-view measurements, reasons and covering photo IDs\nIdentity + coverage confirmation references\nAdequate describes evidence coverage, not absence of damage", fillcolor="#D1FAE5", color="#10B981"];
+    validate -> group; validate -> screen;
+    human -> validate [style=dashed, color="#D97706"];
+    group -> summary; screen -> coverage;
+    { rank=same; validate; human; }
+    { rank=same; group; screen; }
+    { rank=same; summary; coverage; }
+  }
+  obs -> validate;
+  prec -> validate [color="#2563EB", label="M1 predictions also feed M3", constraint=false];
+  signals [label="PIXEL MEASUREMENTS • supporting helper\nAligned photo + part mask → compute_view_signals()\nPass numeric measurements into the M3 core\nCore summarise_parts() does not decode images", fillcolor="#E2E8F0"];
+  prec -> signals [style=dashed, color="#2563EB", constraint=false];
+  signals -> screen [label="view_signals", style=dashed];
+  { rank=same; signals; obs; }
+  downstream [label="M8 applies document / photo comparison rules; M9 displays evidence and collects review actions\nA new identity or coverage confirmation creates a new revision: rerun M3, reuse M1/M2 evidence\nRetain earlier records. New photographs require new model processing.", fillcolor="#E2E8F0"];
+  summary -> downstream; coverage -> downstream;
+  status [shape=note, fillcolor="#FFF", color="#94A3B8", fontsize=12,
+    label="READING THIS DIAGRAM • implementation boundary (2026-10-08)\lBatches do not merge views. 512 is illustrative; 640 gives corresponding 640-sized arrays.\lSeparate branches show data dependencies; specified orchestration runs M1 → complete M2 → M3.\lLogitsAdapter in both notebooks includes upsampling; class prediction can use argmax(logits) without softmax.\lSoftmax is needed for the illustrated probability values. A selected background offset needs explicit serving integration.\lM1 serving adapter exists; M2 region / assignment and M3 rules exist; live M2 inference integration remains pending.\lM1 serving puts the photo top-left on black padding, sets padding to background and excludes it from statistics.\lNotebook runs use that frame with frame=serving; the worker refuses a checkpoint trained in another frame.\lHITL M2 has a separate taxonomy and cannot directly feed the CarDD-only serving contract.\lThis drawing documents the intended connection; it is not evidence of end-to-end model integration or measured accuracy.\l"];
+  downstream -> status [style=invis];
+}

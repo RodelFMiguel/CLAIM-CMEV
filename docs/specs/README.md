@@ -27,6 +27,8 @@ Read in this order.
 
 Module specifications below define one module each. Read the shared documents first.
 
+For a visual explanation of the image branch, see the [illustrated M1 → M2 → M3 workflow](vision-workflow-illustrated.md): tensor shapes, mask transformations, damage-to-part assignment, and a worked part-summary example. It distinguishes intended serving behaviour from current implementation and offline experiments.
+
 ## Functional modules
 
 | v2 | Specification | Container | Implementation path | Lane | Runtime | v1 |

@@ -110,12 +110,16 @@ def test_hitl_subset_is_classified_by_class_titles_not_folder(tmp_path):
         classify_supervisely_meta({"classes": []})
 
 
-@pytest.mark.parametrize("folder,kind", [("Car damages dataset", "parts"), ("Car parts dataset", "damage")])
-def test_real_hitl_folders_when_present(folder, kind):
-    meta = REPO / "data" / "raw" / folder / "meta.json"
-    if not meta.exists():
+@pytest.mark.parametrize("kind", ["parts", "damage"])
+def test_real_hitl_folders_when_present(kind):
+    # The archive unpacks into data/raw or one folder below it; look where the pipelines look.
+    from pipelines.vision.splits import find_hitl_folder
+
+    try:
+        export = find_hitl_folder(kind)  # "Car damages dataset" for parts: the names are swapped
+    except FileNotFoundError:
         pytest.skip("HITL data is not present in this checkout")
-    assert classify_supervisely_meta(meta).kind == kind
+    assert classify_supervisely_meta(export / "meta.json").kind == kind
 
 
 def test_acquisition_manifest_records_the_folder_swap():
