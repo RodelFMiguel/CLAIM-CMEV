@@ -55,8 +55,11 @@ from .config import PartsConfig, load_parts_config
 
 log = logging.getLogger("cmev.vision.parts.adapter")
 
-IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+PIXEL_MEAN = (0.485, 0.456, 0.406)
+PIXEL_STD = (0.229, 0.224, 0.225)
+PAD_VALUE = 0
+IMAGENET_MEAN = np.array(PIXEL_MEAN, dtype=np.float32)
+IMAGENET_STD = np.array(PIXEL_STD, dtype=np.float32)
 
 ProcessingStatus = Literal["succeeded", "partial", "failed"]
 PARTS_EVENT_TOPIC = "cmev.evt.parts-segmented.v1"
@@ -161,12 +164,28 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def serving_preprocessing(config: PartsConfig) -> dict[str, Any]:
+    """The model frame this worker builds, in the vocabulary of a registry entry's ``preprocessing.json``."""
+    return {"input_size": config.input_size, "resize_policy": config.resize_policy, "pixel_mean": list(PIXEL_MEAN),
+            "pixel_std": list(PIXEL_STD), "pad_value": PAD_VALUE}
+
+
+def _same_setting(recorded: Any, served: Any) -> bool:
+    if isinstance(served, list):
+        return (isinstance(recorded, list) and len(recorded) == len(served)
+                and all(isinstance(value, (int, float)) and abs(value - expected) < 1e-6
+                        for value, expected in zip(recorded, served)))
+    return recorded == served
+
+
 def verify_checkpoint(model_dir: str | Path, config: PartsConfig) -> dict[str, Any]:
     """Check a registry entry against its manifest and the configuration; returns the manifest.
 
     Technical specification 9.3: a worker verifies the weight file's SHA-256 against its
     manifest at start and refuses to start on a mismatch. Another model version, taxonomy
-    version or class numbering is refused as well, never remapped.
+    version or class numbering is refused as well, never remapped. So is a model trained in
+    another frame than the one this worker builds: its recorded scores would not describe
+    what is served.
     """
     model_dir = Path(model_dir)
     if not model_dir.is_dir():
@@ -189,6 +208,16 @@ def verify_checkpoint(model_dir: str | Path, config: PartsConfig) -> dict[str, A
     labels = json.loads((model_dir / "config.json").read_text(encoding="utf-8")).get("id2label") or {}
     if {int(class_id): code for class_id, code in labels.items()} != ID_TO_PART_CODE:
         raise ModelUnavailable("label_map_mismatch", "the checkpoint's class map is not the parts taxonomy's")
+    preprocessing_path = model_dir / "preprocessing.json"
+    if not preprocessing_path.is_file():
+        raise ModelUnavailable("preprocessing_missing", f"{preprocessing_path} does not exist, so the frame the "
+                               "model was trained in is not recorded")
+    trained = json.loads(preprocessing_path.read_text(encoding="utf-8"))
+    served = serving_preprocessing(config)
+    differing = [key for key, value in served.items() if not _same_setting(trained.get(key), value)]
+    if differing:
+        raise ModelUnavailable("preprocessing_mismatch", "; ".join(
+            f"{key}: trained with {trained.get(key)!r}, served with {served[key]!r}" for key in differing))
     return manifest
 
 
@@ -328,7 +357,7 @@ def run_parts_segmentation(
             frame_size=cfg.input_size,
             policy=cfg.resize_policy,
         )
-        letterboxed_img = letterbox(oriented_img, transform_spec, pad_value=0)
+        letterboxed_img = letterbox(oriented_img, transform_spec, pad_value=PAD_VALUE)
         img_float = letterboxed_img.astype(np.float32) / 255.0
         normalized = (img_float - IMAGENET_MEAN) / IMAGENET_STD
         tensor = torch.from_numpy(normalized).permute(2, 0, 1).unsqueeze(0).float().to(segmenter.device)

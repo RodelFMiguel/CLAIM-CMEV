@@ -32,7 +32,7 @@ The diagram shows the data dependencies. The specified orchestration runs M1, th
 
    Both masks must refer to the **same photograph and aligned coordinate frame**. Rotation, resizing and padding therefore need recorded transforms. Matching a 512-pixel part mask directly against an unrelated 640-pixel damage grid would be invalid.
 
-   The offline HITL notebooks use separate SegFormer-B2 models for the two tasks. Their training and damage vocabularies are documented in the [training guide](/Users/rodel/Projects/nus/CLAIM-CMEV/docs/training-hitl-notebooks.md).
+   The offline HITL notebooks use separate SegFormer-B2 models for the two tasks. Their training and damage vocabularies are documented in the [training guide](../training-hitl-notebooks.md).
 
 2. **M2 converts damage pixels into observations and matches them to parts.**
 
@@ -60,7 +60,7 @@ The diagram shows the data dependencies. The specified orchestration runs M1, th
 
    Each resulting `ImageDamageObservation` contains the photo, damage type and confidence, assigned part or uncertainty reason, candidate overlaps, area and mask references. **Side remains unknown**: neither mask establishes left versus right.
 
-   See the [assignment implementation](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/vision/damage/assignment.py) and [proposed thresholds](/Users/rodel/Projects/nus/CLAIM-CMEV/configs/pipeline/m2_assignment.yaml).
+   See the [assignment implementation](../../src/claim_cmev/vision/damage/assignment.py) and [proposed thresholds](../../configs/pipeline/m2_assignment.yaml).
 
 3. **M3 groups observations across all photographs in the claim revision.**
 
@@ -78,7 +78,7 @@ The diagram shows the data dependencies. The specified orchestration runs M1, th
 
    A summary retains all member observation IDs, supporting photos and masks, the set of damage types, identity confirmations and reasons. The current implementation records the highest member damage confidence and uses the **largest single member’s area fraction** as its representative area.
 
-   It does not add areas across views or infer a count of physical dents. Two scratch observations could be two views of the same scratch. The reported observation count describes model observations, not unique damage instances. See [grouping.py](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/vision/multiview/grouping.py).
+   It does not add areas across views or infer a count of physical dents. Two scratch observations could be two views of the same scratch. The reported observation count describes model observations, not unique damage instances. See [grouping.py](../../src/claim_cmev/vision/multiview/grouping.py).
 
 4. **M3 separately assesses whether each part has enough photographic coverage.**
 
@@ -102,7 +102,7 @@ The diagram shows the data dependencies. The specified orchestration runs M1, th
    | Views are insufficient, screening is incomplete, or coverage confirmation is missing/negative | `inadequate` |
    | Identity resolved, a confirmed view passes screening, and the human confirms sufficient coverage | `adequate` |
 
-   **Passing automatic quality checks alone never produces adequate coverage.** The coverage confirmation must refer to suitable views of that particular part. See [coverage.py](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/vision/multiview/coverage.py).
+   **Passing automatic quality checks alone never produces adequate coverage.** The coverage confirmation must refer to suitable views of that particular part. See [coverage.py](../../src/claim_cmev/vision/multiview/coverage.py).
 
 5. **Human review can update M3 without rerunning the models.**
 
@@ -116,7 +116,7 @@ The diagram shows the data dependencies. The specified orchestration runs M1, th
 
    If the observations have area fractions of 0.9% and 1.2%, the representative value is 1.2%. It is an image-area measure—not the percentage of the physical door damaged.
 
-   Identity or coverage confirmation creates a new input revision. M3 recomputes using retained M1/M2 outputs, preserves the previous results and records reuse lineage. Adding a new photograph requires new model processing. This reuse path is implemented in [review_summary.py](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/orchestration/review_summary.py).
+   Identity or coverage confirmation creates a new input revision. M3 recomputes using retained M1/M2 outputs, preserves the previous results and records reuse lineage. Adding a new photograph requires new model processing. This reuse path is implemented in [review_summary.py](../../src/claim_cmev/orchestration/review_summary.py).
 
 6. **M3 passes two complementary outputs downstream.**
 
@@ -160,7 +160,7 @@ flowchart LR
 
    The worker retrieves the original photo using its storage reference and verifies its recorded hash. It decodes the photo into RGB and applies EXIF orientation so a portrait image is processed upright.
 
-   It then resizes the photo while preserving its proportions and pads it to the configured square input size. For example, a 1200 × 800 photo fitted into a 512 × 512 frame becomes approximately 512 × 341, with padding filling the remaining space.
+   It then resizes the photo while preserving its proportions and pads it to the configured square input size. For example, a 1200 × 800 photo fitted into a 512 × 512 frame becomes approximately 512 × 341, with black padding filling the remaining space below it: the photo sits top-left (`longest_edge_pad`). The worker refuses a checkpoint whose `preprocessing.json` records another frame.
 
    Pixel values are converted to floating point, scaled and normalized. The resulting input tensor has shape:
 
@@ -219,7 +219,7 @@ flowchart LR
    | `ImageQuality` | Photo-level screening information. The current adapter only performs a basic resolution check. |
    | Completion event | References the artifacts and records so orchestration can advance to M2. |
 
-   Claim/input revision, model/configuration versions and provenance accompany the records. The current implementation is in [parts/adapter.py](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/vision/parts/adapter.py:88).
+   Claim/input revision, model/configuration versions and provenance accompany the records. The current implementation is `run_parts_segmentation` in [parts/adapter.py](../../src/claim_cmev/vision/parts/adapter.py#L309).
 
 ## M2 Workflow
 **M2 workflow: photograph → damage evidence associated with parts**
@@ -291,7 +291,7 @@ flowchart LR
 
    Each surviving region gets an ID, damage class, pixel count, average confidence and bounding box. Counts of filtered pixels/regions are also retained.
 
-   A connected region is an image observation; it does not establish a unique physical damage instance. See [regions.py](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/vision/damage/regions.py:83).
+   A connected region is an image observation; it does not establish a unique physical damage instance. See [regions.py](../../src/claim_cmev/vision/damage/regions.py#L71).
 
 5. **Associate each region with an M1 part.**
 
@@ -312,7 +312,7 @@ flowchart LR
 
    An unresolved region remains available with its candidate scores and reason. A region crossing a panel boundary is not automatically split. Side remains `unknown`.
 
-   This is the work performed by the file you have open: [assignment.py](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/vision/damage/assignment.py:275).
+   This is the work performed by the file you have open: [assignment.py](../../src/claim_cmev/vision/damage/assignment.py#L280).
 
 6. **Produce M2’s module output.**
 
@@ -350,7 +350,7 @@ flowchart TD
     P --> N
 ```
 
-The main entry point is [`summarise_parts()`](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/vision/multiview/summary.py:72). Its workflow is as follows.
+The main entry point is [`summarise_parts()`](../../src/claim_cmev/vision/multiview/summary.py#L72). Its workflow is as follows.
 
 **1. Gather and validate the evidence**
 
@@ -380,7 +380,7 @@ Later corrections can supersede earlier confirmations while retaining their hist
 
 **3. Group the damage observations**
 
-This is the responsibility of [`grouping.py`](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/vision/multiview/grouping.py:41).
+This is the responsibility of [`grouping.py`](../../src/claim_cmev/vision/multiview/grouping.py#L41).
 
 For each M2 observation, M3 chooses a grouping key:
 
@@ -467,13 +467,13 @@ It then screens each view:
 | Lighting | Brightness and clipped exposure inside the part mask |
 | Border contact | Whether the part mask appears cropped at the photograph boundary |
 
-The [`screening.py`](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/vision/multiview/screening.py:40) helper can calculate these measurements from aligned images and masks. The main `summarise_parts()` function consumes supplied measurements and does not itself load images or model weights.
+The [`screening.py`](../../src/claim_cmev/vision/multiview/screening.py#L40) helper can calculate these measurements from aligned images and masks. The main `summarise_parts()` function consumes supplied measurements and does not itself load images or model weights.
 
 Each view receives `pass`, `fail` or `not_run`. Missing measurements never count as a pass. Screening thresholds still require real-photo calibration.
 
 **6. Decide the coverage state**
 
-The rules in [`coverage.py`](/Users/rodel/Projects/nus/CLAIM-CMEV/src/claim_cmev/vision/multiview/coverage.py:87) run in order; the first matching rule determines the result.
+The rules in [`coverage.py`](../../src/claim_cmev/vision/multiview/coverage.py#L87) run in order; the first matching rule determines the result.
 
 | Condition | Coverage state |
 |---|---|

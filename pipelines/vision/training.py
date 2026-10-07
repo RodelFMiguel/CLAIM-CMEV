@@ -85,6 +85,10 @@ class TrainingConfig:
     ema_decay: float = 0.0  # 0 disables; e.g. 0.995 validates and saves averaged weights
     mean: tuple = (0.485, 0.456, 0.406)
     std: tuple = (0.229, 0.224, 0.225)
+    # "centred": photo in the middle of a mean-coloured canvas, the frame of every run saved
+    # before this option existed. "serving": photo top-left on black, the frame the M1 worker
+    # builds (longest_edge_pad); a run must be trained in it to be exported for serving.
+    frame: str = "centred"
     device: str = "auto"
     workers: int = 0
     seed: int = 42
@@ -148,6 +152,8 @@ class TrainingConfig:
             raise ValueError("ema_decay must lie in [0, 1); 0 disables weight averaging")
         if len(self.mean) != 3 or len(self.std) != 3 or min(self.std) <= 0:
             raise ValueError("Provide three normalization means and positive standard deviations")
+        if self.frame not in {"centred", "serving"}:
+            raise ValueError("frame must be centred or serving")
         if min(self.encoder_lr, self.head_lr, self.max_grad_norm) <= 0:
             raise ValueError("Learning rates and max_grad_norm must be positive")
         if min(self.ce_weight, self.dice_weight, self.weight_decay, self.min_delta) < 0:
@@ -156,6 +162,11 @@ class TrainingConfig:
             raise ValueError("At least one loss weight must be positive")
         if self.run_id and (Path(self.run_id).name != self.run_id or self.run_id in {".", ".."}):
             raise ValueError("run_id must be a single directory name")
+
+    @property
+    def padding_colour(self):
+        """Padding as 0-1 RGB: black in the serving frame, otherwise the normalisation mean."""
+        return (0.0, 0.0, 0.0) if self.frame == "serving" else tuple(self.mean)
 
 
 def select_device(preference="auto"):
@@ -232,10 +243,35 @@ def _verify_records(records):
                 raise ValueError(f"Prepared {kind} hash mismatch: {record['sample_id']}")
 
 
-def letterbox(image, mask, size, mean=(0.485, 0.456, 0.406)):
+SERVING_FRAME = {"resize_policy": "longest_edge_pad", "pad_value": 0}
+
+
+def _serving_frame(image, mask, size):
+    """The model frame of the M1 worker, built with the worker's own functions.
+
+    Prepared images already have their EXIF orientation applied. Padding stays ignore 255 in
+    the labels; the worker sets padding to background in the mask it stores.
+    """
+    try:
+        import cv2
+        from claim_cmev.vision.transforms import letterbox as frame_photo, plan_model_frame
+    except ImportError as exc:
+        raise RuntimeError('frame="serving" uses the application package: pip install -e ".[vision]"') from exc
+    plan = plan_model_frame(image.width, image.height, 1, size, SERVING_FRAME["resize_policy"])
+    pixels = frame_photo(np.asarray(image.convert("RGB")), plan, pad_value=SERVING_FRAME["pad_value"])
+    labels = np.full((size, size), IGNORE_INDEX, dtype=np.uint8)
+    x0, y0, x1, y1 = plan.content_box()
+    labels[y0:y1, x0:x1] = cv2.resize(np.asarray(mask), (plan.resized_width, plan.resized_height),
+                                      interpolation=cv2.INTER_NEAREST)
+    return Image.fromarray(pixels), Image.fromarray(labels)
+
+
+def letterbox(image, mask, size, mean=(0.485, 0.456, 0.406), frame="centred"):
     """Keep aspect ratio; resize masks nearest; pad labels with ignore 255."""
     if image.size != mask.size:
         raise ValueError("Image and mask dimensions differ")
+    if frame == "serving":
+        return _serving_frame(image, mask, size)
     width, height = image.size
     scale = min(size / width, size / height)
     resized = (max(1, round(width * scale)), max(1, round(height * scale)))
@@ -281,7 +317,7 @@ def damage_aware_crop(image, mask, config, rng=random):
         raise ValueError("Image and mask dimensions differ")
     draw = rng.random()
     if draw < config.full_image_probability:
-        return letterbox(image, mask, config.image_size, config.mean)
+        return letterbox(image, mask, config.image_size, config.mean, config.frame)
     side = max(1, round(config.image_size / rng.uniform(*config.crop_scale_range)))
     width, height = image.size
     anchor = None
@@ -302,7 +338,7 @@ def damage_aware_crop(image, mask, config, rng=random):
         return rng.randint(max(0, coordinate - side + 1), min(coordinate, length - side))
     left = origin(width, anchor[0] if anchor else None)
     top = origin(height, anchor[1] if anchor else None)
-    fill = tuple(round(x * 255) for x in config.mean)
+    fill = tuple(round(x * 255) for x in config.padding_colour)
     pixels, target = Image.new("RGB", (side, side), fill), Image.new("L", (side, side), IGNORE_INDEX)
     pixels.paste(image, (-left, -top))
     target.paste(mask, (-left, -top))
@@ -337,13 +373,13 @@ class SegmentationDataset:
             image, mask = damage_aware_crop(image, mask, self.config)
         elif self.training and (low, high) != (1.0, 1.0):
             image, mask = random_scale_crop(image, mask, self.config.image_size,
-                                            random.uniform(low, high), self.config.mean)
+                                            random.uniform(low, high), self.config.padding_colour)
         else:
-            image, mask = letterbox(image, mask, self.config.image_size, self.config.mean)
+            image, mask = letterbox(image, mask, self.config.image_size, self.config.mean, self.config.frame)
         if self.training:
             if self.config.rotation_degrees:
                 angle = random.uniform(-self.config.rotation_degrees, self.config.rotation_degrees)
-                fill = tuple(round(x * 255) for x in self.config.mean)
+                fill = tuple(round(x * 255) for x in self.config.padding_colour)
                 image = image.rotate(angle, resample=Image.Resampling.BILINEAR, fillcolor=fill)
                 mask = mask.rotate(angle, resample=Image.Resampling.NEAREST, fillcolor=IGNORE_INDEX)
             if random.random() < self.config.horizontal_flip:
@@ -733,9 +769,7 @@ def train(manifest, config):
               "dataset": TASKS[config.task][1], "class_names": classes, "taxonomy_hash": _hash(classes),
               "manifest_hash": manifest["manifest_hash"], "split_hash": manifest["split_hash"],
               "config": asdict(config), "environment": _environment(device),
-              "preprocessing": {"resize": "aspect-preserving centered letterbox", "mask_resampling": "nearest",
-                                "ignore_index": IGNORE_INDEX, "background": 0, "reduce_labels": False,
-                                "evaluation_frame": "resized letterboxed model frame; padding excluded"},
+              "preprocessing": _preprocessing_record(config),
               "effective_workers": 0 if device.type == "mps" else config.workers,
               "precision": "cuda_float16_autocast" if config.amp and device.type == "cuda" else "float32",
               "weight_source": (config.checkpoint if config.architecture in {"segformer", "hf_semantic"}
@@ -902,6 +936,19 @@ def train(manifest, config):
     return record
 
 
+def _preprocessing_record(config):
+    """What a run records about its model frame; a centred run keeps the record of earlier runs."""
+    record = {"resize": "aspect-preserving centered letterbox", "mask_resampling": "nearest",
+              "ignore_index": IGNORE_INDEX, "background": 0, "reduce_labels": False,
+              "evaluation_frame": "resized letterboxed model frame; padding excluded"}
+    if config.frame == "serving":
+        # The keys of a registry entry's preprocessing.json, which the M1 worker checks.
+        record.update(resize="aspect-preserving letterbox, photo top-left (M1 serving frame)",
+                      input_size=config.image_size, pixel_mean=list(config.mean), pixel_std=list(config.std),
+                      **SERVING_FRAME)
+    return record
+
+
 def _read_run(run_dir):
     """Locate moved artifacts by their standard artifacts/models/task/run layout."""
     run_dir = Path(run_dir).resolve()
@@ -910,6 +957,30 @@ def _read_run(run_dir):
     record["evaluation_dir"] = str(run_dir.parents[2] / "evaluation" / run_dir.name)
     Path(record["evaluation_dir"]).mkdir(parents=True, exist_ok=True)
     return record
+
+
+def _current_tensor_names(model, tensors):
+    """Translate tensor names saved by an older transformers release into the installed ones.
+
+    transformers 5 renamed SegFormer's tensors. ``from_pretrained`` converts the old names; a
+    run's ``best.pt`` is read with ``load_state_dict``, which does not. The rename table is the
+    library's own. Tensors that already match the model are returned untouched.
+    """
+    if set(tensors) == set(model.state_dict()):
+        return tensors
+    network = getattr(model, "network", None)
+    try:
+        from transformers import PreTrainedModel
+        from transformers.conversion_mapping import get_model_conversion_mapping
+        from transformers.core_model_loading import WeightRenaming, rename_source_key
+    except ImportError:
+        return tensors
+    if not isinstance(network, PreTrainedModel):
+        return tensors
+    renamings = [step for step in get_model_conversion_mapping(network) if isinstance(step, WeightRenaming)]
+    prefix = "network."
+    return {prefix + rename_source_key(name[len(prefix):], renamings, [])[0] if name.startswith(prefix) else name: value
+            for name, value in tensors.items()}
 
 
 def load_run(run_dir, device="auto"):
@@ -925,7 +996,7 @@ def load_run(run_dir, device="auto"):
     state = torch.load(run_dir / "best.pt", map_location="cpu", weights_only=True)
     if state["class_names"] != record["class_names"] or state["split_hash"] != record["split_hash"]:
         raise ValueError("Checkpoint metadata differs from run manifest")
-    model.load_state_dict(state["model"])
+    model.load_state_dict(_current_tensor_names(model, state["model"]))
     return model.float().to(selected_device).eval(), config, record, selected_device
 
 

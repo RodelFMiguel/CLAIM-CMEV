@@ -30,4 +30,14 @@ The tracked split is `data/splits/parts/0.1.1`. Its records name each image rela
 
 `python pipelines/vision/build_splits.py` builds a split from the converter's index. It needs the damage export as well, because images shared by the two exports must stay in one partition; without it the same seed gives a different split, so the command fails instead. `--same-membership-as <split folder>` refuses to write unless every image keeps its partition. Split `0.1.1` was built that way from `0.1.0`, which stays in the repository unchanged with its original workstation paths.
 
-The output folder of `train_segformer.py` is a registry entry the M1 worker can serve: name it after `model_version` in the configuration. `train_resnet.py` and `train_eval_yolo.py` are comparison scripts; the worker cannot load their output.
+The output folder of `train_segformer.py` is a registry entry the M1 worker can serve: name it after `model_version` in the configuration. The worker checks the entry's `preprocessing.json` against the frame it builds. `train_resnet.py` and `train_eval_yolo.py` are comparison scripts; the worker cannot load their output.
+
+### Notebook runs (`training.py`)
+
+The notebooks under `notebooks/` train with `pipelines/vision/training.py`, which keeps each run as `best.pt` under `artifacts/models/<task>/<run_id>`. Three things connect that pipeline to the scripts above:
+
+- **Same split.** `prepare_hitl(..., split_from="data/splits/parts/0.1.1")` gives every parts photograph its published partition; `data/processed/hitl/v3` is prepared that way. Earlier prepared versions drew their own split.
+- **Same frame.** `TrainingConfig(frame="serving")` builds the worker's model frame. The default, `"centred"`, is the frame of the runs saved before 2026-10-08.
+- **Export.** `pipelines.vision.registry.export_parts_run(run_dir, "parts/<name>")` writes a serving-frame parts run as a registry entry with status `candidate`. It refuses other runs and never replaces an entry.
+
+A run saved under transformers 4 still reloads: `load_run` translates the tensor names with the library's own rename table. The notebook and script evaluators differ: the notebook masks use the `nested` overlap policy and leave padding out of the metrics, so their scores are not comparable with `eval_segmentation.py` scores.

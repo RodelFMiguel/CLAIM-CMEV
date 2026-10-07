@@ -508,3 +508,214 @@ def test_ema_decay_ramps_up_before_reaching_its_target():
     assert t.ema_decay_at(0, 0.995) == pytest.approx(0.1)
     assert t.ema_decay_at(10, 0.995) == pytest.approx(11 / 20)
     assert t.ema_decay_at(5000, 0.995) == 0.995
+
+
+# transformers 5 tensor name -> the transformers 4 name found in the saved notebook runs.
+_TRANSFORMERS_4_NAMES = (
+    (r"decode_head\.linear_projections\.", "decode_head.linear_c."),
+    (r"segformer\.stages\.(\d+)\.patch_embeddings\.", r"segformer.encoder.patch_embeddings.\1."),
+    (r"segformer\.stages\.(\d+)\.blocks\.", r"segformer.encoder.block.\1."),
+    (r"segformer\.stages\.(\d+)\.layer_norm\.", r"segformer.encoder.layer_norm.\1."),
+    (r"attention\.sequence_reduction\.sequence_reduction\.", "attention.self.sr."),
+    (r"attention\.sequence_reduction\.layer_norm\.", "attention.self.layer_norm."),
+    (r"attention\.q_proj\.", "attention.self.query."),
+    (r"attention\.k_proj\.", "attention.self.key."),
+    (r"attention\.v_proj\.", "attention.self.value."),
+    (r"attention\.o_proj\.", "attention.output.dense."),
+    (r"mlp\.fc(\d)\.", r"mlp.dense\1."),
+    (r"layernorm_before\.", "layer_norm_1."),
+    (r"layernorm_after\.", "layer_norm_2."),
+)
+
+
+def _transformers_4_name(key):
+    import re
+    for pattern, replacement in _TRANSFORMERS_4_NAMES:
+        key = re.sub(pattern, replacement, key)
+    return key
+
+
+_BUILD_MODEL = t.build_model
+
+
+def _tiny_segformer(config, classes, **kwargs):
+    from transformers import SegformerConfig
+    if kwargs.get("saved_config") is None:
+        kwargs["saved_config"] = SegformerConfig(depths=[1, 1, 1, 1], hidden_sizes=[8, 16, 32, 64],
+                                                 num_attention_heads=[1, 2, 4, 8], decoder_hidden_size=16).to_dict()
+    return _BUILD_MODEL(config, classes, **{**kwargs, "load_pretrained": False})
+
+
+@pytest.mark.skipif(importlib.util.find_spec("transformers") is None, reason="transformers not installed")
+def test_load_run_reads_a_checkpoint_saved_with_transformers_4_tensor_names(tmp_path, monkeypatch):
+    import torch
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf"))
+    monkeypatch.setenv("TORCH_HOME", str(tmp_path / "torch"))
+    manifest = _fixture_manifest(tmp_path)
+    config = t.TrainingConfig(epochs=1, image_size=32, batch_size=1, artifacts_root=str(tmp_path / "artifacts"),
+                              run_id="legacy", device="cpu", pretrained=False)
+    with patch.object(t, "build_model", side_effect=_tiny_segformer):
+        run_dir = Path(t.train(manifest, config)["run_dir"])
+    pixels = torch.rand(1, 3, 32, 32, generator=torch.Generator().manual_seed(0))
+    current = t.load_run(run_dir, device="cpu")[0]
+    with torch.no_grad():
+        expected = current(pixels)
+
+    state = torch.load(run_dir / "best.pt", map_location="cpu", weights_only=True)
+    state["model"] = {_transformers_4_name(key): value for key, value in state["model"].items()}
+    assert "network.decode_head.linear_c.0.proj.weight" in state["model"]
+    assert not set(state["model"]) & {key for key in current.state_dict() if "stages" in key}
+    torch.save(state, run_dir / "best.pt")
+    record = json.loads((run_dir / "manifest.json").read_text())
+    record["checkpoint_sha256"] = t._file_hash(run_dir / "best.pt")
+    (run_dir / "manifest.json").write_text(json.dumps(record))
+
+    reloaded = t.load_run(run_dir, device="cpu")[0]
+    with torch.no_grad():
+        assert torch.equal(reloaded(pixels), expected)
+
+
+@pytest.mark.skipif(importlib.util.find_spec("transformers") is None, reason="transformers not installed")
+def test_load_run_still_refuses_a_checkpoint_with_missing_tensors(tmp_path, monkeypatch):
+    import torch
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf"))
+    monkeypatch.setenv("TORCH_HOME", str(tmp_path / "torch"))
+    manifest = _fixture_manifest(tmp_path)
+    config = t.TrainingConfig(epochs=1, image_size=32, batch_size=1, artifacts_root=str(tmp_path / "artifacts"),
+                              run_id="incomplete", device="cpu", pretrained=False)
+    with patch.object(t, "build_model", side_effect=_tiny_segformer):
+        run_dir = Path(t.train(manifest, config)["run_dir"])
+    state = torch.load(run_dir / "best.pt", map_location="cpu", weights_only=True)
+    state["model"] = {_transformers_4_name(key): value for key, value in state["model"].items()
+                      if "classifier" not in key}
+    torch.save(state, run_dir / "best.pt")
+    record = json.loads((run_dir / "manifest.json").read_text())
+    record["checkpoint_sha256"] = t._file_hash(run_dir / "best.pt")
+    (run_dir / "manifest.json").write_text(json.dumps(record))
+
+    with pytest.raises(RuntimeError, match="classifier"):
+        t.load_run(run_dir, device="cpu")
+
+
+# ---------------------------------------------------------------------------
+# The serving frame: the frame the M1 worker builds (photo top-left, black padding)
+# ---------------------------------------------------------------------------
+
+def _wide_photo():
+    """48x32 photo with a gradient and a mask whose right half is class 1."""
+    rng = np.random.default_rng(7)
+    pixels = rng.integers(0, 256, size=(32, 48, 3), dtype=np.uint8)
+    labels = np.zeros((32, 48), dtype=np.uint8)
+    labels[:, 24:] = 1
+    return Image.fromarray(pixels), Image.fromarray(labels)
+
+
+def test_serving_frame_places_the_photo_top_left_on_black_and_ignores_padding():
+    image, mask = _wide_photo()
+    frame, target = t.letterbox(image, mask, 32, frame="serving")
+    pixels, labels = np.asarray(frame), np.asarray(target)
+    assert pixels.shape == (32, 32, 3) and labels.shape == (32, 32)
+    assert np.all(pixels[21:] == 0)  # 48x32 -> 32x21 at the top; black below
+    assert np.all(labels[21:] == 255)
+    assert set(np.unique(labels[:21])) == {0, 1}
+    assert np.all(labels[:21, :16] == 0) and np.all(labels[:21, 16:] == 1)
+
+
+def test_centred_frame_is_unchanged_by_default():
+    image, mask = _wide_photo()
+    frame, target = t.letterbox(image, mask, 32)
+    labels = np.asarray(target)
+    assert np.all(labels[:5] == 255) and np.all(labels[26:] == 255)  # padding above and below
+    assert tuple(np.asarray(frame)[0, 0]) == (124, 116, 104)  # the normalisation mean
+    assert t.TrainingConfig().frame == "centred"
+
+
+def test_training_config_refuses_an_unknown_frame():
+    with pytest.raises(ValueError, match="frame"):
+        t.TrainingConfig(frame="middle")
+
+
+@pytest.mark.skipif(not TORCH, reason="Optional training dependencies not installed")
+def test_serving_frame_dataset_pads_pixels_with_normalised_black(tmp_path):
+    image, mask = _wide_photo()
+    image.save(tmp_path / "image.png")
+    mask.save(tmp_path / "mask.png")
+    record = {"sample_id": "a", "image_path": str(tmp_path / "image.png"), "mask_path": str(tmp_path / "mask.png")}
+    config = t.TrainingConfig(image_size=32, frame="serving")
+    item = t.SegmentationDataset([record], config, training=False, num_classes=2)[0]
+    black = (0 - np.asarray(config.mean)) / np.asarray(config.std)
+    assert np.allclose(item["pixel_values"][:, 21:, :].numpy(), black[:, None, None], atol=1e-6)
+    assert bool((item["labels"][21:] == 255).all())
+
+
+@pytest.mark.skipif(importlib.util.find_spec("transformers") is None, reason="transformers not installed")
+def test_serving_frame_tensor_is_the_tensor_the_parts_worker_feeds_its_model(tmp_path):
+    """The contract: a validation tensor of a serving-frame run equals the worker's tensor for that photo."""
+    import hashlib
+    import io
+    import torch
+    adapter = pytest.importorskip("claim_cmev.vision.parts.adapter")
+    from claim_cmev.vision.palette import ID_TO_PART_CODE
+    from claim_cmev.vision.parts.config import PartsConfig
+    from transformers import SegformerConfig, SegformerForSemanticSegmentation
+
+    rng = np.random.default_rng(3)
+    photo = Image.fromarray(rng.integers(0, 256, size=(300, 400, 3), dtype=np.uint8))
+    photo.save(tmp_path / "image.png")
+    Image.new("L", photo.size).save(tmp_path / "mask.png")
+    record = {"sample_id": "a", "image_path": str(tmp_path / "image.png"), "mask_path": str(tmp_path / "mask.png")}
+    trained = t.SegmentationDataset([record], t.TrainingConfig(image_size=64, frame="serving"),
+                                    training=False, num_classes=22)[0]["pixel_values"]
+
+    model_dir = tmp_path / "model"
+    SegformerForSemanticSegmentation(SegformerConfig(
+        num_labels=22, id2label={str(i): ID_TO_PART_CODE[i] for i in range(22)},
+        label2id={ID_TO_PART_CODE[i]: i for i in range(22)}, depths=[1, 1, 1, 1], hidden_sizes=[16, 32, 64, 128],
+        num_attention_heads=[1, 2, 4, 8], decoder_hidden_size=32)).save_pretrained(model_dir)
+    segmenter = adapter.PartsSegmenter(model_dir=model_dir, config=PartsConfig(input_size=64, device="cpu",
+                                                                                 write_overlay=False))
+    served = []
+    segmenter.model.register_forward_pre_hook(lambda module, args, kwargs: served.append(kwargs["pixel_values"]),
+                                              with_kwargs=True)
+    data = (tmp_path / "image.png").read_bytes()
+    adapter.run_parts_segmentation(adapter.PartsSegmentRequest(
+        claim_id="01JAX7Q0VN4Z3K9F2M8R6T1C5D", input_revision=1, job_key="job", versions={"code": "test"},
+        provenance={"source_kind": "real", "runtime_profile": "lean", "producer_service": "cmev-worker-parts"},
+        photos=(adapter.PhotoFileInput(file_id="ph_01", media_type="image/png",
+                                       sha256=hashlib.sha256(data).hexdigest(), data=data),)), segmenter)
+    assert len(served) == 1
+    assert torch.equal(served[0][0].cpu(), trained)
+
+
+def test_serving_frame_augmentations_fill_with_black(tmp_path):
+    import random as stdlib_random
+    image, mask = Image.new("RGB", (40, 20), "white"), Image.new("L", (40, 20))
+    config = t.TrainingConfig(image_size=32, frame="serving")
+    small, small_mask = t.random_scale_crop(image, mask, 32, 0.5, config.padding_colour, rng=stdlib_random.Random(1))
+    padding = np.asarray(small_mask) == 255
+    assert padding.any() and np.all(np.asarray(small)[padding] == 0)
+    assert t.TrainingConfig(image_size=32).padding_colour == (0.485, 0.456, 0.406)
+
+    crop_config = t.TrainingConfig(image_size=32, frame="serving", crop_mode="damage_aware",
+                                   full_image_probability=0, focused_crop_probability=0)
+    cropped, cropped_mask = t.damage_aware_crop(image, mask, crop_config, stdlib_random.Random(1))
+    padding = np.asarray(cropped_mask) == 255
+    assert padding.any() and np.all(np.asarray(cropped)[padding] == 0)
+
+    full_config = t.TrainingConfig(image_size=32, frame="serving", crop_mode="damage_aware",
+                                   full_image_probability=1, focused_crop_probability=0)
+    _, full_mask = t.damage_aware_crop(image, mask, full_config, stdlib_random.Random(1))
+    assert np.all(np.asarray(full_mask)[:16] == 0) and np.all(np.asarray(full_mask)[16:] == 255)
+
+    # A photo that fills the frame: after a rotation the only padding is the rotation's own fill.
+    Image.new("RGB", (32, 32), "white").save(tmp_path / "image.png")
+    Image.new("L", (32, 32)).save(tmp_path / "mask.png")
+    record = {"sample_id": "a", "image_path": str(tmp_path / "image.png"), "mask_path": str(tmp_path / "mask.png")}
+    rotating = t.TrainingConfig(image_size=32, frame="serving", rotation_degrees=45, horizontal_flip=0,
+                                brightness=0, contrast=0)
+    if TORCH:
+        stdlib_random.seed(1)  # the first draw is the angle: about -33 degrees
+        item = t.SegmentationDataset([record], rotating, training=True, num_classes=2)[0]
+        black = (0 - np.asarray(rotating.mean)) / np.asarray(rotating.std)
+        assert item["labels"][0, 0] == 255
+        assert np.allclose(item["pixel_values"][:, 0, 0].numpy(), black, atol=1e-6)

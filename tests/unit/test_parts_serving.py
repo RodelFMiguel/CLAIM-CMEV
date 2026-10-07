@@ -35,6 +35,12 @@ CLAIM_ID = "01JAX7Q0VN4Z3K9F2M8R6T1C5D"
 CODE_VERSION = "0.2.0"
 
 
+# What pipelines/vision/train_segformer.py records beside the weights.
+TRAINER_PREPROCESSING = {"preprocessing_version": "1.0.0", "input_size": 512, "resize_policy": "longest_edge_pad",
+                         "color_space": "RGB", "pixel_mean": [0.485, 0.456, 0.406], "pixel_std": [0.229, 0.224, 0.225],
+                         "pad_value": 0, "interpolation": "nearest_for_masks_bilinear_for_images"}
+
+
 def write_registry_entry(registry: Path, config: PartsConfig, id2label: dict[int, str] | None = None) -> Path:
     """A tiny random-weight SegFormer with the manifest the trainer writes, under ``registry/<model_version>``."""
     labels = id2label or ID_TO_PART_CODE
@@ -49,6 +55,7 @@ def write_registry_entry(registry: Path, config: PartsConfig, id2label: dict[int
     (model_dir / "manifest.json").write_text(json.dumps({
         "model_id": config.model_id, "version": config.model_version, "taxonomy_version": config.taxonomy_version,
         "weights_sha256": hashlib.sha256(weights).hexdigest(), "status": "candidate"}), encoding="utf-8")
+    (model_dir / "preprocessing.json").write_text(json.dumps(TRAINER_PREPROCESSING), encoding="utf-8")
     return model_dir
 
 
@@ -128,6 +135,12 @@ def _edit_manifest(**changes):
     return apply
 
 
+def _edit_preprocessing(**changes):
+    def apply(model_dir: Path) -> None:
+        (model_dir / "preprocessing.json").write_text(json.dumps({**TRAINER_PREPROCESSING, **changes}), encoding="utf-8")
+    return apply
+
+
 def _append_to_weights(model_dir: Path) -> None:
     with (model_dir / "model.safetensors").open("ab") as handle:
         handle.write(b"tampered")
@@ -140,6 +153,13 @@ def _append_to_weights(model_dir: Path) -> None:
     pytest.param(_edit_manifest(taxonomy_version="parts-2.0.0"), "taxonomy_version_mismatch", id="another-taxonomy"),
     pytest.param(lambda d: (d / "model.safetensors").unlink(), "model_weights_missing", id="no-weights"),
     pytest.param(_append_to_weights, "model_weights_hash_mismatch", id="changed-weights"),
+    pytest.param(lambda d: (d / "preprocessing.json").unlink(), "preprocessing_missing", id="no-preprocessing-record"),
+    pytest.param(_edit_preprocessing(resize_policy="longest_edge_centre_pad"), "preprocessing_mismatch",
+                 id="trained-with-the-photo-centred"),
+    pytest.param(_edit_preprocessing(pad_value=124), "preprocessing_mismatch", id="trained-with-another-padding"),
+    pytest.param(_edit_preprocessing(input_size=640), "preprocessing_mismatch", id="trained-at-another-size"),
+    pytest.param(_edit_preprocessing(pixel_mean=[0.5, 0.5, 0.5]), "preprocessing_mismatch",
+                 id="trained-with-another-normalisation"),
 ])
 def test_load_parts_segmenter_refuses_an_entry_it_cannot_verify(registry: Path, config: PartsConfig, damage, reason_code):
     damage(registry / "parts" / "9.9.9-test")

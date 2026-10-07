@@ -3,7 +3,9 @@
 # macOS (Metal) / CPU: ordinary pip wheels select the appropriate platform.
 torch>=2.6,<3
 torchvision>=0.21,<1
-transformers>=4.48,<5
+# Same range as the application's `vision` extra (pyproject.toml), so a notebook run can be
+# served by the M1 worker. Runs saved under transformers 4 still reload: see load_run.
+transformers>=5.17,<6
 safetensors>=0.5,<1
 numpy>=2.1,<3
 Pillow>=11,<13

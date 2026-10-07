@@ -141,6 +141,111 @@ def test_reserved_and_supplied_groups_propagate_across_tasks(raw, tmp_path):
     assert len({row["group_id"] for row in reserved}) == 1
 
 
+# ---------------------------------------------------------------------------
+# Adopting a published parts split (data/splits/parts/<version>)
+# ---------------------------------------------------------------------------
+
+def _published_split(raw, folder, partitions=None, version="9.9.9"):
+    """A published split over the fixture's 12 parts photos: 8 train, 2 val, 2 test unless given."""
+    partitions = partitions or {"train": range(8), "val": range(8, 10), "test": range(10, 12)}
+    folder.mkdir(parents=True)
+    for partition, indexes in partitions.items():
+        rows = [{"example_id": f"{i}.png", "image_relative_path": f"File1/img/{i}.png",
+                 "content_sha256": data._file_hash(raw / f"Car damages dataset/File1/img/{i}.png")} for i in indexes]
+        (folder / f"{partition}.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    (folder / "split_manifest.json").write_text(json.dumps({"split_version": version, "status": "frozen"}))
+    return folder
+
+
+def _add_damage_only_photos(raw, count=6):
+    taxonomy = data._taxonomies()
+    folder = raw / "Car parts dataset"  # the damage subset, under its swapped folder name
+    title = next(iter(taxonomy["damage"]["title_to_id"]))
+    for i in range(100, 100 + count):
+        pixels = np.random.default_rng(i).integers(0, 256, (12, 16, 3), dtype=np.uint8)
+        Image.fromarray(pixels).save(folder / f"File1/img/{i}.png")
+        (folder / f"File1/ann/{i}.png.json").write_text(json.dumps({
+            "size": {"width": 16, "height": 12}, "objects": [obj(title, [[1, 1], [10, 1], [10, 8], [1, 8]])]}))
+
+
+def test_adopted_split_gives_parts_and_shared_damage_photos_the_published_partition(raw, tmp_path):
+    _add_damage_only_photos(raw)
+    published = _published_split(raw, tmp_path / "splits/parts/9.9.9")
+    manifest = data.prepare_hitl(raw, tmp_path / "prepared", seed=42, split_from=published)
+
+    expected = {f"{i}.png": partition for partition, indexes in
+                {"train": range(8), "val": range(8, 10), "test": range(10, 12)}.items() for i in indexes}
+    shared = [row for row in manifest["records"] if Path(row["source_image"]).name in expected]
+    assert len(shared) == 24  # 12 parts photos and the same 12 photos in the damage subset
+    assert all(row["split"] == expected[Path(row["source_image"]).name] for row in shared)
+    damage_only = [row for row in manifest["records"] if Path(row["source_image"]).name not in expected]
+    assert len(damage_only) == 6 and {row["task"] for row in damage_only} == {"damage"}
+    assert {row["split"] for row in damage_only} <= {"train", "val", "test"}
+    assert manifest["counts"]["parts"]["train"]["images"] == 8
+    assert manifest["counts"]["parts"]["val"]["images"] == manifest["counts"]["parts"]["test"]["images"] == 2
+
+    adopted = manifest["split"]["adopted_split"]
+    assert adopted["split_version"] == "9.9.9"
+    assert adopted["adopted_groups"] == 12 and adopted["shuffled_groups"] == 6
+    assert adopted["file_sha256"]["test.jsonl"] == data._file_hash(published / "test.jsonl")
+    assert manifest["preparation_config"]["split_from"]["file_sha256"] == adopted["file_sha256"]
+    assert data.prepare_hitl(raw, tmp_path / "prepared", seed=42, split_from=published)["manifest_hash"] \
+        == manifest["manifest_hash"]
+
+
+def test_a_preparation_without_an_adopted_split_keeps_its_configuration(raw, tmp_path):
+    manifest = data.prepare_hitl(raw, tmp_path / "prepared")
+    assert "split_from" not in manifest["preparation_config"]
+    assert "adopted_split" not in manifest["split"]
+    published = _published_split(raw, tmp_path / "splits/parts/9.9.9")
+    with pytest.raises(ValueError, match="new processed version"):
+        data.prepare_hitl(raw, tmp_path / "prepared", split_from=published)
+
+
+def test_a_changed_published_split_needs_a_new_prepared_version(raw, tmp_path):
+    published = _published_split(raw, tmp_path / "splits/parts/9.9.9")
+    data.prepare_hitl(raw, tmp_path / "prepared", split_from=published)
+    other = _published_split(raw, tmp_path / "splits/parts/9.9.10", version="9.9.10", partitions={
+        "train": range(2, 12), "val": range(0, 1), "test": range(1, 2)})
+    with pytest.raises(ValueError, match="new processed version"):
+        data.prepare_hitl(raw, tmp_path / "prepared", split_from=other)
+
+
+def test_adopted_split_refuses_a_parts_photo_the_published_split_does_not_list(raw, tmp_path):
+    published = _published_split(raw, tmp_path / "splits/parts/9.9.9", partitions={
+        "train": range(7), "val": range(8, 10), "test": range(10, 12)})  # photo 7 is in no partition
+    with pytest.raises(ValueError, match="1 parts photo.* not in the published split"):
+        data.prepare_hitl(raw, tmp_path / "prepared", split_from=published)
+    assert not (tmp_path / "prepared").exists()
+
+
+def test_adopted_split_refuses_a_published_photo_missing_from_the_export(raw, tmp_path):
+    published = _published_split(raw, tmp_path / "splits/parts/9.9.9")
+    with (published / "train.jsonl").open("a") as stream:
+        stream.write(json.dumps({"example_id": "gone.png", "content_sha256": "0" * 64}) + "\n")
+    with pytest.raises(ValueError, match="1 published photo.* not in the HITL export"):
+        data.prepare_hitl(raw, tmp_path / "prepared", split_from=published)
+
+
+def test_adopted_split_refuses_one_photo_published_in_two_partitions(raw, tmp_path):
+    # The same pixels under another encoding: one group here, two photos to a split keyed on file bytes.
+    folder = raw / "Car damages dataset"  # the parts subset, under its swapped folder name
+    with Image.open(folder / "File1/img/0.png") as image:
+        image.save(folder / "File1/img/12.png", compress_level=0)
+    shutil.copy(folder / "File1/ann/0.png.json", folder / "File1/ann/12.png.json")
+    published = _published_split(raw, tmp_path / "splits/parts/9.9.9", partitions={
+        "train": range(8), "val": range(8, 10), "test": range(10, 13)})  # 0 trains, its copy 12 tests
+    with pytest.raises(ValueError, match="more than one partition"):
+        data.prepare_hitl(raw, tmp_path / "prepared", split_from=published)
+
+
+def test_adopted_split_refuses_a_reservation_of_a_published_photo(raw, tmp_path):
+    published = _published_split(raw, tmp_path / "splits/parts/9.9.9")
+    reserved = data._file_hash(raw / "Car damages dataset/File1/img/0.png")
+    with pytest.raises(ValueError, match="reserved"):
+        data.prepare_hitl(raw, tmp_path / "prepared", split_from=published, reserved_ids=[reserved])
+
+
 def test_overlap_policy_is_versioned_and_legacy_config_is_unchanged(raw, tmp_path):
     nested = data.prepare_hitl(raw, tmp_path / "nested")
     assert nested["conversion_version"] == data.CONVERSION_VERSION

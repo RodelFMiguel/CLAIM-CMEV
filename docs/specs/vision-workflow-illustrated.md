@@ -35,7 +35,7 @@ The example keeps both observation IDs. The representative fraction is `1500 / 2
 
 ## Current implementation boundaries
 
-- **M1 adapter:** `PartsSegmenter.segment_photo()` implements model inference, interpolation, softmax, argmax and part-record construction. Its current right/bottom black padding differs from the notebooks' centred mean-colour padding. Match serving preprocessing to the selected checkpoint and reconcile the contract's padding-exclusion requirement before acceptance. The drawing does not silently select a new padding policy. The adapter's image-quality record currently has only basic resolution screening, not the full M3 measurements.
+- **M1 adapter:** `run_parts_segmentation()` implements model inference, interpolation, softmax, argmax and part-record construction. It builds the model frame with the photo top-left and black padding below or to the right (`longest_edge_pad`), sets padding to background in the stored mask and leaves it out of the pixel counts and confidences. The notebooks' earlier runs used a centred frame with mean-colour padding; `TrainingConfig(frame="serving")` now trains and validates in the worker's frame, and the worker refuses a registry entry whose `preprocessing.json` records another one. Measured on the centred-frame SegFormer-B2 run `f9be9131`, feeding its validation photos in the serving frame lowers foreground mIoU from 0.7989 to 0.7929. The adapter's image-quality record currently has only basic resolution screening, not the full M3 measurements.
 - **Shared notebooks:** `LogitsAdapter.forward()` returns upsampled logits. `_predict()` normally takes argmax directly: softmax preserves the winning class, so probabilities are unnecessary for class-only evaluation. An optional validation-selected background offset changes the selection rule; the full drawing deliberately shows the standard zero-offset path. Confidence semantics for an offset-based serving path still require explicit integration.
 - **M2:** region extraction and assignment code exist. The live inference/artifact-persistence adapter remains pending. The shared serving observation schema accepts CarDD damage classes; the eight-class HITL experiment cannot be plugged into it without an explicit contract change.
 - **M3:** deterministic grouping, screening and coverage logic exist, with confirmation reassessment connected to fixture evidence. End-to-end live model integration is not demonstrated by this diagram. The M3 specification allows pixel-based screening, while integration §8.4 describes a records-only adapter; the runtime owner of measurement computation needs reconciliation.
@@ -46,7 +46,8 @@ The example keeps both observation IDs. The representative fraction is `1500 / 2
 | Behaviour | Code / specification |
 | --- | --- |
 | Model adapter and resizing | [training.py](../../pipelines/vision/training.py): `build_model`, `LogitsAdapter.forward`, `_predict` |
-| M1 runtime inference | [parts/adapter.py](../../src/claim_cmev/vision/parts/adapter.py): `segment_photo` |
+| M1 runtime inference | [parts/adapter.py](../../src/claim_cmev/vision/parts/adapter.py): `run_parts_segmentation`, `verify_checkpoint` |
+| Notebook run to registry entry | [registry.py](../../pipelines/vision/registry.py): `export_parts_run` |
 | M2 component extraction | [damage/regions.py](../../src/claim_cmev/vision/damage/regions.py): `extract_regions` |
 | M2 overlap and records | [damage/assignment.py](../../src/claim_cmev/vision/damage/assignment.py): `assign_damage_to_part` |
 | M3 grouping | [multiview/grouping.py](../../src/claim_cmev/vision/multiview/grouping.py): `group_key`, `build_groups` |

@@ -237,8 +237,27 @@ def _read_groups(path: str | Path | None) -> list[dict]:
     return sorted(rows, key=lambda row: _json_bytes(row))
 
 
+def _read_published_split(path: str | Path) -> dict:
+    """A published parts split (``data/splits/parts/<version>``): file content hash -> partition."""
+    folder = Path(path)
+    membership, hashes = {}, {}
+    for partition in ("train", "val", "test"):
+        file = folder / f"{partition}.jsonl"
+        if not file.is_file():
+            raise ValueError(f"Published split has no {file.name}: {folder}")
+        hashes[file.name] = _file_hash(file)
+        for line in file.read_text().splitlines():
+            if line.strip():
+                content = json.loads(line)["content_sha256"]
+                if membership.setdefault(content, partition) != partition:
+                    raise ValueError(f"Published split lists one photo in more than one partition: {content}")
+    manifest = folder / "split_manifest.json"
+    version = json.loads(manifest.read_text()).get("split_version") if manifest.is_file() else None
+    return {"membership": membership, "split_version": version or folder.name, "file_sha256": hashes}
+
+
 def _assign_splits(records: list[dict], seed: int, val_fraction: float, test_fraction: float,
-                   group_rows: list[dict], reserved: set[str]) -> dict:
+                   group_rows: list[dict], reserved: set[str], published: dict | None = None) -> dict:
     parent = list(range(len(records)))
 
     def find(i):
@@ -283,12 +302,28 @@ def _assign_splits(records: list[dict], seed: int, val_fraction: float, test_fra
     components = {}
     for i, record in enumerate(records):
         components.setdefault(find(i), []).append(record)
+    membership = published["membership"] if published else {}
+    if published:
+        parts = {row["content_sha256"] for row in records if row["task"] == "parts"}
+        if parts - set(membership):
+            raise ValueError(f"{len(parts - set(membership))} parts photo(s) of the HITL export are not in the "
+                             "published split")
+        if set(membership) - parts:
+            raise ValueError(f"{len(set(membership) - parts)} published photo(s) are not in the HITL export's "
+                             "parts subset")
     groups = {}
     for root, rows in components.items():
         group_id = _digest(sorted({row["content_sha256"] for row in rows}))
         for row in rows:
             row["group_id"] = group_id
-        groups[group_id] = "reserved" if root in reserved_roots else None
+        partitions = {membership[row["content_sha256"]] for row in rows if row["content_sha256"] in membership}
+        if len(partitions) > 1:
+            raise ValueError("Photos grouped as duplicates are in more than one partition of the published split: "
+                             + ", ".join(sorted(row["source_image"] for row in rows)))
+        if partitions and root in reserved_roots:
+            raise ValueError("A reserved ID names a photo of the published split; change that split to reserve it")
+        groups[group_id] = "reserved" if root in reserved_roots else partitions.pop() if partitions else None
+    adopted_groups = sum(1 for split in groups.values() if split in {"train", "val", "test"})
     available = sorted(key for key, split in groups.items() if split is None)
     random.Random(seed).shuffle(available)
     n_val, n_test = round(len(available) * val_fraction), round(len(available) * test_fraction)
@@ -298,11 +333,18 @@ def _assign_splits(records: list[dict], seed: int, val_fraction: float, test_fra
         groups[key] = "test" if i < n_test else "val" if i < n_test + n_val else "train"
     for record in records:
         record["split"] = groups[record["group_id"]]
-    return {"group_counts": dict(Counter(groups.values())),
-            "grouping_policy": "union of file SHA256, decoded RGB SHA256 and supplied group CSV",
-            "provided_group_rows": len(group_rows), "reserved_identifiers": len(reserved),
-            "vehicle_independence_established": False,
-            "limitations": "Exact/pixel duplicates are grouped. Vehicle/related-view identity is unknown unless supplied and reviewed."}
+    summary = {"group_counts": dict(Counter(groups.values())),
+               "grouping_policy": "union of file SHA256, decoded RGB SHA256 and supplied group CSV",
+               "provided_group_rows": len(group_rows), "reserved_identifiers": len(reserved),
+               "vehicle_independence_established": False,
+               "limitations": "Exact/pixel duplicates are grouped. Vehicle/related-view identity is unknown unless supplied and reviewed."}
+    if published:
+        summary["adopted_split"] = {
+            "split_version": published["split_version"], "file_sha256": published["file_sha256"],
+            "adopted_groups": adopted_groups, "shuffled_groups": len(available),
+            "policy": "a group holding a photo of the published parts split takes that photo's partition; the "
+                      "other groups are shuffled with the seed and fractions"}
+    return summary
 
 
 def _near_duplicates(records: list[dict]) -> list[dict]:
@@ -329,13 +371,19 @@ def prepare_hitl(raw_root: str | Path, output_dir: str | Path, seed: int = 42,
                  group_csv: str | Path | None = None,
                  reserved_ids: Iterable[str] | str | Path | None = None,
                  overlap_policy: str = "nested",
-                 nested_containment: float = DEFAULT_NESTED_CONTAINMENT) -> dict:
+                 nested_containment: float = DEFAULT_NESTED_CONTAINMENT,
+                 split_from: str | Path | None = None) -> dict:
     """Prepare BOTH tasks together; reuse identical versions, reject changed inputs.
 
     ``output_dir`` should be ``data/processed/hitl/<version>``. Group CSV columns
     are ``group_id`` plus ``sample_id`` or ``content_sha256``/``pixel_sha256``.
     Reserved IDs accept any of those identifiers, as a list or JSON/text file.
     Near-duplicate candidates are an audit aid, never an assertion of identity.
+
+    ``split_from`` names a published parts split (``data/splits/parts/<version>``). Every
+    parts photo then takes its published partition, and so does the same photo in the damage
+    subset; the seed and fractions only place the photos that split does not list. Without
+    it, the seed and fractions place every group.
     """
     if not (0 <= val_fraction < 1 and 0 <= test_fraction < 1 and val_fraction + test_fraction < 1):
         raise ValueError("Split fractions must be nonnegative and sum to less than one")
@@ -353,6 +401,7 @@ def prepare_hitl(raw_root: str | Path, output_dir: str | Path, seed: int = 42,
                     "receipt": json.loads(receipt_path.read_text())}
                    if receipt_path.is_file() else {"status": "acquisition_receipt_not_present"})
     reserved, group_rows = _read_reserved(reserved_ids), _read_groups(group_csv)
+    published = _read_published_split(split_from) if split_from is not None else None
     if overlap_policy not in OVERLAP_POLICIES:
         raise ValueError(f"Unknown overlap policy {overlap_policy!r}; choose {sorted(OVERLAP_POLICIES)}")
     policy_name, conversion_version = OVERLAP_POLICIES[overlap_policy]
@@ -370,6 +419,9 @@ def prepare_hitl(raw_root: str | Path, output_dir: str | Path, seed: int = 42,
     if overlap_policy == "nested":
         # Absent for ignore_all so existing v1 preparations keep their configuration hash.
         config["nested_containment"] = nested_containment
+    if published:
+        # Absent otherwise, so preparations made without a published split keep theirs too.
+        config["split_from"] = {key: published[key] for key in ("split_version", "file_sha256")}
     config_hash = _digest(config)
     if output_dir.exists():
         manifest = load_prepared(output_dir)
@@ -416,7 +468,7 @@ def prepare_hitl(raw_root: str | Path, output_dir: str | Path, seed: int = 42,
                 record["overlap_stats"] = overlap_stats
             records.append(record)
         records.sort(key=lambda row: row["sample_id"])
-        split = _assign_splits(records, seed, val_fraction, test_fraction, group_rows, reserved)
+        split = _assign_splits(records, seed, val_fraction, test_fraction, group_rows, reserved, published)
         candidates = _near_duplicates(records)
         (stage / "near_duplicate_candidates.json").write_text(json.dumps(candidates, indent=2) + "\n")
         split_hashes, counts = {}, {}

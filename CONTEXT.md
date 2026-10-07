@@ -1,8 +1,9 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-10-06 (Asia/Singapore), illustrated M1/M2/M3 workflow added; training handoffs remain dated 2026-10-02 and the 2026-09-27 application verification remains historical.
-- **Implementation baseline:** HEAD `343ef1a` on branch `image-worker` (training checkpoint commit). Application code last changed in `6e59bc2` on `code-skeleton`. No push has been verified.
-- **Read first for training:** the [M2 CarDD notebook handoff](#m2-cardd-notebook-and-converter-2026-10-02), the [M2 recall/regularisation handoff](#m2-recall-regularisation-presets-and-background-offset-2026-10-02), the [M2 failure-review handoff](#m2-failure-review-and-tiny-fitting-diagnostic-2026-10-02), then the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
+Last updated: 2026-10-08 (Asia/Singapore), notebook pipeline joined to the M1 serving path on `image-worker`; the 2026-09-27 application verification remains historical.
+- **Implementation baseline:** branch `image-worker`, which the user rebased onto `M1-Implementation` (`92d9d69`). The 2026-10-08 notebook/serving changes are in the commit that contains this line, on top of `2929064`; use Git history for its identifier. The rebase rewrote the branch, so publishing it replaces the earlier `origin/image-worker`; `git status -sb` shows whether the remote has it.
+- **Read first for M1:** the [notebook-to-serving handoff](#notebook-pipeline-joined-to-the-m1-serving-path-2026-10-08), then the [served-checkpoint handoff](#m1-served-checkpoint-connected-and-run-in-the-compose-stack-2026-10-07) and the [worker start-up handoff](#m1-worker-start-up-model-loading-and-opt-in-switch-2026-10-07).
+- **Read first for training:** the [M2 CarDD notebook handoff](#m2-cardd-notebook-and-converter-2026-10-02), the [M2 recall/regularisation handoff](#m2-recallregularisation-presets-and-background-offset-2026-10-02), the [M2 failure-review handoff](#m2-failure-review-and-tiny-fitting-diagnostic-2026-10-02), then the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
 - **Application baseline:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
 - **Older entries:** the chronological handoffs below keep their original status, which is sometimes superseded.
 
@@ -23,12 +24,12 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 | --- | --- |
 | Repository | The pipeline is in `f280209`. The defect remediation, specification notes and this file are in `6e59bc2`. Both are local commits, and no push has been verified |
 | Specifications | The full target is broader than the implementation. Only three M9 checklist boxes are ticked, and all three are supported by code. The ticking understates progress, because several implemented items are still unticked |
-| Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes |
+| Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes. Since 2026-10-07 an optional real M1 worker, `cmev-worker-parts`, can replace the fixture parts producer through `infra/compose/docker-compose.parts.yml`. It last ran in an isolated Compose project on 2026-10-07, before the 2026-10-08 frame check was added |
 | Application | Connected to the API/workbench: typed review actions, M6 decision replay, M3 reruns after human identity/coverage confirmations, pinned cost lookup, review-state overlays (dismissals and accepted scope), durable request retry, stage retry and frozen M9 reports. The evidence image overlays (`review/overlays.py`) are a library only; no endpoint or UI serves them |
-| Data and models | No trained model exists. M1 has **no code**: `vision/parts/` holds only `.gitkeep`. The M2 assignment, M4 raster/geometry/OCR, M5 parser and M6 linker are libraries covered by unit tests only; the pipeline never calls them. Derived masks and pages are placeholder URIs. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
-| Offline vision training (2026-10-02) | Manual SegFormer-B2 HITL notebooks. M1 on v2 labels with `fixed_aug`: validation foreground mIoU 0.799 (run `f9be9131`). M2: 0.222 (`6203ed59`) and 0.232 (`eacada43`); both miss about half of damage pixels and overfit after about epoch 10. The M2 default is now the untested `damage_focus` preset. All are validation results; the test split is unused. Runtime adapters remain pending |
+| Data and models | M1 has a serving adapter and worker (`vision/parts/`) and serves the teammate-trained SegFormer-B3 `parts/0.8.0-b3-compound` when the opt-in Compose file is used; the weights are local and not in Git. M2 to M8 do not read real M1 output, so every assessment is still a fixture. No M2 or M6 model is integrated. The M2 assignment, M4 raster/geometry/OCR, M5 parser and M6 linker are libraries covered by unit tests only; the pipeline never calls them. Derived masks and pages are placeholder URIs. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
+| Offline vision training (2026-10-08) | Two M1 pipelines. Scripts (`train_segformer.py`): SegFormer-B3 `parts/0.8.0-b3-compound`, validation foreground mIoU 0.7253 and test 0.7303 on split 0.1.1; that test partition was used to compare runs. Notebooks (`training.py`): SegFormer-B2 `f9be9131`, validation 0.799 on prepared data v2 in the centred frame; not comparable with the B3 figures (other labels, other split, and 109 of its training photographs are in the 0.1.1 test partition). Since 2026-10-08 the notebooks prepare v3 on the published split, M1 trains in the worker's frame and a run can be exported as a registry candidate; **no run exists on v3 yet**. M2 HITL: 0.222, 0.232 and 0.250 validation (`6203ed59`, `eacada43`, `3f7eb21b`). M2 CarDD: run `7981a76f`, validation foreground mIoU 0.737 on CarDD's official validation split (810 images). All notebook figures are validation results; their test splits are unused. No M2 runtime adapter exists |
 | Shared agent workflows | Canonical skills remain under `.agents/skills`, with no workflow changes |
-| Validation | At `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. Docker has not been re-run since `6e59bc2`. Independent verification found remaining and new defects; see the 2026-09-27 section |
+| Validation | On the 2026-10-08 working tree: the full Python suite has 1605 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript build, the browser tests and Docker were not re-run for it. Earlier, at `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. The `full` profile and the browser tests have not been re-run in Docker since `6e59bc2`; the lean stack with the M1 worker ran in an isolated Compose project on 2026-10-07. Independent verification found remaining and new defects; see the 2026-09-27 section |
 | Evaluation | No model accuracy, real price calibration, real claim outcome, usability comparison or financial benefit measured |
 
 
@@ -1755,3 +1756,70 @@ Changed paths and completed behaviour:
 Checks actually run, results and artifact locations: the full Python suite passed immediately before the check-in (1506 passed, 3 skipped). The candidates were screened for credential-like strings and large files; none were found.
 Uncommitted work, limitations and missing prerequisites: not pushed. Two presentation files under `docs/` (about 13 MB each, never tracked on any branch) were left untracked. Model weights, converted masks and the environment snapshot stay in ignored locations.
 Next concrete step and agreed owner (or unassigned): the user decides when to push or open a pull request.
+
+
+## Notebook pipeline joined to the M1 serving path (2026-10-08)
+
+Date/time and timezone: 2026-10-08, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request, after the user rebased `image-worker` onto `M1-Implementation`.
+Task and relevant module: M1 offline training and serving. The rebase put two M1 pipelines side by side: the notebooks (`pipelines/vision/training.py`) and the scripts that trained the served checkpoint (`train_segformer.py`). They used different library versions, splits and model frames, and a notebook run could not reach the worker.
+Branch / baseline commit / resulting commit or PR: `image-worker` / `2929064` / the commit containing this entry; use Git history for its identifier.
+
+Changed paths and completed behaviour:
+- `pipelines/vision/training.py`:
+  - `load_run` translates tensor names saved under transformers 4 with the library's own rename table. Before this, every saved notebook run failed to reload under transformers 5 with several hundred missing and unexpected keys. Loading stays strict.
+  - `TrainingConfig(frame="serving")` builds the M1 worker's model frame: photograph top-left, black padding, the application's resize. The default stays `"centred"`, so saved runs reload unchanged. A serving-frame run records `input_size`, `resize_policy`, `pixel_mean`, `pixel_std` and `pad_value`.
+- New `pipelines/vision/registry.py`: `export_parts_run(run_dir, "parts/<name>")` writes a notebook run as a registry entry with status `candidate`. It refuses a run of another task, architecture, class order, frame or size, and never replaces an entry. Before the entry appears it is loaded with the worker's verification and loader, and its logits are compared with the run's.
+- `src/claim_cmev/vision/parts/adapter.py`: `verify_checkpoint` reads the entry's `preprocessing.json` and refuses the entry when it is missing (`preprocessing_missing`) or records another input size, resize policy, normalisation or padding value (`preprocessing_mismatch`). The script trainer already wrote that file; nothing read it.
+- `pipelines/vision/hitl_data.py`: `prepare_hitl(..., split_from=<published split folder>)` gives every parts photograph, and the same photograph in the damage subset, its published partition. The seed and ratios place only the remaining photographs. Without `split_from` the configuration hash is unchanged.
+- `requirements-training.txt`: transformers 5.17 or later, like the `vision` extra.
+- `tests/contracts/test_taxonomy.py`: the real-HITL-folder test looked only directly under `data/raw` and skipped although the export was present one folder down. It now looks where the pipelines look.
+- Notebooks:
+  - M1 and M2 HITL prepare `data/processed/hitl/v3` with `SPLIT_FROM = data/splits/parts/0.1.1`.
+  - M1 sets `frame="serving"` and has a new opt-in export section.
+  - The outputs of the changed code cells were cleared. The other outputs, including the training outputs, are from the earlier v2 runs.
+  - The CarDD notebook only gained a sentence on reloading.
+- New `data/manifests/hitl_training_preparation_20261008.json`, the tracked record of v3.
+- Documentation: the M1 specification gained a dated note; `pipelines/README.md`, `notebooks/README.md`, `docs/training-hitl-notebooks.md` and `infra/README.md` describe the changes. `docs/specs/vision-workflow-illustrated.md` and `docs/diagrams/vision-tensor-workflow.dot` named a removed function and described the frames as unreconciled. The 13 absolute workstation links in `docs/specs/misc-design-explanations.md` are now relative.
+- Tests: `tests/unit/test_vision_registry_export.py` (new), additions to `test_vision_training.py`, `test_hitl_training_data.py` and `test_parts_serving.py`.
+
+Decisions (accepted/proposed) and references:
+- Accepted by the user on 2026-10-08: new notebook runs use the published parts split 0.1.1.
+- Proposed: the worker refuses a registry entry without a matching `preprocessing.json`.
+- Proposed: a centred-frame run is not exportable. The measured cost of the mismatch is small (see below), but its recorded score would not describe what is served.
+- The M1 specification's step 5 proposes mean-pixel padding; the worker and every registry entry pad with black. The note in the specification records this without editing the step.
+
+Checks actually run, results and artifact locations:
+- Full Python suite in the workstation `venv` (torch 2.14.0, transformers 5.19.0): 1605 passed, 1 skipped (the optional real-PaddleOCR test). Before this work on the rebased branch: 1570 passed, 3 skipped.
+- All six saved notebook runs reload under transformers 5.19. Two were re-evaluated on validation, in scratch copies so the recorded artifacts were not overwritten:
+
+| Run | Recorded foreground mIoU | Reloaded under transformers 5 |
+| --- | --- | --- |
+| `parts-segformer-20260930T161904Z-f9be9131` (147 images, v2) | 0.798910 | 0.798910 |
+| `damage_cardd-segformer-20261002T043059Z-7981a76f` (810 images) | 0.737395 | 0.737395 |
+
+- The pretrained `nvidia/mit-b2` and `nvidia/segformer-b2-finetuned-ade-512-512` encoders load completely under transformers 5; only the new head or classifier is initialised.
+- A unit test holds a serving-frame validation tensor equal to the tensor the worker passes to its model for the same photograph.
+- `data/processed/hitl/v3` was prepared on the real export (manifest `21afa6b37cf13286...`, 64 s):
+  - Parts 706/145/147, damage 565/119/130.
+  - No parts photograph and none of the 441 shared damage photographs is off its published partition.
+  - Every mask hash equals v2.
+  - v1 and v2 reload with their original manifest hashes.
+- In v2, 109 parts photographs of the training partition are in the published test partition. This is why v2 runs cannot be scored on that partition.
+- Frame cost: run `f9be9131` scores 0.7989 validation foreground mIoU in its own frame and 0.7929 when the same photographs are fed in the serving frame. The largest per-class drop is 0.018 (mirror).
+- Smoke run, not a model result: 16 training photographs of v3, one epoch, SegFormer-B2, `frame="serving"`, in a scratch folder. It was exported, loaded by `load_parts_segmenter` and run on one real photograph (status succeeded, side unknown).
+- The real `parts/0.8.0-b3-compound` entry passes the new frame check (`tests/unit/test_parts_segmenter_live.py`).
+- The setup cells of all four notebooks ran from a script against the real data, without saving outputs.
+- Not run: Docker, the browser tests and the TypeScript build. The parts image has not been rebuilt with the frame check.
+
+Uncommitted work, limitations and missing prerequisites:
+- Committed on 2026-10-08 at the user's request, who also asked for the branch to be pushed. Because of the rebase the push replaces the earlier `origin/image-worker` (tip `cf0e237`). Its five commits are the pre-rebase copies of the user's own commits: every file that only they touched is identical in the rebased branch. `git status -sb` shows whether the remote has the new branch.
+- Not committed: two presentation files under `docs/`, left untracked as before. A leftover `autostash` entry with a one-line `.gitignore` change is in the stash list and was not touched.
+- No model has been trained on v3 or in the serving frame. The existing B2 `f9be9131` cannot be exported.
+- The published test partition was used to compare the script pipeline's runs, so it is not an untouched test set for either pipeline.
+- The notebook and script evaluators are not comparable: the notebook masks use the `nested` overlap policy and leave padding out of the metrics; `eval_segmentation.py` labels padding as background and counts it.
+- The M2 notebooks keep the centred frame. M2 will need the M1 frame when its masks are overlaid on part masks, and the CarDD run `7981a76f` was trained in the centred frame.
+- Notebook outputs of unchanged cells still show v2 figures until the notebooks are rerun.
+- Earlier notes that are still open: the parts image installs a CUDA PyTorch build on CPU, the overlay is rendered inside the handler's transaction, three configuration keys are unused, and there is no warm-up inference.
+
+Next concrete step and agreed owner (or unassigned): the user reruns the M1 notebook on v3 (`fixed_aug`, `frame="serving"`), compares on validation, and exports the chosen run with the notebook's last section. Whether a notebook B2 or the script B3 is served, and on which evaluation, is a team decision. Unassigned: decide the M2 frame before an M2 worker is written.
