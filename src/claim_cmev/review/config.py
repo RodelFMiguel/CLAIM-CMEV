@@ -59,6 +59,7 @@ class PrintText(_Strict):
     cost_basis_statement: str = Field(min_length=1)
     final_approval_not_recorded: str = Field(min_length=1)
     fixture_notice: str = Field(min_length=1)
+    fixture_notice_documents_only: str = Field(min_length=1)
     no_judgement_statement: str = Field(min_length=1)
 
 

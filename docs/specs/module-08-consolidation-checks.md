@@ -501,3 +501,18 @@ Assessment header: `assessment_revision = 4`, `input_revision = 3`, `cost_table_
 ### Accepted scope input (2026-09-25)
 
 Consolidation consumes prior validated `accept_addition` review events for the same claim. A physical part/side already accepted into human-agreed scope is not proposed again; the missing-scope check recomputes over remaining candidates. Accepted operation, quantity and optional amount remain separate human inputs in the review/report and assessment input snapshot. They never become a workshop-declared row, printed price, model prediction or final approval.
+
+
+### Supported damage types per vocabulary (2026-10-08)
+
+**Accepted by the user on 2026-10-08 ([ADR 0004](../adr/0004-hitl-damage-model-and-vocabulary.md)).** `damage.supported_types` is the CarDD list and applies to observations whose `versions.taxonomy` is `damage-cardd-*`. The new `damage.supported_types_hitl` applies to observations pinned to `damage-hitl-*`. Rules R7, R8 and A3 ask the configuration whether an observation's type is supported, so the shared spellings `dent` and `scratch` are never judged by the other vocabulary's list. `rules_config_version` is `m8-rules/0.2.0`. No CarDD outcome changes.
+
+All eight HITL labels are listed as supported, meaning the served model was trained on them. Rule R8 can therefore report a declared repair as `unsupported` from this model's output. The decision is to keep that finding and leave the judgement to the surveyor; no rule withholds it.
+
+How much such a finding is worth, measured on 71 HITL validation photographs: the served model leaves 69 of 210 labelled damage regions (33%) without any detection, and marks 0.15 of flaking pixels, 0.40 of broken-part, 0.43 of paint-chip and 0.52 of missing-part as damage of any type. On its test split its IoU is below 0.10 for cracked, flaking, paint-chip and corrosion. "No supported damage in adequate views" from this model is weak evidence of absence, and the report should not be read as stronger than that.
+
+### Withhold negative conclusions on discarded damage (2026-10-08)
+
+At R7, when no confident supporting observation exists, inspect the filtering diagnostics for every confirmed covering photograph. Any discarded low-confidence pixels, small components or components beyond the cap yield `insufficient_evidence` / `damage_evidence_uncertain`. Missing or null diagnostics on real coverage also withhold; historical fixture rule cases retain their existing meaning. The photographic check retains affected photo IDs and filtering counts (or null) in its detail.
+
+This is a conservative photo-level gate: discarded pixels are not localised to a particular physical part, so any filtering in a confirmed covering photograph can withhold a negative conclusion for that slot. Filtering in unrelated photographs does not gate the slot. Confident positive observations still support the photographic check. Recorded zero filtering permits the existing negative-finding rule, including under the HITL model accepted in ADR 0004. Neither damage labels nor thresholds change. Rules configuration is `m8-rules/0.2.1`; prior assessments and frozen reports are not rewritten.

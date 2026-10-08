@@ -84,7 +84,7 @@ def test_rule_maps_and_m7_lookup_codes_are_all_catalogued():
 # ---------------------------------------------------------------- configuration
 def test_default_config_carries_the_proposed_spec_values():
     config = load_rule_config()
-    assert config.rules_config_version == "m8-rules/0.1.0"
+    assert config.rules_config_version == "m8-rules/0.2.1"
     assert config.damage.min_observation_confidence == 0.50 and set(config.damage.supported_types) == set(DAMAGE_CODES)
     assert config.additions.min_observation_confidence == 0.60
     assert config.coverage.require_human_confirmation_for_negative is True

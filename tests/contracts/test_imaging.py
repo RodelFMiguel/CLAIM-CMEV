@@ -28,9 +28,12 @@ def test_observation_valid_and_round_trip():
 
 @pytest.mark.parametrize("overrides", [
     {"side": "left"},  # a model never produces a side
-    {"damage_code": "corrosion"},  # a v1/HITL label under the CarDD taxonomy
+    {"damage_code": "corrosion"},  # a HITL label under the CarDD taxonomy
     {"damage_code": "unknown"},
-    {"versions": {"taxonomy": "damage-hitl-1.0.0"}},  # contingency taxonomy on a v2 record
+    {"versions": {"taxonomy": "damage-hitl-1.0.0"}, "damage_code": "glass-shatter"},  # a CarDD label under HITL
+    {"versions": {"taxonomy": "damage-hitl-1.0.0"}, "damage_code": "crack"},  # HITL says "cracked"
+    {"versions": {"taxonomy": "damage-coco-1.0.0"}},  # a damage taxonomy the contract does not know
+    {"versions": {"damage_model": "d-1"}},  # no damage taxonomy named at all
     {"part_code": None},  # assigned without a part
     {"assignment_status": "unresolved"},  # unresolved with a part and no reason
     {"part_code": None, "assignment_status": "unresolved"},  # null part without part_reason
@@ -45,6 +48,16 @@ def test_observation_valid_and_round_trip():
 def test_observation_invalid(overrides):
     with pytest.raises(ValidationError):
         ImageDamageObservation(**observation(**overrides))
+
+
+@pytest.mark.parametrize("code", ["dent", "cracked", "scratch", "flaking", "broken-part", "paint-chip",
+                                  "missing-part", "corrosion"])
+def test_observation_accepts_a_hitl_label_only_under_the_hitl_taxonomy(code):
+    """The HITL contingency vocabulary is a second, separate vocabulary: the record names which one it uses."""
+    obs = ImageDamageObservation(**observation(
+        damage_code=code, versions={"taxonomy": "damage-hitl-1.0.0", "damage_model": "d-1"}))
+    assert obs.damage_code == code and obs.versions["taxonomy"] == "damage-hitl-1.0.0"
+    assert ImageDamageObservation.model_validate_json(obs.model_dump_json()) == obs
 
 
 def test_unresolved_observation_keeps_candidates_and_reason():
@@ -177,3 +190,23 @@ def test_letterbox_round_trip_to_original_photo():
                                 "pad_top": 0.0})
     assert rotated.original_size == (3024, 4032)
     assert rotated.model_box_to_original_norm((64.0, 0.0, 448.0, 512.0)) == pytest.approx((0.0, 0.0, 1.0, 1.0))
+
+
+def test_coverage_filtering_round_trip_preserves_zero_unknown_and_historical_absence():
+    from claim_cmev.contracts.imaging import DamageFiltering
+
+    historical = PartCoverage(**coverage())
+    assert historical.damage_filtering == {}
+    counts = DamageFiltering(dropped_low_confidence_pixels=0, below_min_pixels_count=0,
+                              max_components_exceeded_count=0)
+    row = PartCoverage.model_validate({**historical.model_dump(), "damage_filtering": {
+        "photo-clean": counts, "photo-unknown": None,
+        "photo-uncertain": counts.model_copy(update={"dropped_low_confidence_pixels": 400})}})
+    assert PartCoverage.model_validate_json(row.model_dump_json()) == row
+    assert row.damage_filtering["photo-unknown"] is None
+    assert not row.damage_filtering["photo-clean"].discarded
+    assert row.damage_filtering["photo-uncertain"].discarded
+    for bad in ({}, {**counts.model_dump(), "dropped_low_confidence_pixels": -1},
+                {**counts.model_dump(), "dropped_low_confidence_pixels": None}):
+        with pytest.raises(ValidationError):
+            DamageFiltering.model_validate(bad)

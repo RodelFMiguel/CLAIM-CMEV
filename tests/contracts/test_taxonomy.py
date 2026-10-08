@@ -1,6 +1,7 @@
 """Versioned vocabulary: YAML matches the contract literals, no taxonomy merge, HITL by class titles."""
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from claim_cmev.contracts.common import (
     COST_OPERATIONS,
     COST_VEHICLE_CLASSES,
     DAMAGE_CODES,
+    HITL_DAMAGE_CODES,
+    damage_codes_for,
     OPERATIONS,
     PART_CODES,
     SIDES,
@@ -67,10 +70,37 @@ def test_fixed_cost_basis_semantics():
     assert {"side", "damage_type", "model_year"} == set(basis["excluded_from_key"])
 
 
+# The notebooks' prepared data records the SHA-256 of these three files in its preparation
+# configuration, and `prepare_hitl` / `prepare_cardd` refuse to reload a prepared version when
+# the configuration differs. Editing even a comment therefore orphans data/processed/hitl/v1-v3
+# and data/processed/cardd/v1, and every run trained on them. Change a file only together
+# with a new prepared version, and update its hash here in the same change.
+PREPARED_DATA_TAXONOMY_SHA256 = {
+    "parts.yaml": "9a4eafae322d23f9d83402207cffaf612e0d5c7eb1f96ea3b713f55e9b69aa14",
+    "damage_hitl.yaml": "65d357bf1c333da7553d56d52e7f481e8eb466370a2f7c765a77241a539ba1e4",
+    "damage_cardd.yaml": "73a7e9d11e7ce1108beafb16bba47f580197ae6a8082356e35f050e0b23e9c81",
+}
+
+
+@pytest.mark.parametrize("name", sorted(PREPARED_DATA_TAXONOMY_SHA256))
+def test_taxonomy_files_the_prepared_data_hashes_are_unchanged(name):
+    digest = hashlib.sha256((REPO / "configs" / "taxonomy" / name).read_bytes()).hexdigest()
+    assert digest == PREPARED_DATA_TAXONOMY_SHA256[name], (
+        f"configs/taxonomy/{name} changed: the prepared HITL and CarDD training data no longer reloads. "
+        "Restore the file, or prepare a new data version and update the hash in this test.")
+
+
 def test_damage_taxonomies_are_never_merged():
     cardd, hitl = load_damage_cardd(), load_damage_hitl()
     assert cardd.version != hitl.version
-    assert load_damage_hitl().meta["active"] is False
+    # Both are accepted on records since 2026-10-08 (ADR 0004), each under its own taxonomy
+    # version. The contracts decide that, not the files' `active` flag: the files cannot be
+    # edited without invalidating prepared training data (see the test below).
+    assert damage_codes_for(cardd.version) == cardd.codes == DAMAGE_CODES
+    assert damage_codes_for(hitl.version) == hitl.codes == HITL_DAMAGE_CODES
+    with pytest.raises(ContractError) as unknown:
+        damage_codes_for("damage-coco-1.0.0")
+    assert unknown.value.reason_code == "taxonomy_version_mismatch"
     # dent and scratch share a spelling but are different labels
     for shared in ("dent", "scratch"):
         assert damage_label(shared, cardd) != damage_label(shared, hitl)

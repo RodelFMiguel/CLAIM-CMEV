@@ -402,10 +402,13 @@ export function CompletenessControl({
 }
 export function IdentityControls({
   photoIds,
+  uploadedPhotos = false,
   submit,
   locked,
 }: {
   photoIds: string[];
+  // True when the photo IDs are uploaded photographs the models analysed, not fixture IDs.
+  uploadedPhotos?: boolean;
   submit: SubmitAction;
   locked: boolean;
 }) {
@@ -429,8 +432,9 @@ export function IdentityControls({
     <details className="review-controls">
       <summary>Confirm physical identity or coverage</summary>
       <p>
-        Fixture photo IDs refer to demonstration evidence. These confirmations
-        do not establish anything about uploaded photographs.
+        {uploadedPhotos
+          ? "The photo IDs are the uploaded photographs the models analysed."
+          : "Fixture photo IDs refer to demonstration evidence. These confirmations do not establish anything about uploaded photographs."}
       </p>
       {[false, true].map((coverage) => (
         <form key={String(coverage)} onSubmit={(e) => send(e, coverage)}>

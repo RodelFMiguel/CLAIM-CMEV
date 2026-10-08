@@ -93,6 +93,14 @@ Hard rules:
 - Selecting the contingency taxonomy means recording its split, its targets and every affected proposal and specification change first. Do not combine sources to rescue sample counts.
 - The CarDD model does not cover HITL-only types such as corrosion or flaking. An observation of a type outside the active taxonomy is out of scope for support and constrains a negative finding; it is not evidence of absence.
 
+**Selected on 2026-10-08 (accepted by the user, [ADR 0004](../adr/0004-hitl-damage-model-and-vocabulary.md)).** The served M2 model was trained on the HITL damage subset, so the contingency vocabulary is now accepted on records beside CarDD:
+
+- `ImageDamageObservation.damage_code` and `PartSummary.damage_codes` accept a code of either vocabulary. `versions.taxonomy` names the vocabulary (`damage-cardd-<x.y.z>` or `damage-hitl-<x.y.z>`), and the code must belong to it. A record without a known damage taxonomy is invalid.
+- Nothing is mapped between the two. M3 refuses to summarise observations of both together, and M8 judges an observation by the supported list of its own vocabulary (`supported_types` or `supported_types_hitl`).
+- Its split is `data/splits/damage/0.1.0`. The CarDD 0.45 mIoU target does not apply; the measured scores are in the M2 specification's serving note.
+- Which vocabularies a record may carry is `DAMAGE_VOCABULARIES` in `src/claim_cmev/contracts/common.py`. The `active` flag in `configs/taxonomy/damage_hitl.yaml` was left as written: the hash of each taxonomy file is part of the identity of the prepared training data, so the files are changed only together with a new prepared data version.
+- Still to record by the team: revised targets for this vocabulary, and the affected proposal sections.
+
 ### 3.4 Operations, vehicle class and mapping status
 
 | Vocabulary | Values |
@@ -435,3 +443,9 @@ Only `cmev-api` writes to the `claim` and `review` schemas. Only the owning work
 | The `part_key` format used in the review API path, given that side may be `unknown` | Lane 5 | [application platform](application_platform.md) |
 | Whether CarDD consent arrives, and therefore which damage taxonomy is active | Lane 1 | v2 section 12.4, day-2 checkpoint |
 | Retention and anonymisation policy before any real claim material is accepted | All | Not yet decided. Until it exists, real claim content must not enter this prototype |
+
+### Damage filtering diagnostics (2026-10-08)
+
+`DamageFiltering` contains three required nonnegative integer counts: `dropped_low_confidence_pixels`, `below_min_pixels_count`, and `max_components_exceeded_count`. An object with three zeros is measured zero filtering; an absent object or null is unknown.
+
+`PartCoverage.damage_filtering` is an optional map from photo ID to `DamageFiltering` or null, defaulting to an empty map for historical records. The real M3 worker supplies a value for each slot view from the effective M2 job, including explicit reuse lineage. M8 uses confirmed covering photos when gating negative conclusions, treating missing diagnostics on real coverage as unknown. The map is retained in persisted and frozen coverage records. Record schema stays `0.2.0`; there is no database migration or invented backfill. New assessments use the bumped rule/configuration versions.

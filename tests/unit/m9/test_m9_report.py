@@ -14,9 +14,11 @@ from m9_support import (
     apply,
     assessment,
     claim_input,
+    coverage,
     findings,
     request,
     state,
+    summaries,
 )
 
 
@@ -50,6 +52,28 @@ def test_report_labels_synthetic_costs_unrecorded_approval_and_fixture_origin():
     assert p.cost_reference.synthetic and p.cost_reference.cost_basis == BASIS and p.cost_reference.currency_supported
     assert p.final_approval.status == "not_recorded" and "not recorded" in p.final_approval.text
     assert p.fixture.is_fixture and p.fixture.notice
+
+
+def test_a_fixture_report_says_no_result_is_model_output():
+    p = payload(frozen())
+    assert "not from model output" in p.fixture.notice and p.footer.fixture_marker == p.fixture.notice
+
+
+def test_model_image_results_with_fixture_documents_are_not_printed_as_all_fixtures():
+    review = frozen(state("clean", part_summaries=summaries("real"), coverage=coverage("real")))
+    p = payload(review)
+    # Still marked: the estimate rows and the pen marks are fixtures.
+    assert p.fixture.is_fixture and p.footer.fixture_marker == p.fixture.notice
+    assert "not from model output" not in p.fixture.notice
+    assert "estimate rows and pen marks" in p.fixture.notice and "model output" in p.fixture.notice
+
+
+def test_fixture_image_results_with_real_documents_keep_the_all_fixture_notice():
+    """Only real image records change the wording; any other mix stays the plain fixture notice."""
+    from m9_support import completeness, line_items, marks
+    review = frozen(state("clean", line_items=line_items("clean", "real"), marks=marks("clean", "real"),
+                          completeness=completeness(kind="real")))
+    assert "not from model output" in payload(review).fixture.notice
 
 
 def test_real_provenance_prints_no_fixture_marker():

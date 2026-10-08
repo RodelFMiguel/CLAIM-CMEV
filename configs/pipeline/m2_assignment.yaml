@@ -11,7 +11,7 @@
 #
 # File name follows this directory's m<N>_<name>.yaml convention; the specifications
 # call the same file configs/pipeline/damage_assignment.yaml.
-config_version: "m2-assignment/0.1.0"
+config_version: "m2-assignment/0.2.0"
 status: proposed
 
 regions:
@@ -31,6 +31,11 @@ assignment:
   assign_ambiguity_margin: 0.20
   # Above this background containment the component is mostly off the vehicle.
   assign_background_max: 0.50
-  # Boundary-crossing components stay whole and ambiguous. Enabling a split needs a
-  # recorded policy and evidence; the loader rejects true.
+  # Boundary-crossing components stay whole and ambiguous by default. Enabling a split
+  # applies the dual-gated policy (split_min_pixels and split_min_proportion).
   split_components: false
+  # Minimum pixels required on a part for a split sub-component.
+  split_min_pixels: 400
+  # Minimum proportion of parent component required on a part for a split sub-component.
+  split_min_proportion: 0.20
+

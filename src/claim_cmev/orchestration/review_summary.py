@@ -8,22 +8,13 @@ from . import state
 from .corrections import review_events
 
 
-def corrected_summary(ctx, claim_input, baseline):
-    records = {}
-    for stage in ("parts", "damage"):
-        jobs = state.effective_jobs(ctx.session, ctx.envelope.claim_id, ctx.envelope.input_revision, stage)
-        for kind, rows in load_records(ctx.session, ctx.envelope.claim_id, [j["job_key"] for j in jobs]).items():
-            records.setdefault(kind, []).extend(rows)
-    predictions = records.get("part_prediction", [])
-    observations = records.get("damage_observation", [])
-    def materialize(record):
-        return record.model_copy(update={
-            "confirmation_id": deterministic_id("hc", ctx.envelope.job_key, record.confirmation_id),
-            "input_revision": ctx.envelope.input_revision,
-            "provenance": record.provenance.model_copy(update={"derivation_refs":
-                [*record.provenance.derivation_refs, record.confirmation_id]})})
-    identities = [materialize(c) for c in baseline.identity_confirmations]
-    coverage = [materialize(c) for c in baseline.coverage_confirmations]
+def human_confirmations(ctx, claim_input):
+    """The surveyor's identity and coverage confirmations recorded on this input revision, as M3 records.
+
+    One identity record per named photograph. Their IDs derive from the summary job and the
+    review action, so a replay reproduces them.
+    """
+    identities, coverage = [], []
     for event in review_events(claim_input):
         values = event.new_values
         if event.action_type not in ("confirm_identity", "confirm_coverage"):
@@ -42,6 +33,28 @@ def corrected_summary(ctx, claim_input, baseline):
                 confirmation_id=deterministic_id("cc", ctx.envelope.job_key, event.action_id),
                 covering_photo_ids=values["photo_ids"], covers_enough=values["covers_enough"],
                 reason=values.get("reason")))
+    return identities, coverage
+
+
+def corrected_summary(ctx, claim_input, baseline):
+    records = {}
+    for stage in ("parts", "damage"):
+        jobs = state.effective_jobs(ctx.session, ctx.envelope.claim_id, ctx.envelope.input_revision, stage)
+        for kind, rows in load_records(ctx.session, ctx.envelope.claim_id, [j["job_key"] for j in jobs]).items():
+            records.setdefault(kind, []).extend(rows)
+    predictions = records.get("part_prediction", [])
+    observations = records.get("damage_observation", [])
+    def materialize(record):
+        return record.model_copy(update={
+            "confirmation_id": deterministic_id("hc", ctx.envelope.job_key, record.confirmation_id),
+            "input_revision": ctx.envelope.input_revision,
+            "provenance": record.provenance.model_copy(update={"derivation_refs":
+                [*record.provenance.derivation_refs, record.confirmation_id]})})
+    identities = [materialize(c) for c in baseline.identity_confirmations]
+    coverage = [materialize(c) for c in baseline.coverage_confirmations]
+    human_identities, human_coverage = human_confirmations(ctx, claim_input)
+    identities += human_identities
+    coverage += human_coverage
     config = load_summary_config()
     versions = {**ctx.envelope.versions, "summary_config": config.config_version}
     source_revisions = {r.input_revision for r in [*predictions, *observations]}

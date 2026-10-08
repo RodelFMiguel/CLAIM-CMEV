@@ -5,9 +5,13 @@ profile's one worker), or ``orchestrator``, ``producers`` and ``consolidator`` a
 containers of the full profile. ``LocalPipeline`` drives them over the in-memory broker
 for tests, ``--local`` development and the one-time seed at API start.
 
-``parts`` is the one model worker (M1). It is opt-in: ``CMEV_PARTS_PRODUCER=real`` on every
-service makes the orchestrator pin the configured checkpoint and takes the parts stage away
-from the fixture producers, so the two never share a consumer group.
+The image branch has real workers, all opt-in. ``CMEV_PARTS_PRODUCER=real`` on every service
+gives the parts stage to the M1 model worker. ``CMEV_DAMAGE_PRODUCER=real`` (which needs real
+parts) also gives the damage stage to the M2 model worker and the summary stage to the M3
+worker, which then reads real rows and real masks. The orchestrator pins the configured
+versions for the stages real workers own, and the fixture producers drop those stages, so a
+fixture producer and a real worker never share a consumer group. Roles ``parts``, ``damage``
+and ``summary`` are one stage each; ``image`` is the three in one process.
 """
 from __future__ import annotations
 
@@ -29,7 +33,10 @@ from .consolidation import Consolidator
 from .orchestrator import GROUP as ORCHESTRATOR_GROUP, Orchestrator
 from .plan import COMMAND_TOPIC, SERVICE, VersionBundle
 
-ROLES = ("combined", "orchestrator", "producers", "consolidator", "parts")
+ROLES = ("combined", "orchestrator", "producers", "consolidator", "parts", "damage", "summary", "image")
+IMAGE_ROLES = {"parts": ("parts",), "damage": ("damage",), "summary": ("summary",),
+               "image": ("parts", "damage", "summary")}
+"""The image stages each model-worker role runs."""
 PARTS_PRODUCERS = ("fixture", "real")
 REPO_COST_TABLES = Path(__file__).resolve().parents[3] / "artifacts" / "cost_tables"
 
@@ -42,6 +49,8 @@ class RuntimeSettings:
     configured_table_version: str | None
     parts_producer: str = "fixture"
     """Who consumes ``cmev.cmd.parts-segment.v1``: the fixture producer, or the real M1 worker."""
+    damage_producer: str = "fixture"
+    """Who consumes the damage and summary commands: the fixture producers, or the real M2 and M3 workers."""
 
     @classmethod
     def from_env(cls) -> RuntimeSettings:
@@ -51,10 +60,16 @@ class RuntimeSettings:
         parts_producer = os.getenv("CMEV_PARTS_PRODUCER", "fixture")
         if parts_producer not in PARTS_PRODUCERS:
             raise RuntimeError(f"CMEV_PARTS_PRODUCER must be fixture or real, not {parts_producer!r}")
+        damage_producer = os.getenv("CMEV_DAMAGE_PRODUCER", "fixture")
+        if damage_producer not in PARTS_PRODUCERS:
+            raise RuntimeError(f"CMEV_DAMAGE_PRODUCER must be fixture or real, not {damage_producer!r}")
+        if damage_producer == "real" and parts_producer != "real":
+            raise RuntimeError("CMEV_DAMAGE_PRODUCER=real needs CMEV_PARTS_PRODUCER=real: the damage worker reads "
+                               "the M1 mask of each photograph")
         root = os.getenv("CMEV_COST_TABLE_PATH") or str(REPO_COST_TABLES)
         return cls(profile=profile, fixture_mode=os.getenv("CMEV_FIXTURE_MODE", "true").lower() == "true",
                    cost_table_root=Path(root), configured_table_version=os.getenv("CMEV_ACTIVE_COST_TABLE_VERSION") or None,
-                   parts_producer=parts_producer)
+                   parts_producer=parts_producer, damage_producer=damage_producer)
 
     @property
     def source_kind(self) -> str:
@@ -72,14 +87,20 @@ def build_runtimes(session_factory: Any, role: str, *, versions: VersionBundle |
                    consolidator: Consolidator | None = None, profile: str, source_kind: str = "fixture",
                    clock: Callable[[], datetime] = utcnow, sleep: Callable[[float], None] = time.sleep,
                    retry: RetryPolicy | None = None, parts_producer: str = "fixture",
-                   parts_handler: Handler | None = None) -> list[ConsumerRuntime]:
+                   damage_producer: str = "fixture", parts_handler: Handler | None = None,
+                   damage_handler: Handler | None = None,
+                   summary_handler: Handler | None = None) -> list[ConsumerRuntime]:
     """One ``ConsumerRuntime`` per consumer group the role runs.
 
-    Every role but ``parts`` needs ``versions`` and ``consolidator``. The ``parts`` role needs
-    ``parts_handler``, built over a checkpoint that is already loaded and verified.
+    The fixture and orchestration roles need ``versions`` and ``consolidator``. A model-worker
+    role (``parts``, ``damage``, ``summary`` or ``image``) needs the handler of each stage it
+    runs, built over a checkpoint that is already loaded and verified.
     """
     if role not in ROLES:
         raise ValueError(f"unknown role {role!r}; choose from {ROLES}")
+    real_stages = {"parts"} if parts_producer == "real" else set()
+    if damage_producer == "real":
+        real_stages |= {"parts", "damage", "summary"}
     from ..fixtures import FixtureProducers
 
     common = {"profile": profile, "source_kind": source_kind, "clock": clock, "sleep": sleep, "retry": retry,
@@ -94,15 +115,16 @@ def build_runtimes(session_factory: Any, role: str, *, versions: VersionBundle |
         if source_kind != "fixture":
             raise RuntimeError("only fixture producers exist; real module workers are not implemented")
         for group, handlers in FixtureProducers(versions).groups().items():
-            if parts_producer == "real" and group == SERVICE["parts"]:
-                continue  # the real M1 worker owns this consumer group
+            if group in {SERVICE[stage] for stage in real_stages}:
+                continue  # a real worker owns this consumer group
             runtimes.append(ConsumerRuntime(session_factory, group, handlers, service=group, **common))
-    if role == "parts":
-        if parts_handler is None:
-            raise ValueError("the parts role needs parts_handler, a handler over a loaded and verified checkpoint")
-        # A model worker's rows are inference, whatever mode the fixture stages run in.
-        runtimes.append(ConsumerRuntime(session_factory, SERVICE["parts"], {COMMAND_TOPIC["parts"]: parts_handler},
-                                        service=SERVICE["parts"], **{**common, "source_kind": "real"}))
+    stage_handlers = {"parts": parts_handler, "damage": damage_handler, "summary": summary_handler}
+    for stage in IMAGE_ROLES.get(role, ()):
+        if stage_handlers[stage] is None:
+            raise ValueError(f"the {role} role needs {stage}_handler, a handler over loaded and verified inputs")
+        # A real worker's rows are measurements of the uploaded photographs, whatever mode the fixture stages run in.
+        runtimes.append(ConsumerRuntime(session_factory, SERVICE[stage], {COMMAND_TOPIC[stage]: stage_handlers[stage]},
+                                        service=SERVICE[stage], **{**common, "source_kind": "real"}))
     if role in ("combined", "consolidator"):
         runtimes.append(ConsumerRuntime(session_factory, "cmev-consolidator", consolidator.handlers(),
                                         service="cmev-consolidator", **common))
@@ -146,20 +168,24 @@ def local_pipeline(database: Any, *, settings: RuntimeSettings | None = None, ro
                    versions: VersionBundle | None = None, consolidator: Consolidator | None = None,
                    clock: Callable[[], datetime] = utcnow, sleep: Callable[[float], None] = time.sleep,
                    retry: RetryPolicy | None = None, broker: InMemoryBroker | None = None,
-                   parts_producer: str = "fixture", parts_handler: Handler | None = None) -> LocalPipeline:
+                   parts_producer: str = "fixture", damage_producer: str = "fixture",
+                   parts_handler: Handler | None = None, damage_handler: Handler | None = None,
+                   summary_handler: Handler | None = None) -> LocalPipeline:
     """The role's runtimes over one in-memory broker.
 
-    ``parts_producer`` defaults to ``fixture`` whatever the environment says: the seed claims
-    and the tests are fixture demonstrations and always run the complete fixture pipeline.
+    The producers default to ``fixture`` whatever the environment says: the seed claims and
+    the tests are fixture demonstrations and always run the complete fixture pipeline.
     """
     settings = settings or RuntimeSettings.from_env()
-    if role != "parts":
+    if role not in IMAGE_ROLES:
         consolidator = consolidator or Consolidator(cost_table_root=settings.cost_table_root)
-        versions = versions or VersionBundle.for_runtime(parts_producer)
+        versions = versions or VersionBundle.for_runtime(parts_producer, damage_producer)
     runtimes = build_runtimes(database.session, role, versions=versions, consolidator=consolidator,
                               profile=settings.profile, source_kind=settings.source_kind, clock=clock, sleep=sleep,
-                              retry=retry, parts_producer=parts_producer, parts_handler=parts_handler)
+                              retry=retry, parts_producer=parts_producer, damage_producer=damage_producer,
+                              parts_handler=parts_handler, damage_handler=damage_handler,
+                              summary_handler=summary_handler)
     return LocalPipeline(database.session, runtimes, broker=broker, clock=clock)
 
 
-__all__ = ["LocalPipeline", "ROLES", "RuntimeSettings", "build_runtimes", "local_pipeline"]
+__all__ = ["IMAGE_ROLES", "LocalPipeline", "ROLES", "RuntimeSettings", "build_runtimes", "local_pipeline"]

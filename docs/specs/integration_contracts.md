@@ -1048,6 +1048,8 @@ The `.v1` in a topic name is the **message contract major version**, not the pro
 
 **Enum rule.** Every enum-valued field in a payload is consumed with an explicit default branch that produces a reason code, never a guess. An unknown `damage_type`, `coverage_state`, `mark_type` or `overall_result` must route to `insufficient_evidence` or to a failure, not to a nearby value.
 
+**One recorded exception (2026-10-08).** The two damage topics gained a second damage vocabulary and a required `versions.taxonomy` without a `.v2` topic. [ADR 0004](../adr/0004-hitl-damage-model-and-vocabulary.md) accepts this under the conditions in section 6.3. It is not a precedent: any other breaking change still needs `.v2`.
+
 ### 6.3 Compatible and incompatible evolution, with examples
 
 **Compatible.** Adding `runner_up_part_confidence` as an optional number to `cmev.evt.damage-segmented.v1`. The consolidator that does not read it keeps working. The evaluation harness that does read it gains detail.
@@ -1057,6 +1059,16 @@ The `.v1` in a topic name is the **message contract major version**, not the pro
 **Incompatible.** Changing `area_fraction` from "fraction of the model frame" to "fraction of the assigned part mask". The name and type do not change, so nothing fails, but every stored threshold comparison silently changes meaning. This must be a new field `area_fraction_of_part` plus a `.v2` topic if the old field is dropped.
 
 **Incompatible.** Adding `tire_puncture` to the damage enum. Old consumers would either crash or, worse, map it to the closest known value. Requires `.v2` and a new `taxonomy_version`.
+
+> **Exception accepted 2026-10-08 ([ADR 0004](../adr/0004-hitl-damage-model-and-vocabulary.md)).** The HITL damage vocabulary was added to `cmev.cmd.damage-segment.v1` and `cmev.evt.damage-segmented.v1` without a `.v2` topic, and `versions.taxonomy` became required on both. The vocabulary has its own `taxonomy_version`, `damage-hitl-<x.y.z>`. The exception holds only while all three of these are true:
+>
+> 1. The schemas bind a code to its vocabulary. A message whose `versions.taxonomy` is `damage-cardd-*` accepts exactly the six CarDD codes, as before. The eight HITL codes are accepted only under `damage-hitl-*`, and the payload's `taxonomy_version` must be of the same family.
+> 2. Every producer and consumer of the two topics is in this repository and changes in the same commit. M3 and M8 read the vocabulary from the taxonomy version.
+> 3. No message of either topic from before the change must still be read by a current consumer.
+>
+> A consumer outside this repository, or a retained history of these topics, ends the exception and requires `.v2`.
+>
+> The damage command also gained the optional `accepted_parts` array (compatible: an optional field).
 
 **Incompatible.** Moving `currency` from the line-item object up to the payload root. Consumers read it from the old path.
 
@@ -1694,3 +1706,9 @@ These belong in `tests/contracts/`. None of them exist yet.
 The persisted record additions for original extracted amounts and PDF source matrices are optional under schema 0.2.0; historical assessments/reports are immutable. New `render_to_pdf` is allowed by the page-transform event schema. Event summaries remain projections, not complete copies of document records. Shared decimal, box and version constraints are reflected in generated record schemas; version values must be nonempty. Provenance/version string bounds agree with typed records, under the existing overall message-size limit.
 
 Malformed envelope deduplication uses transport coordinates and content rather than an untrusted incoming key. Sanitized dead-letter routing versions cannot repeat malformed version values. Dead-letter notices contain reason codes rather than echoing invalid payload fragments; full diagnostics remain in the database. This avoids recursively rejecting the dead-letter message under the same binary/size validation.
+
+### Damage filtering and photo integrity correction (2026-10-08)
+
+`cmev.evt.damage-segmented.v1.payload.filtering` is optional for compatibility with historical messages. When present it requires the three nonnegative integer counters defined by `DamageFiltering` in the data contracts. M2 also stores the same object in its job result, even when `observation_ids` is empty. M3 reads it through the effective jobs and persists it on each coverage slot; its summary command/event continues to name record IDs. No new topic or database table is needed. Deploy the updated producer and consumer schemas together: older strict validators reject the new optional field, while the new schema still accepts old messages as having unknown diagnostics.
+
+The real M3 handler verifies original photo hashes on every screening run, including reused input revisions, and permanently rejects mismatches as `artifact_hash_mismatch`. The configuration versions are `damage-cfg-0.1.1`, `m3-summary/0.1.1`, and `m8-rules/0.2.1`; model versions, taxonomy files and thresholds stay unchanged. Existing completed assessments are immutable; a new assessment is required to apply the corrected decision rule.

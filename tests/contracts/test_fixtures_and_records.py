@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 import claim_cmev
 from claim_cmev.contracts import ClaimFile, ClaimInput, LineItem, PenMark, to_decimal
+from claim_cmev.contracts.common import evidence_source
 from claim_cmev.contracts.fixtures import SCENARIOS, FixtureBundle, all_fixture_bundles, fixture_bundle
 from claim_cmev.contracts.imaging import ImageDamageObservation
 from contract_factories import CLAIM, SCOPE, artifact, line_item, observation, pen_mark, sha
@@ -83,6 +84,18 @@ def test_every_slot_has_coverage_and_unknown_side_is_unresolved(bundles):
                 assert cov.state == "unresolved"
             if cov.state == "adequate":
                 assert cov.coverage_confirmation_id in {c.confirmation_id for c in bundle.coverage_confirmations}
+
+
+@pytest.mark.parametrize("kinds, expected", [
+    (["real", "real"], "real"),
+    (["fixture", "fixture"], "fixture"),
+    (["real", "fixture"], "fixture"),      # a mix is never described as model output
+    (["real", "synthetic"], "fixture"),
+    ([], "none"),
+])
+def test_a_branch_is_real_only_when_every_one_of_its_records_is(kinds, expected):
+    assert evidence_source(kinds) == expected
+    assert evidence_source(iter(kinds)) == expected
 
 
 def test_record_money_is_exact():

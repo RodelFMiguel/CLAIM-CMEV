@@ -7,12 +7,15 @@ Roles (same image, same handlers, same topics):
 - ``orchestrator``, ``producers``, ``consolidator``: the full profile's separate containers;
 - ``parts``: the opt-in M1 model worker (``cmev-worker-parts``, its own image). It runs only
   when ``CMEV_PARTS_PRODUCER=real``, which also takes the parts stage away from the fixture
-  producers and makes the orchestrator pin the configured checkpoint.
+  producers and makes the orchestrator pin the configured checkpoint;
+- ``damage`` and ``summary``: the opt-in M2 model worker and M3 worker. They run only when
+  ``CMEV_DAMAGE_PRODUCER=real`` (which needs real parts);
+- ``image``: ``parts``, ``damage`` and ``summary`` in one process (``cmev-worker-image``).
 
 Every role runs the outbox relay; a PostgreSQL advisory lock lets only one publish at a
 time. Start-up refuses (exit 1) when the database is not at the expected Alembic head, for
 roles that consolidate when the rule configuration or the active cost table does not load,
-and for ``parts`` when its checkpoint cannot be loaded and verified. ``--local`` swaps Kafka
+and for a model worker when a checkpoint cannot be loaded and verified. ``--local`` swaps Kafka
 for the in-memory transport: a development aid, never evidence that Kafka integration passed.
 """
 from __future__ import annotations
@@ -31,8 +34,8 @@ from .messaging.consumer import consume_batch
 from .messaging.outbox import relay_once
 from .messaging.transport import TransportUnavailable
 from .orchestration.consolidation import Consolidator
-from .orchestration.plan import CODE_VERSION, VersionBundle
-from .orchestration.services import ROLES, RuntimeSettings, build_runtimes, local_pipeline
+from .orchestration.plan import VersionBundle, real_stage_versions
+from .orchestration.services import IMAGE_ROLES, ROLES, RuntimeSettings, build_runtimes, local_pipeline
 from .persistence.migrations import check_head
 from .runtime import Database, setting, utcnow
 
@@ -46,15 +49,20 @@ def startup_checks(database: Database, settings: RuntimeSettings, role: str,
                    consolidator: Consolidator | None) -> dict[str, Any]:
     """Refuse to start on a schema-head mismatch or an unloadable rule config / cost table.
 
-    The parts worker uses neither. It refuses instead while the fixture producer still owns
-    the parts stage, because the two would share one consumer group.
+    A real image worker uses neither. It refuses instead while a fixture producer still owns
+    one of its stages, because the two would share one consumer group.
     """
     info: dict[str, Any] = {"role": role, "profile": settings.profile, "schema_head": check_head(database.engine)}
-    if role == "parts":
-        if settings.parts_producer != "real":
+    if role in IMAGE_ROLES:
+        stages = IMAGE_ROLES[role]
+        if "parts" in stages and settings.parts_producer != "real":
             raise RuntimeError("CMEV_PARTS_PRODUCER is not 'real': the fixture producer consumes "
                                "cmev.cmd.parts-segment.v1. Set CMEV_PARTS_PRODUCER=real on every service first "
-                               "(in Compose, add infra/compose/docker-compose.parts.yml)")
+                               "(in Compose, add infra/compose/docker-compose.parts.yml or docker-compose.image.yml)")
+        if {"damage", "summary"} & set(stages) and settings.damage_producer != "real":
+            raise RuntimeError("CMEV_DAMAGE_PRODUCER is not 'real': the fixture producers consume the damage and "
+                               "summary commands. Set CMEV_DAMAGE_PRODUCER=real on every service first "
+                               "(in Compose, add infra/compose/docker-compose.image.yml)")
         return info
     if not settings.fixture_mode:
         raise RuntimeError("CMEV_FIXTURE_MODE=false: only fixture stage producers exist; real inference is unavailable")
@@ -84,26 +92,54 @@ def load_parts_worker() -> tuple[Any, dict[str, Any]]:
     from .vision.parts.adapter import load_parts_segmenter, make_parts_handler
     from .vision.parts.config import load_parts_config
 
-    config = load_parts_config()
-    segmenter = load_parts_segmenter(config)
-    versions = config.stage_versions(CODE_VERSION)
+    segmenter = load_parts_segmenter(load_parts_config())
+    versions = real_stage_versions("parts")
     return (make_parts_handler(segmenter, Storage(), versions),
             {"parts_versions": versions, "model_dir": str(segmenter.model_dir), "device": str(segmenter.device)})
+
+
+def load_damage_worker() -> tuple[Any, dict[str, Any]]:
+    """Load and verify the M2 checkpoint once; returns the command handler and what was loaded."""
+    from .storage import Storage
+    from .vision.damage.adapter import load_damage_segmenter, make_damage_handler
+    from .vision.damage.config import load_assignment_config
+    from .vision.damage.model_config import load_damage_model_config
+
+    segmenter = load_damage_segmenter(load_damage_model_config())
+    versions = real_stage_versions("damage")
+    return (make_damage_handler(segmenter, Storage(), versions, load_assignment_config()),
+            {"damage_versions": versions, "damage_model_dir": str(segmenter.model_dir),
+             "damage_device": str(segmenter.device)})
+
+
+def load_summary_worker() -> tuple[Any, dict[str, Any]]:
+    """The M3 handler over the versioned summary rules. It loads no weights."""
+    from .storage import Storage
+    from .vision.multiview.adapter import make_summary_handler
+    from .vision.multiview.config import load_summary_config
+
+    versions = real_stage_versions("summary")
+    return make_summary_handler(Storage(), versions, load_summary_config()), {"summary_versions": versions}
+
+
+_STAGE_LOADERS = {"parts": load_parts_worker, "damage": load_damage_worker, "summary": load_summary_worker}
 
 
 def run(role: str = "combined", local: bool = False) -> None:
     settings = RuntimeSettings.from_env()
     database = Database()
-    consolidator = versions = parts_handler = None
+    consolidator = versions = None
+    handlers: dict[str, Any] = {}
     try:
-        if role != "parts":
+        if role not in IMAGE_ROLES:
             consolidator = Consolidator(cost_table_root=settings.cost_table_root)
         info = startup_checks(database, settings, role, consolidator)
-        if role == "parts":
-            parts_handler, loaded = load_parts_worker()
-            info.update(loaded)
+        if role in IMAGE_ROLES:
+            for stage in IMAGE_ROLES[role]:
+                handlers[f"{stage}_handler"], loaded = _STAGE_LOADERS[stage]()
+                info.update(loaded)
         else:
-            versions = VersionBundle.for_runtime(settings.parts_producer)
+            versions = VersionBundle.for_runtime(settings.parts_producer, settings.damage_producer)
     except Exception as exc:  # noqa: BLE001 - refuse to start, never run degraded
         log.error("refusing to start %s: %s", role, exc)
         READY_MARKER.unlink(missing_ok=True)
@@ -112,7 +148,8 @@ def run(role: str = "combined", local: bool = False) -> None:
     if local:
         log.warning("Explicit local development transport selected; Kafka is not exercised")
         pipeline = local_pipeline(database, settings=settings, role=role, versions=versions, consolidator=consolidator,
-                                  parts_producer=settings.parts_producer, parts_handler=parts_handler)
+                                  parts_producer=settings.parts_producer, damage_producer=settings.damage_producer,
+                                  **handlers)
         READY_MARKER.write_text(str(info))
         while True:
             pipeline.tick()
@@ -132,7 +169,8 @@ def run(role: str = "combined", local: bool = False) -> None:
             producer = KafkaProducerTransport(servers, client)
             runtimes = build_runtimes(database.session, role, versions=versions, consolidator=consolidator,
                                       profile=settings.profile, source_kind=settings.source_kind,
-                                      parts_producer=settings.parts_producer, parts_handler=parts_handler)
+                                      parts_producer=settings.parts_producer,
+                                      damage_producer=settings.damage_producer, **handlers)
             for rt in runtimes:
                 consumers.append((rt, KafkaConsumerTransport(servers, rt.group, rt.topics, client)))
             READY_MARKER.write_text(str(info))

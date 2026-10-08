@@ -1,0 +1,79 @@
+{
+  "benchmark_name": "M2 Seam-Guided Component Splitting Policy Experiment",
+  "timestamp": "2026-10-04T11:16:07.104318+00:00",
+  "test_images_count": 132,
+  "results": [
+    {
+      "policy_name": "Baseline (No Split - Current Contract)",
+      "split_mode": "none",
+      "min_split_pixels": 256,
+      "total_components": 469,
+      "split_events": 0,
+      "sliver_count": 0,
+      "assigned_count": 367,
+      "assignment_rate": 0.7825,
+      "mean_containment": 0.8953,
+      "unresolved_count": 102,
+      "reasons": {
+        "ambiguous_between_parts": 71,
+        "below_containment_threshold": 25,
+        "mostly_background": 5,
+        "no_part_overlap": 1
+      }
+    },
+    {
+      "policy_name": "Policy 1: Safety-Gated Split (min 500 px)",
+      "split_mode": "conservative_500",
+      "min_split_pixels": 500,
+      "total_components": 537,
+      "split_events": 37,
+      "sliver_count": 23,
+      "assigned_count": 472,
+      "assignment_rate": 0.879,
+      "mean_containment": 0.9186,
+      "unresolved_count": 65,
+      "reasons": {
+        "ambiguous_between_parts": 34,
+        "below_containment_threshold": 25,
+        "mostly_background": 5,
+        "no_part_overlap": 1
+      }
+    },
+    {
+      "policy_name": "Policy 2: Standard Seam Split (min 256 px)",
+      "split_mode": "naive_256",
+      "min_split_pixels": 256,
+      "total_components": 564,
+      "split_events": 50,
+      "sliver_count": 34,
+      "assigned_count": 512,
+      "assignment_rate": 0.9078,
+      "mean_containment": 0.925,
+      "unresolved_count": 52,
+      "reasons": {
+        "ambiguous_between_parts": 21,
+        "below_containment_threshold": 25,
+        "mostly_background": 5,
+        "no_part_overlap": 1
+      }
+    },
+    {
+      "policy_name": "Policy 3: Aggressive Seam Split (min 128 px)",
+      "split_mode": "safety_gated_128",
+      "min_split_pixels": 128,
+      "total_components": 604,
+      "split_events": 68,
+      "sliver_count": 51,
+      "assigned_count": 570,
+      "assignment_rate": 0.9437,
+      "mean_containment": 0.9326,
+      "unresolved_count": 34,
+      "reasons": {
+        "below_containment_threshold": 25,
+        "mostly_background": 5,
+        "ambiguous_between_parts": 3,
+        "no_part_overlap": 1
+      }
+    }
+  ]
+}

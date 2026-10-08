@@ -15,9 +15,9 @@ from typing import Any
 
 from ..contracts.assessment import Assessment, AssessmentFinding, CheckResult
 from ..contracts.claims import ClaimInput
-from ..contracts.common import COST_CURRENCY, SCHEMA_VERSION, ContractError, Reason
+from ..contracts.common import COST_CURRENCY, SCHEMA_VERSION, ContractError, Reason, evidence_source
 from ..contracts.costs import CostCheck
-from .config import ReviewConfig, default_review_config
+from .config import PrintText, ReviewConfig, default_review_config
 from .state import ReviewState, _Frozen
 
 DISPLAY_LABELS = {
@@ -378,12 +378,20 @@ def _row(texts: _Texts, entry_id: str, item: Any, finding: AssessmentFinding | N
         reasons=reasons, dismissal=_dismissal(dismissal) if dismissal else None)
 
 
-def _fixture(claim: ClaimInput, review: ReviewState) -> bool:
-    records = [claim, review.assessment, *review.line_items, *review.marks, *review.part_summaries,
-               *review.coverage]
+def _fixture_notice(claim: ClaimInput, review: ReviewState, text: PrintText) -> str | None:
+    """The fixture notice of a report, or None when no record behind it is a fixture.
+
+    Real image records are not printed as fixtures: with them the notice names the document
+    records only.
+    """
+    image = [*review.part_summaries, *review.coverage]
+    records = [claim, review.assessment, *review.line_items, *review.marks, *image]
     if review.completeness is not None:
         records.append(review.completeness)
-    return any(r.provenance.source_kind == "fixture" for r in records)
+    if not any(r.provenance.source_kind == "fixture" for r in records):
+        return None
+    image_real = evidence_source(r.provenance.source_kind for r in image) == "real"
+    return text.fixture_notice_documents_only if image_real else text.fixture_notice
 
 
 def build_print_payload(
@@ -444,8 +452,8 @@ def build_print_payload(
     additions = assessment.possible_additions
     completeness = review.completeness
     currency = claim_snapshot.currency
-    fixture = _fixture(claim_snapshot, review)
     text = config.print
+    fixture_notice = _fixture_notice(claim_snapshot, review, text)
     return PrintPayload(
         header=ReportHeader(
             claim_id=assessment.claim_id, external_reference=claim_snapshot.external_reference,
@@ -491,7 +499,7 @@ def build_print_payload(
             cost_basis=claim_snapshot.cost_basis, cost_table_version=assessment.cost_table_version,
             currency=currency, currency_supported=currency == COST_CURRENCY),
         final_approval=FinalApproval(text=text.final_approval_not_recorded),
-        fixture=FixtureNotice(is_fixture=fixture, notice=text.fixture_notice if fixture else None),
+        fixture=FixtureNotice(is_fixture=fixture_notice is not None, notice=fixture_notice),
         no_judgement_statement=text.no_judgement_statement,
         footer=Footer(
             claim_id=assessment.claim_id, input_revision=assessment.input_revision,
@@ -499,5 +507,5 @@ def build_print_payload(
             pinned_versions=tuple(sorted(assessment.pinned_versions.items())),
             rules_config_version=assessment.rules_config_version, cost_table_version=assessment.cost_table_version,
             cost_basis=claim_snapshot.cost_basis, synthetic_cost_statement=text.synthetic_cost_statement,
-            fixture_marker=text.fixture_notice if fixture else None, schema_version=SCHEMA_VERSION,
+            fixture_marker=fixture_notice, schema_version=SCHEMA_VERSION,
             printed_at=printed_at, printed_by=printed_by))

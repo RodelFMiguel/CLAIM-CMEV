@@ -8,6 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
     CMEV_M9_REVIEW_CONFIG=/srv/configs/pipeline/m9_review.yaml \
     CMEV_M8_CONFIG=/srv/configs/pipeline/m8_rules.yaml \
     CMEV_PARTS_CONFIG=/srv/configs/models/parts.yaml \
+    CMEV_DAMAGE_CONFIG=/srv/configs/models/damage.yaml \
+    CMEV_M2_CONFIG=/srv/configs/pipeline/m2_assignment.yaml \
     CMEV_MIGRATIONS_DIR=/srv/infra/migrations \
     FORWARDED_ALLOW_IPS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 WORKDIR /srv

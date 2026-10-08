@@ -1,0 +1,857 @@
+{
+  "benchmark_timestamp": "2026-10-03T17:10:36.923768+00:00",
+  "total_test_images": 132,
+  "configurations": {
+    "standard": {
+      "config_version": "m2-assignment/0.1.0",
+      "status": "proposed",
+      "regions": {
+        "min_damage_confidence": 0.5,
+        "min_damage_pixels": 256,
+        "connectivity": 8,
+        "max_components_per_photo": 50
+      },
+      "assignment": {
+        "assign_min_containment": 0.6,
+        "assign_ambiguity_margin": 0.2,
+        "assign_background_max": 0.5,
+        "split_components": false
+      }
+    },
+    "fine": {
+      "config_version": "m2-assignment/0.1.0-fine",
+      "status": "proposed",
+      "regions": {
+        "min_damage_confidence": 0.4,
+        "min_damage_pixels": 64,
+        "connectivity": 8,
+        "max_components_per_photo": 50
+      },
+      "assignment": {
+        "assign_min_containment": 0.6,
+        "assign_ambiguity_margin": 0.2,
+        "assign_background_max": 0.5,
+        "split_components": false
+      }
+    }
+  },
+  "pairings_summary": {
+    "M1_SegFormer_B3__x__M2_SegFormer_B3__standard": {
+      "m1_model": "M1_SegFormer_B3",
+      "m2_model": "M2_SegFormer_B3",
+      "config_mode": "standard",
+      "images_with_damage": 130,
+      "total_damage_regions": 469,
+      "assigned_regions": 367,
+      "unresolved_regions": 102,
+      "assignment_rate": 0.7825,
+      "mean_primary_containment": 0.8017,
+      "mean_background_containment": 0.0305,
+      "unresolved_reasons": {
+        "ambiguous_between_parts": 71,
+        "below_containment_threshold": 25,
+        "mostly_background": 5,
+        "no_part_overlap": 1
+      },
+      "damage_type_breakdown": {
+        "missing-part": {
+          "total": 67,
+          "assigned": 59,
+          "unresolved": 8
+        },
+        "broken-part": {
+          "total": 153,
+          "assigned": 89,
+          "unresolved": 64
+        },
+        "scratch": {
+          "total": 68,
+          "assigned": 64,
+          "unresolved": 4
+        },
+        "dent": {
+          "total": 131,
+          "assigned": 108,
+          "unresolved": 23
+        },
+        "flaking": {
+          "total": 9,
+          "assigned": 9,
+          "unresolved": 0
+        },
+        "paint-chip": {
+          "total": 16,
+          "assigned": 15,
+          "unresolved": 1
+        },
+        "cracked": {
+          "total": 9,
+          "assigned": 9,
+          "unresolved": 0
+        },
+        "corrosion": {
+          "total": 16,
+          "assigned": 14,
+          "unresolved": 2
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 96,
+        "front-door": 43,
+        "fender": 41,
+        "licence-plate": 27,
+        "hood": 26,
+        "quarter-panel": 25,
+        "back-bumper": 24,
+        "back-door": 18
+      }
+    },
+    "M1_YOLOv8m_seg__x__M2_SegFormer_B3__standard": {
+      "m1_model": "M1_YOLOv8m_seg",
+      "m2_model": "M2_SegFormer_B3",
+      "config_mode": "standard",
+      "images_with_damage": 130,
+      "total_damage_regions": 469,
+      "assigned_regions": 363,
+      "unresolved_regions": 106,
+      "assignment_rate": 0.774,
+      "mean_primary_containment": 0.8107,
+      "mean_background_containment": 0.0518,
+      "unresolved_reasons": {
+        "ambiguous_between_parts": 62,
+        "below_containment_threshold": 34,
+        "mostly_background": 7,
+        "no_part_overlap": 3
+      },
+      "damage_type_breakdown": {
+        "missing-part": {
+          "total": 67,
+          "assigned": 60,
+          "unresolved": 7
+        },
+        "broken-part": {
+          "total": 153,
+          "assigned": 81,
+          "unresolved": 72
+        },
+        "scratch": {
+          "total": 68,
+          "assigned": 63,
+          "unresolved": 5
+        },
+        "dent": {
+          "total": 131,
+          "assigned": 114,
+          "unresolved": 17
+        },
+        "flaking": {
+          "total": 9,
+          "assigned": 8,
+          "unresolved": 1
+        },
+        "paint-chip": {
+          "total": 16,
+          "assigned": 14,
+          "unresolved": 2
+        },
+        "cracked": {
+          "total": 9,
+          "assigned": 9,
+          "unresolved": 0
+        },
+        "corrosion": {
+          "total": 16,
+          "assigned": 14,
+          "unresolved": 2
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 100,
+        "fender": 41,
+        "front-door": 41,
+        "hood": 26,
+        "back-bumper": 24,
+        "quarter-panel": 23,
+        "licence-plate": 23,
+        "back-door": 19
+      }
+    },
+    "M1_SegFormer_B3__x__M2_DeepLabV3_ResNet50__standard": {
+      "m1_model": "M1_SegFormer_B3",
+      "m2_model": "M2_DeepLabV3_ResNet50",
+      "config_mode": "standard",
+      "images_with_damage": 120,
+      "total_damage_regions": 349,
+      "assigned_regions": 268,
+      "unresolved_regions": 81,
+      "assignment_rate": 0.7679,
+      "mean_primary_containment": 0.7954,
+      "mean_background_containment": 0.0218,
+      "unresolved_reasons": {
+        "ambiguous_between_parts": 56,
+        "below_containment_threshold": 24,
+        "mostly_background": 1
+      },
+      "damage_type_breakdown": {
+        "missing-part": {
+          "total": 68,
+          "assigned": 60,
+          "unresolved": 8
+        },
+        "broken-part": {
+          "total": 140,
+          "assigned": 88,
+          "unresolved": 52
+        },
+        "dent": {
+          "total": 86,
+          "assigned": 72,
+          "unresolved": 14
+        },
+        "flaking": {
+          "total": 12,
+          "assigned": 11,
+          "unresolved": 1
+        },
+        "scratch": {
+          "total": 24,
+          "assigned": 18,
+          "unresolved": 6
+        },
+        "cracked": {
+          "total": 3,
+          "assigned": 3,
+          "unresolved": 0
+        },
+        "paint-chip": {
+          "total": 12,
+          "assigned": 12,
+          "unresolved": 0
+        },
+        "corrosion": {
+          "total": 4,
+          "assigned": 4,
+          "unresolved": 0
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 81,
+        "fender": 29,
+        "back-bumper": 25,
+        "front-door": 23,
+        "licence-plate": 22,
+        "hood": 17,
+        "headlight": 14,
+        "quarter-panel": 13
+      }
+    },
+    "M1_YOLOv8m_seg__x__M2_DeepLabV3_ResNet50__standard": {
+      "m1_model": "M1_YOLOv8m_seg",
+      "m2_model": "M2_DeepLabV3_ResNet50",
+      "config_mode": "standard",
+      "images_with_damage": 120,
+      "total_damage_regions": 349,
+      "assigned_regions": 270,
+      "unresolved_regions": 79,
+      "assignment_rate": 0.7736,
+      "mean_primary_containment": 0.8026,
+      "mean_background_containment": 0.0414,
+      "unresolved_reasons": {
+        "ambiguous_between_parts": 52,
+        "below_containment_threshold": 24,
+        "mostly_background": 3
+      },
+      "damage_type_breakdown": {
+        "missing-part": {
+          "total": 68,
+          "assigned": 63,
+          "unresolved": 5
+        },
+        "broken-part": {
+          "total": 140,
+          "assigned": 84,
+          "unresolved": 56
+        },
+        "dent": {
+          "total": 86,
+          "assigned": 75,
+          "unresolved": 11
+        },
+        "flaking": {
+          "total": 12,
+          "assigned": 11,
+          "unresolved": 1
+        },
+        "scratch": {
+          "total": 24,
+          "assigned": 20,
+          "unresolved": 4
+        },
+        "cracked": {
+          "total": 3,
+          "assigned": 3,
+          "unresolved": 0
+        },
+        "paint-chip": {
+          "total": 12,
+          "assigned": 10,
+          "unresolved": 2
+        },
+        "corrosion": {
+          "total": 4,
+          "assigned": 4,
+          "unresolved": 0
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 86,
+        "front-door": 26,
+        "fender": 25,
+        "back-bumper": 24,
+        "licence-plate": 21,
+        "hood": 16,
+        "headlight": 15,
+        "quarter-panel": 13
+      }
+    },
+    "M1_YOLOv8m_seg__x__M2_YOLOv8m_seg__standard": {
+      "m1_model": "M1_YOLOv8m_seg",
+      "m2_model": "M2_YOLOv8m_seg",
+      "config_mode": "standard",
+      "images_with_damage": 104,
+      "total_damage_regions": 202,
+      "assigned_regions": 165,
+      "unresolved_regions": 37,
+      "assignment_rate": 0.8168,
+      "mean_primary_containment": 0.8302,
+      "mean_background_containment": 0.055,
+      "unresolved_reasons": {
+        "ambiguous_between_parts": 23,
+        "below_containment_threshold": 11,
+        "no_part_overlap": 2,
+        "mostly_background": 1
+      },
+      "damage_type_breakdown": {
+        "broken-part": {
+          "total": 96,
+          "assigned": 65,
+          "unresolved": 31
+        },
+        "dent": {
+          "total": 32,
+          "assigned": 31,
+          "unresolved": 1
+        },
+        "scratch": {
+          "total": 20,
+          "assigned": 18,
+          "unresolved": 2
+        },
+        "cracked": {
+          "total": 2,
+          "assigned": 2,
+          "unresolved": 0
+        },
+        "paint-chip": {
+          "total": 2,
+          "assigned": 2,
+          "unresolved": 0
+        },
+        "missing-part": {
+          "total": 49,
+          "assigned": 46,
+          "unresolved": 3
+        },
+        "flaking": {
+          "total": 1,
+          "assigned": 1,
+          "unresolved": 0
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 46,
+        "licence-plate": 23,
+        "fender": 15,
+        "front-door": 14,
+        "hood": 12,
+        "back-door": 10,
+        "back-bumper": 8,
+        "grille": 7
+      }
+    },
+    "M1_SegFormer_B3__x__M2_YOLOv8m_seg__standard": {
+      "m1_model": "M1_SegFormer_B3",
+      "m2_model": "M2_YOLOv8m_seg",
+      "config_mode": "standard",
+      "images_with_damage": 104,
+      "total_damage_regions": 202,
+      "assigned_regions": 160,
+      "unresolved_regions": 42,
+      "assignment_rate": 0.7921,
+      "mean_primary_containment": 0.7889,
+      "mean_background_containment": 0.0357,
+      "unresolved_reasons": {
+        "ambiguous_between_parts": 26,
+        "below_containment_threshold": 13,
+        "mostly_background": 2,
+        "no_part_overlap": 1
+      },
+      "damage_type_breakdown": {
+        "broken-part": {
+          "total": 96,
+          "assigned": 65,
+          "unresolved": 31
+        },
+        "dent": {
+          "total": 32,
+          "assigned": 29,
+          "unresolved": 3
+        },
+        "scratch": {
+          "total": 20,
+          "assigned": 18,
+          "unresolved": 2
+        },
+        "cracked": {
+          "total": 2,
+          "assigned": 2,
+          "unresolved": 0
+        },
+        "paint-chip": {
+          "total": 2,
+          "assigned": 2,
+          "unresolved": 0
+        },
+        "missing-part": {
+          "total": 49,
+          "assigned": 43,
+          "unresolved": 6
+        },
+        "flaking": {
+          "total": 1,
+          "assigned": 1,
+          "unresolved": 0
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 41,
+        "licence-plate": 24,
+        "hood": 14,
+        "fender": 14,
+        "back-door": 11,
+        "front-door": 10,
+        "quarter-panel": 8,
+        "back-bumper": 7
+      }
+    },
+    "M1_SegFormer_B3__x__M2_SegFormer_B3__fine": {
+      "m1_model": "M1_SegFormer_B3",
+      "m2_model": "M2_SegFormer_B3",
+      "config_mode": "fine",
+      "images_with_damage": 132,
+      "total_damage_regions": 859,
+      "assigned_regions": 710,
+      "unresolved_regions": 149,
+      "assignment_rate": 0.8265,
+      "mean_primary_containment": 0.8417,
+      "mean_background_containment": 0.0268,
+      "unresolved_reasons": {
+        "below_containment_threshold": 44,
+        "ambiguous_between_parts": 92,
+        "mostly_background": 9,
+        "no_part_overlap": 4
+      },
+      "damage_type_breakdown": {
+        "missing-part": {
+          "total": 98,
+          "assigned": 86,
+          "unresolved": 12
+        },
+        "broken-part": {
+          "total": 271,
+          "assigned": 175,
+          "unresolved": 96
+        },
+        "scratch": {
+          "total": 194,
+          "assigned": 187,
+          "unresolved": 7
+        },
+        "dent": {
+          "total": 160,
+          "assigned": 135,
+          "unresolved": 25
+        },
+        "flaking": {
+          "total": 24,
+          "assigned": 23,
+          "unresolved": 1
+        },
+        "paint-chip": {
+          "total": 55,
+          "assigned": 52,
+          "unresolved": 3
+        },
+        "cracked": {
+          "total": 16,
+          "assigned": 15,
+          "unresolved": 1
+        },
+        "corrosion": {
+          "total": 41,
+          "assigned": 37,
+          "unresolved": 4
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 174,
+        "fender": 98,
+        "front-door": 70,
+        "back-bumper": 58,
+        "hood": 54,
+        "back-door": 50,
+        "quarter-panel": 42,
+        "licence-plate": 33
+      }
+    },
+    "M1_YOLOv8m_seg__x__M2_SegFormer_B3__fine": {
+      "m1_model": "M1_YOLOv8m_seg",
+      "m2_model": "M2_SegFormer_B3",
+      "config_mode": "fine",
+      "images_with_damage": 132,
+      "total_damage_regions": 859,
+      "assigned_regions": 711,
+      "unresolved_regions": 148,
+      "assignment_rate": 0.8277,
+      "mean_primary_containment": 0.8411,
+      "mean_background_containment": 0.0488,
+      "unresolved_reasons": {
+        "below_containment_threshold": 42,
+        "ambiguous_between_parts": 87,
+        "mostly_background": 13,
+        "no_part_overlap": 6
+      },
+      "damage_type_breakdown": {
+        "missing-part": {
+          "total": 98,
+          "assigned": 88,
+          "unresolved": 10
+        },
+        "broken-part": {
+          "total": 271,
+          "assigned": 169,
+          "unresolved": 102
+        },
+        "scratch": {
+          "total": 194,
+          "assigned": 188,
+          "unresolved": 6
+        },
+        "dent": {
+          "total": 160,
+          "assigned": 138,
+          "unresolved": 22
+        },
+        "flaking": {
+          "total": 24,
+          "assigned": 23,
+          "unresolved": 1
+        },
+        "paint-chip": {
+          "total": 55,
+          "assigned": 51,
+          "unresolved": 4
+        },
+        "cracked": {
+          "total": 16,
+          "assigned": 16,
+          "unresolved": 0
+        },
+        "corrosion": {
+          "total": 41,
+          "assigned": 38,
+          "unresolved": 3
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 184,
+        "fender": 99,
+        "front-door": 72,
+        "back-bumper": 57,
+        "hood": 47,
+        "back-door": 43,
+        "quarter-panel": 39,
+        "licence-plate": 30
+      }
+    },
+    "M1_SegFormer_B3__x__M2_DeepLabV3_ResNet50__fine": {
+      "m1_model": "M1_SegFormer_B3",
+      "m2_model": "M2_DeepLabV3_ResNet50",
+      "config_mode": "fine",
+      "images_with_damage": 128,
+      "total_damage_regions": 491,
+      "assigned_regions": 388,
+      "unresolved_regions": 103,
+      "assignment_rate": 0.7902,
+      "mean_primary_containment": 0.8264,
+      "mean_background_containment": 0.0191,
+      "unresolved_reasons": {
+        "ambiguous_between_parts": 67,
+        "below_containment_threshold": 35,
+        "mostly_background": 1
+      },
+      "damage_type_breakdown": {
+        "missing-part": {
+          "total": 87,
+          "assigned": 77,
+          "unresolved": 10
+        },
+        "broken-part": {
+          "total": 190,
+          "assigned": 120,
+          "unresolved": 70
+        },
+        "dent": {
+          "total": 108,
+          "assigned": 91,
+          "unresolved": 17
+        },
+        "flaking": {
+          "total": 17,
+          "assigned": 16,
+          "unresolved": 1
+        },
+        "scratch": {
+          "total": 45,
+          "assigned": 41,
+          "unresolved": 4
+        },
+        "paint-chip": {
+          "total": 31,
+          "assigned": 30,
+          "unresolved": 1
+        },
+        "cracked": {
+          "total": 7,
+          "assigned": 7,
+          "unresolved": 0
+        },
+        "corrosion": {
+          "total": 6,
+          "assigned": 6,
+          "unresolved": 0
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 119,
+        "fender": 50,
+        "back-bumper": 34,
+        "front-door": 29,
+        "licence-plate": 26,
+        "hood": 25,
+        "quarter-panel": 25,
+        "back-door": 17
+      }
+    },
+    "M1_YOLOv8m_seg__x__M2_DeepLabV3_ResNet50__fine": {
+      "m1_model": "M1_YOLOv8m_seg",
+      "m2_model": "M2_DeepLabV3_ResNet50",
+      "config_mode": "fine",
+      "images_with_damage": 128,
+      "total_damage_regions": 491,
+      "assigned_regions": 399,
+      "unresolved_regions": 92,
+      "assignment_rate": 0.8126,
+      "mean_primary_containment": 0.8262,
+      "mean_background_containment": 0.04,
+      "unresolved_reasons": {
+        "ambiguous_between_parts": 55,
+        "below_containment_threshold": 31,
+        "no_part_overlap": 2,
+        "mostly_background": 4
+      },
+      "damage_type_breakdown": {
+        "missing-part": {
+          "total": 87,
+          "assigned": 82,
+          "unresolved": 5
+        },
+        "broken-part": {
+          "total": 190,
+          "assigned": 124,
+          "unresolved": 66
+        },
+        "dent": {
+          "total": 108,
+          "assigned": 97,
+          "unresolved": 11
+        },
+        "flaking": {
+          "total": 17,
+          "assigned": 16,
+          "unresolved": 1
+        },
+        "scratch": {
+          "total": 45,
+          "assigned": 40,
+          "unresolved": 5
+        },
+        "paint-chip": {
+          "total": 31,
+          "assigned": 28,
+          "unresolved": 3
+        },
+        "cracked": {
+          "total": 7,
+          "assigned": 6,
+          "unresolved": 1
+        },
+        "corrosion": {
+          "total": 6,
+          "assigned": 6,
+          "unresolved": 0
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 126,
+        "fender": 50,
+        "front-door": 35,
+        "back-bumper": 34,
+        "licence-plate": 25,
+        "hood": 23,
+        "quarter-panel": 23,
+        "headlight": 18
+      }
+    },
+    "M1_YOLOv8m_seg__x__M2_YOLOv8m_seg__fine": {
+      "m1_model": "M1_YOLOv8m_seg",
+      "m2_model": "M2_YOLOv8m_seg",
+      "config_mode": "fine",
+      "images_with_damage": 118,
+      "total_damage_regions": 290,
+      "assigned_regions": 234,
+      "unresolved_regions": 56,
+      "assignment_rate": 0.8069,
+      "mean_primary_containment": 0.8266,
+      "mean_background_containment": 0.0632,
+      "unresolved_reasons": {
+        "ambiguous_between_parts": 32,
+        "below_containment_threshold": 16,
+        "mostly_background": 2,
+        "no_part_overlap": 6
+      },
+      "damage_type_breakdown": {
+        "broken-part": {
+          "total": 139,
+          "assigned": 92,
+          "unresolved": 47
+        },
+        "dent": {
+          "total": 44,
+          "assigned": 42,
+          "unresolved": 2
+        },
+        "scratch": {
+          "total": 31,
+          "assigned": 28,
+          "unresolved": 3
+        },
+        "missing-part": {
+          "total": 66,
+          "assigned": 62,
+          "unresolved": 4
+        },
+        "cracked": {
+          "total": 2,
+          "assigned": 2,
+          "unresolved": 0
+        },
+        "paint-chip": {
+          "total": 7,
+          "assigned": 7,
+          "unresolved": 0
+        },
+        "flaking": {
+          "total": 1,
+          "assigned": 1,
+          "unresolved": 0
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 63,
+        "licence-plate": 27,
+        "front-door": 24,
+        "fender": 19,
+        "hood": 17,
+        "back-door": 14,
+        "back-bumper": 14,
+        "trunk": 12
+      }
+    },
+    "M1_SegFormer_B3__x__M2_YOLOv8m_seg__fine": {
+      "m1_model": "M1_SegFormer_B3",
+      "m2_model": "M2_YOLOv8m_seg",
+      "config_mode": "fine",
+      "images_with_damage": 118,
+      "total_damage_regions": 290,
+      "assigned_regions": 230,
+      "unresolved_regions": 60,
+      "assignment_rate": 0.7931,
+      "mean_primary_containment": 0.7916,
+      "mean_background_containment": 0.0436,
+      "unresolved_reasons": {
+        "ambiguous_between_parts": 38,
+        "below_containment_threshold": 15,
+        "mostly_background": 2,
+        "no_part_overlap": 5
+      },
+      "damage_type_breakdown": {
+        "broken-part": {
+          "total": 139,
+          "assigned": 96,
+          "unresolved": 43
+        },
+        "dent": {
+          "total": 44,
+          "assigned": 38,
+          "unresolved": 6
+        },
+        "scratch": {
+          "total": 31,
+          "assigned": 28,
+          "unresolved": 3
+        },
+        "missing-part": {
+          "total": 66,
+          "assigned": 59,
+          "unresolved": 7
+        },
+        "cracked": {
+          "total": 2,
+          "assigned": 2,
+          "unresolved": 0
+        },
+        "paint-chip": {
+          "total": 7,
+          "assigned": 6,
+          "unresolved": 1
+        },
+        "flaking": {
+          "total": 1,
+          "assigned": 1,
+          "unresolved": 0
+        }
+      },
+      "top_assigned_parts": {
+        "front-bumper": 56,
+        "licence-plate": 28,
+        "fender": 20,
+        "hood": 19,
+        "front-door": 19,
+        "trunk": 15,
+        "back-door": 14,
+        "back-bumper": 12
+      }
+    }
+  }
+}

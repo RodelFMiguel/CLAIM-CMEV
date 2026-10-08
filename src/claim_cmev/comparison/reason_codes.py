@@ -70,7 +70,7 @@ _ENTRIES = (
        "R6"),
     _e("coverage_unresolved", "photo_check", "Coverage could not be decided", "Coverage of this part is unclear",
        "R6 R8"),
-    _e("damage_evidence_uncertain", "photo_check", "Observations are below confidence", "The damage evidence is unclear",
+    _e("damage_evidence_uncertain", "photo_check", "Damage is uncertain, discarded or its filtering is unrecorded", "The damage evidence is unclear",
        "R7"),
     _e("damage_type_out_of_scope", "photo_check", "The damage type is outside the supported six",
        "This damage type is not supported", "R7"),

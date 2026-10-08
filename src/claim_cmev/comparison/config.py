@@ -16,7 +16,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from claim_cmev.contracts.common import DamageCode
+from claim_cmev.contracts.common import DamageCode, HitlDamageCode, damage_family
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "pipeline" / "m8_rules.yaml"
 CONFIG_ENV = "CMEV_M8_CONFIG"
@@ -29,13 +29,24 @@ class _Strict(BaseModel):
 class DamageRules(_Strict):
     min_observation_confidence: float = Field(ge=0, le=1)
     supported_types: tuple[DamageCode, ...] = Field(min_length=1)
+    supported_types_hitl: tuple[HitlDamageCode, ...] = Field(min_length=1)
 
-    @field_validator("supported_types")
+    @field_validator("supported_types", "supported_types_hitl")
     @classmethod
     def _unique(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         if len(set(value)) != len(value):
-            raise ValueError("supported_types is a set of CarDD codes")
+            raise ValueError("a supported-types list is a set of codes of one vocabulary")
         return value
+
+    def supports(self, observation: Any) -> bool:
+        """Whether the observation's damage type is in scope, judged by its own vocabulary's list.
+
+        ``dent`` and ``scratch`` are spelt alike in both vocabularies; the observation's
+        ``versions['taxonomy']`` decides which list applies.
+        """
+        family = damage_family(observation.versions.get("taxonomy"))
+        supported = self.supported_types_hitl if family == "damage-hitl-" else self.supported_types
+        return observation.damage_code in supported
 
 
 class CoverageRules(_Strict):

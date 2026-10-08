@@ -49,6 +49,38 @@ Use --profile full instead of --profile lean to run the split fixture services. 
 
 `CMEV_FIXTURE_MODE=true` is explicit in Compose. Setting it false does not enable real inference: the backend refuses unsupported live processing. The one exception is the parts stage, which is switched by adding `docker-compose.parts.yml`. The demo uses one local account and HTTP cookies; deployment authentication, TLS, scoped service credentials and production hardening are outside this baseline.
 
+## Optional real image branch: M1, M2 and M3
+
+`cmev-worker-image` runs the trained part-segmentation model, the trained damage model and the part summary in place of the three fixture image producers. It is off by default. It uses the vision image (`Dockerfile.parts`), the only one with the model libraries.
+
+```sh
+# artifacts/models/ must hold a verified entry for the model_version of configs/models/parts.yaml
+# (parts/0.8.0-b3-compound) and of configs/models/damage.yaml (damage-hitl/0.1.0-b3-compound).
+docker compose --env-file infra/compose/.env -f infra/compose/docker-compose.yml \
+  -f infra/compose/docker-compose.image.yml --profile lean up --build -d
+```
+
+That file is the whole switch: it starts the worker and sets `CMEV_PARTS_PRODUCER=real` and `CMEV_DAMAGE_PRODUCER=real` on every service. Use the same two `-f` files for `ps`, `logs` and `down`, and run `down` with both before going back to fixtures, as for the M1-only mode below. Do not add `docker-compose.parts.yml` as well.
+
+What changes:
+
+| Stage | With `docker-compose.image.yml` added |
+| --- | --- |
+| M1 parts | The parts checkpoint segments each uploaded photograph, as in the M1-only mode |
+| M2 damage | The damage checkpoint segments the same photograph in the same model frame. Each damage region is assigned to a part by overlap with the M1 mask of that photograph. Observations carry the HITL damage vocabulary (`damage-hitl-1.0.0`) |
+| M3 summary | Groups the real observations and measures the screening signals on the real masks. Only a surveyor's recorded confirmations count, so every coverage slot starts `unresolved` |
+| M4 to M6, M8 | Unchanged: the document stages are fixtures and M8 runs its rules. The assessment is still labelled a fixture |
+
+The worker loads and verifies both checkpoints before it reads any message, and exits with code 1 and the reason in its log when either fails the checks listed for the parts worker below. For the damage entry the class numbering comes from `label_schema.json` and must be background plus exactly the configured taxonomy's codes. `pipelines.vision.registry.adopt_damage_run` completes a damage trainer's output folder into such an entry. `CMEV_DAMAGE_PRODUCER=real` without `CMEV_PARTS_PRODUCER=real` is refused by every service.
+
+Limits of this mode:
+
+- The served damage model is weak: 0.158 foreground mIoU on its test split, and near zero for cracked, flaking and paint-chip. Its output is evidence for a surveyor to review, not a finding.
+- With no confirmations, M8 withholds every photo conclusion. A surveyor's identity and coverage confirmations create a new input revision that reruns only M3.
+- The seed claims have no photo bytes and fail their parts stage in this mode, as in the M1-only mode.
+- The served models are named in `configs/models/parts.yaml` and `configs/models/damage.yaml`, which are copied into both images. The orchestrator and the API read them to pin versions and the worker reads them to load weights, so a change of served model needs both images rebuilt (`--build`). A CarDD damage model can be served this way once one is trained and exported; see [ADR 0004](../docs/adr/0004-hitl-damage-model-and-vocabulary.md).
+- One process holds both models: about 2 GiB of memory on the CPU.
+
 ## Optional real M1 parts worker
 
 `cmev-worker-parts` runs the trained part-segmentation model in place of the fixture parts producer. It is off by default and has its own image (`Dockerfile.parts`). That is the only image with the model libraries: it installs the package's `vision` extra (PyTorch and transformers 5.17 or later); the other services do not.

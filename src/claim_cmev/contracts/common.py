@@ -31,8 +31,17 @@ Side = Literal["left", "right", "centre", "not_applicable", "unknown"]
 SIDES: tuple[str, ...] = get_args(Side)
 RESOLVED_SIDES = frozenset({"left", "right", "centre", "not_applicable"})
 DamageCode = Literal["dent", "scratch", "crack", "glass-shatter", "lamp-broken", "tire-flat"]
-"""The six CarDD codes, the only damage vocabulary v2 records accept."""
+"""The six CarDD codes (taxonomy ``damage-cardd-x.y.z``), the vocabulary the M2 specification names."""
 DAMAGE_CODES: tuple[str, ...] = get_args(DamageCode)
+HitlDamageCode = Literal["dent", "cracked", "scratch", "flaking", "broken-part", "paint-chip", "missing-part",
+                         "corrosion"]
+"""The eight HITL codes (taxonomy ``damage-hitl-x.y.z``), the access contingency. A separate
+vocabulary: ``dent`` and ``scratch`` are spelt as in CarDD but are not the same labels."""
+HITL_DAMAGE_CODES: tuple[str, ...] = get_args(HitlDamageCode)
+AnyDamageCode = Literal["dent", "scratch", "crack", "glass-shatter", "lamp-broken", "tire-flat", "cracked", "flaking",
+                        "broken-part", "paint-chip", "missing-part", "corrosion"]
+"""A code of either vocabulary. A record states which one through ``versions['taxonomy']``."""
+DAMAGE_VOCABULARIES: dict[str, tuple[str, ...]] = {"damage-cardd-": DAMAGE_CODES, "damage-hitl-": HITL_DAMAGE_CODES}
 Operation = Literal["repair", "replace", "paint", "other", "unknown"]
 OPERATIONS: tuple[str, ...] = get_args(Operation)
 CostOperation = Literal["repair", "replace", "paint"]
@@ -63,6 +72,20 @@ class ContractError(ValueError):
         super().__init__(f"{reason_code}: {message}" if message else reason_code)
         self.reason_code = reason_code
         self.message = message
+
+
+def damage_family(taxonomy_version: str | None) -> str:
+    """The vocabulary prefix a damage taxonomy version belongs to (``damage-cardd-`` or ``damage-hitl-``)."""
+    for prefix in DAMAGE_VOCABULARIES:
+        if taxonomy_version and taxonomy_version.startswith(prefix):
+            return prefix
+    raise ContractError("taxonomy_version_mismatch", f"{taxonomy_version!r} is not a known damage taxonomy "
+                        f"({', '.join(p + 'x.y.z' for p in DAMAGE_VOCABULARIES)})")
+
+
+def damage_codes_for(taxonomy_version: str | None) -> tuple[str, ...]:
+    """The damage codes of the vocabulary ``taxonomy_version`` names. The two are never merged."""
+    return DAMAGE_VOCABULARIES[damage_family(taxonomy_version)]
 
 
 class ContractModel(BaseModel):
@@ -171,6 +194,18 @@ class Provenance(ContractModel):
     producer_service: str = Field(min_length=1)
     source_dataset_id: str | None = None
     derivation_refs: list[str] = Field(default_factory=list)
+
+
+def evidence_source(source_kinds: Iterable[str]) -> Literal["real", "fixture", "none"]:
+    """How a set of records may be described to a reviewer, from their ``provenance.source_kind``.
+
+    ``real`` only when every record is real: a mix is never described as model output.
+    ``none`` when there are no records.
+    """
+    kinds = set(source_kinds)
+    if not kinds:
+        return "none"
+    return "real" if kinds == {"real"} else "fixture"
 
 
 class ArtifactRef(ContractModel):

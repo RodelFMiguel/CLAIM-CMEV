@@ -306,26 +306,35 @@ def _evaluate(item: LineItem, ctx: _Context) -> _Outcome:
     refs += [EvidenceRef(kind="photo", ref_id=p) for p in sorted(slot.covering_photo_ids)]
 
     # R7 and R8: confident, in-scope damage on the same physical part.
-    supported, threshold = set(cfg.damage.supported_types), cfg.damage.min_observation_confidence
+    supported, threshold = cfg.damage.supports, cfg.damage.min_observation_confidence
     summaries = index.resolved_summaries(part, side)
     observations = [o for s in summaries for o in index.members(s)]
-    confident = [o for o in observations if o.damage_code in supported and o.damage_confidence >= threshold]
+    confident = [o for o in observations if supported(o) and o.damage_confidence >= threshold]
     if confident:
         refs += [EvidenceRef(kind="summary", ref_id=s.summary_id) for s in summaries] + _obs_refs(confident)
         photo = _check("passed", ["damage_supported"], "R8",
                        supporting_observation_ids=[o.observation_id for o in confident],
                        max_confidence=max(o.damage_confidence for o in confident))
     else:
-        low = [o for o in observations if o.damage_code in supported]
-        out_of_scope = [o for o in observations if o.damage_code not in supported]
+        low = [o for o in observations if supported(o)]
+        out_of_scope = [o for o in observations if not supported(o)]
         nearby = index.unsided_observations(part)
-        codes = (["damage_evidence_uncertain"] if low or nearby else []) + (
+        # A confirmed view is not a confident negative detection. Historical real rows
+        # without filtering metadata are unknown; fixture-only rule cases retain their semantics.
+        filtering = {p: slot.damage_filtering.get(p) for p in slot.covering_photo_ids
+                     if slot.provenance.source_kind == "real" or p in slot.damage_filtering}
+        uncertain_photos = sorted(p for p, stats in filtering.items() if stats is None or stats.discarded)
+        codes = (["damage_evidence_uncertain"] if low or nearby or uncertain_photos else []) + (
             ["damage_type_out_of_scope"] if out_of_scope else [])
         if codes:
             refs += _obs_refs(low + out_of_scope + nearby)
             return stop("R7", "insufficient_evidence", codes, documentary=documentary, mark=mark_ok,
                         photo=_check("insufficient", codes, "R7", threshold=threshold,
                                      low_confidence_observation_ids=[o.observation_id for o in low],
+                                     uncertain_damage_photo_ids=uncertain_photos,
+                                     damage_filtering={p: filtering[p].model_dump(mode="json")
+                                                       if filtering[p] is not None else None
+                                                       for p in uncertain_photos},
                                      out_of_scope_observation_ids=[o.observation_id for o in out_of_scope],
                                      unresolved_identity_observation_ids=[o.observation_id for o in nearby]))
         if cfg.coverage.require_human_confirmation_for_negative and index.coverage_confirmation(slot) is None:

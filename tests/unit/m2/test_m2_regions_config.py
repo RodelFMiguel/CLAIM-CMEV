@@ -62,15 +62,18 @@ def test_excess_components_drop_the_smallest_and_keep_order():
     assert "max_components_exceeded" in result.reasons
 
 
-def test_damage_class_map_must_be_cardd_without_background():
+def test_damage_class_map_holds_known_damage_codes_without_background():
     damage = paint(blank(), 1, 0, 0, 20, 20)
     conf = np.full(damage.shape, 0.8)
     with pytest.raises(ContractError) as err:
         extract_regions(damage, conf, {0: "dent", 1: "scratch"}, REGIONS)
     assert err.value.reason_code == "mask_encoding_mismatch"
     with pytest.raises(ContractError) as err:
-        extract_regions(damage, conf, {1: "corrosion"}, REGIONS)  # HITL-only label
+        extract_regions(damage, conf, {1: "rust"}, REGIONS)  # a label of neither vocabulary
     assert err.value.reason_code == "taxonomy_version_mismatch"
+    # A HITL label is a known code here; assign_damage_to_part refuses it under a job that pins CarDD
+    # (test_a_class_map_from_another_taxonomy_than_the_job_pins_is_refused).
+    assert [r.damage_code for r in extract_regions(damage, conf, {1: "corrosion"}, REGIONS).regions] == ["corrosion"]
 
 
 # ---------------------------------------------------------------- boxes on the original photo
@@ -143,16 +146,17 @@ def test_fuzz_side_is_always_unknown():
 # ---------------------------------------------------------------- configuration
 def test_default_configuration_is_the_proposed_specification_values():
     cfg = load_assignment_config()
-    assert cfg.status == "proposed" and cfg.config_version == "m2-assignment/0.1.0"
+    assert cfg.status == "proposed" and cfg.config_version == "m2-assignment/0.2.0"
     assert (cfg.regions.min_damage_confidence, cfg.regions.min_damage_pixels, cfg.regions.connectivity,
             cfg.regions.max_components_per_photo) == (0.5, 256, 8, 50)
     rule = cfg.assignment
     assert (rule.assign_min_containment, rule.assign_ambiguity_margin, rule.assign_background_max,
-            rule.split_components) == (0.6, 0.2, 0.5, False)
+            rule.split_components, rule.split_min_pixels, rule.split_min_proportion) == (0.6, 0.2, 0.5, False, 400, 0.2)
 
 
 @pytest.mark.parametrize("change", [
-    {"assignment": {"split_components": True}},
+    {"assignment": {"split_min_pixels": 0}},
+    {"assignment": {"split_min_proportion": 0}},
     {"assignment": {"surprise": 1}},
     {"regions": {"connectivity": 6}},
     {"assignment": {"assign_min_containment": 0}},

@@ -225,3 +225,108 @@ def test_single_candidate_is_never_called_ambiguous():
 def test_reason_precedence_is_the_contract_vocabulary():
     assert set(REASON_PRECEDENCE) == {"no_part_overlap", "below_containment_threshold", "ambiguous_between_parts",
                                       "part_not_accepted", "mostly_background", "part_masks_missing"}
+
+
+# ---------------------------------------------------------------- dual-gated seam splitting
+def test_dual_gated_split_clean_split():
+    # 1000 px damage spanning 500 px on door and 500 px on fender (both >= 400 px, >= 20%)
+    damage = paint(blank(), DAMAGE_ID["scratch"], 54, 20, 74, 70)
+    cfg = config(assignment={"split_components": True})
+    result = run(damage, door_and_fender(), cfg=cfg)
+
+    assert len(result.observations) == 2
+    obs1, obs2 = result.observations
+    assert (obs1.part_code, obs1.area_pixels, obs1.assignment_status) == ("front-door", 500, "assigned")
+    assert (obs2.part_code, obs2.area_pixels, obs2.assignment_status) == ("fender", 500, "assigned")
+    assert obs1.observation_id != obs2.observation_id
+    assert obs1.primary_containment == 1.0 and obs2.primary_containment == 1.0
+    assert obs1.damage_mask_ref.component_index == 1 and obs2.damage_mask_ref.component_index == 1
+
+    payload = validate_event(result, cfg)["payload"]
+    assert len(payload["observations"]) == 2
+    assert payload["unknown_part_count"] == 0
+
+
+def test_dual_gated_split_prunes_minor_sliver():
+    # 3-part layout: front-door (450 px), fender (450 px), front-bumper (100 px sliver)
+    parts = blank()
+    paint(parts, PART_ID["front-door"], 0, 0, 45, 128)
+    paint(parts, PART_ID["fender"], 45, 0, 90, 128)
+    paint(parts, PART_ID["front-bumper"], 90, 0, 128, 128)
+
+    # 1000 px damage: x in [0, 100), y in [10, 20) -> height 10, width 100
+    # cols 0..45 = 450 px (45%), cols 45..90 = 450 px (45%), cols 90..100 = 100 px (10%)
+    damage = paint(blank(), DAMAGE_ID["scratch"], 0, 10, 100, 20)
+    cfg = config(assignment={"split_components": True})
+    result = run(damage, parts, cfg=cfg)
+
+    # Only door (450 px >= 400, 45% >= 20%) and fender qualify.
+    # Front-bumper (100 px < 400, 10% < 20%) is pruned.
+    assert len(result.observations) == 2
+    codes = {o.part_code for o in result.observations}
+    assert codes == {"front-door", "fender"}
+    areas = {o.part_code: o.area_pixels for o in result.observations}
+    assert areas == {"front-door": 450, "fender": 450}
+
+
+def test_dual_gated_split_sub_threshold_stays_unresolved():
+    # 400 px total: 200 px on door, 200 px on fender. Both < 400 px floor.
+    damage = paint(blank(), DAMAGE_ID["scratch"], 54, 40, 74, 60)
+    cfg = config(assignment={"split_components": True})
+    result = run(damage, door_and_fender(), cfg=cfg)
+
+    # Fewer than 2 sub-components pass the gate, so stays whole and ambiguous.
+    assert len(result.observations) == 1
+    obs = result.observations[0]
+    assert obs.assignment_status == "unresolved"
+    assert obs.part_reason == "ambiguous_between_parts"
+    assert obs.area_pixels == 400
+
+
+
+# ---------------------------------------------------------------- damage vocabularies
+HITL_CLASSES = {1: "missing-part", 2: "broken-part", 3: "scratch", 4: "cracked", 5: "dent", 6: "flaking",
+                7: "paint-chip", 8: "corrosion"}
+
+
+def _hitl_context(cfg):
+    base = context(cfg)
+    return type(base)(**{**base.__dict__, "versions": {**base.versions, "taxonomy": "damage-hitl-1.0.0"}})
+
+
+def test_hitl_classes_are_observed_under_the_hitl_taxonomy():
+    cfg = config()
+    damage = paint(blank(), 8, 10, 30, 30, 50)  # class 8 is corrosion in this checkpoint's numbering
+    result = run(damage, door_and_fender(), cfg=cfg, ctx=_hitl_context(cfg), damage_classes=HITL_CLASSES)
+    obs = _one(result)
+    assert (obs.damage_code, obs.part_code, obs.versions["taxonomy"]) == ("corrosion", "front-door", "damage-hitl-1.0.0")
+
+
+def test_a_class_map_from_another_taxonomy_than_the_job_pins_is_refused():
+    cfg = config()
+    damage = paint(blank(), 8, 10, 30, 30, 50)
+    with pytest.raises(ContractError) as mixed:
+        run(damage, door_and_fender(), cfg=cfg, damage_classes=HITL_CLASSES)  # the job pins damage-cardd
+    assert mixed.value.reason_code == "taxonomy_version_mismatch"
+    with pytest.raises(ContractError) as mixed:
+        run(paint(blank(), DAMAGE_ID["crack"], 10, 30, 30, 50), door_and_fender(), cfg=cfg, ctx=_hitl_context(cfg))
+    assert mixed.value.reason_code == "taxonomy_version_mismatch"
+
+
+def test_filter_counts_are_published_even_without_an_observation():
+    damage = paint(blank(), DAMAGE_ID["dent"], 10, 30, 30, 50)
+    result = run(damage, door_and_fender(), confidence=np.full(damage.shape, 0.49))
+    payload = validate_event(result, config())["payload"]
+    assert payload["observation_ids"] == [] and payload["dropped_region_count"] == 0
+    assert payload["filtering"] == {"dropped_low_confidence_pixels": 400, "below_min_pixels_count": 0,
+                                    "max_components_exceeded_count": 0}
+
+
+def test_component_cap_and_small_regions_are_distinct_filter_counts():
+    damage = paint(blank(), DAMAGE_ID["dent"], 10, 30, 30, 50)
+    paint(damage, DAMAGE_ID["dent"], 10, 60, 30, 80)
+    paint(damage, DAMAGE_ID["dent"], 10, 90, 15, 95)
+    cfg = config(regions={"max_components_per_photo": 1})
+    payload = validate_event(run(damage, door_and_fender(), cfg=cfg), cfg)["payload"]
+    assert payload["filtering"] == {"dropped_low_confidence_pixels": 0, "below_min_pixels_count": 1,
+                                    "max_components_exceeded_count": 1}

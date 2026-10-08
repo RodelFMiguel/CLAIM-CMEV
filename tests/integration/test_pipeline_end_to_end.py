@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 
 from claim_cmev.api.main import create_app
 from claim_cmev.costs.reference import CostTableError, active_table_version
+from claim_cmev.fixtures import FIXTURE_NOTICE
 from claim_cmev.orchestration.consolidation import Consolidator
 from claim_cmev.orchestration.plan import VersionBundle
 from claim_cmev.orchestration.services import LocalPipeline, RuntimeSettings, build_runtimes
@@ -82,9 +83,13 @@ def test_upload_to_reassessment_milestone(api):
     assert claim["status"] == "in_review" and claim["assessment_revision"] == 1
 
     view = client.get(f"/api/v1/claims/{cid}/assessments/1").json()
-    assert view["provenance"]["source_kind"] == "fixture" and view["fixture_notice"]
+    assert view["provenance"]["source_kind"] == "fixture" and view["fixture_notice"] == FIXTURE_NOTICE
+    assert view["evidence_sources"] == {"image": "fixture", "document": "fixture"}
+    assert view["damage_summary"] and {r["source_kind"] for r in view["damage_summary"]} == {"fixture"}
+    assert all(r["reason"].startswith("Fixture observation; no model analysed the uploaded photographs. ")
+               for r in view["damage_summary"] if r["summary_id"])
     assert view["state"] == "ready" and view["cost_table_version"] == view["versions"]["cost_table"]
-    assert view["rules_config_version"] == "m8-rules/0.1.0" and view["reuse_lineage"] == []
+    assert view["rules_config_version"] == "m8-rules/0.2.1" and view["reuse_lineage"] == []
     assert len(view["findings"]) == len(view["line_items"]) == 3
     first = view["line_items"][0]
     assert first["printed_amount"] == "1150.00" and first["effective_amount"] is None

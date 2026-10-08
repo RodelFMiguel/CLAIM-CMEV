@@ -10,7 +10,7 @@ catalogue. Display text always comes from a reason code, never free composition.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from typing import Any
 
@@ -18,6 +18,7 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
 from ..comparison.reason_codes import REASON_CATALOGUE_VERSION, SYNTHETIC_COST_NOTICE, display_text, is_known
+from ..contracts.common import evidence_source
 from ..contracts.documents import PenMark
 from ..documents.pen_marks import row_mark_states
 from ..fixtures import FIXTURE_NOTICE
@@ -39,6 +40,14 @@ _MARK_TEXT = {
     ("exclusion", "rejected"): "Exclusion mark rejected; the row is checked normally.",
 }
 _UNLINKED_TEXT = "This mark sits between rows. Choose the row it belongs to before confirming it."
+# What a damage row is, by the provenance of the records behind it.
+_OBSERVATION_ORIGIN = {"real": "Model observation from the uploaded photographs.",
+                       "fixture": "Fixture observation; no model analysed the uploaded photographs."}
+_IMAGE_REAL_TEXT = "The trained part and damage models analysed the uploaded photographs."
+_DOCUMENT_TEXT = {"fixture": "Estimate rows and pen marks are hand-authored demonstration fixtures; the uploaded "
+                             "pages were not read.",
+                  "none": "No estimate page was processed.", "real": ""}
+_RULES_TEXT = "The M8 rules ran with a synthetic cost table. Not repair-price validation or a final claim approval."
 
 
 def text_for(code: str) -> str:
@@ -269,25 +278,54 @@ def _mark_legacy(mark: Mapping[str, Any]) -> dict[str, Any]:
             "box_norm": mark["box_norm"], "page_id": mark["page_id"], "reason": text}
 
 
+def _source(records: Iterable[Mapping[str, Any]]) -> str:
+    return evidence_source(r["provenance"]["source_kind"] for r in records)
+
+
+def evidence_sources(inputs: Mapping[str, Any]) -> dict[str, str]:
+    """Whether each branch's records are model or parser output (``real``), fixtures, or absent (``none``).
+
+    Taken from the provenance the records carry, so a real image branch beside fixture
+    document stages is reported as exactly that.
+    """
+    return {"image": _source([*inputs.get("part_summaries", []), *inputs.get("coverage", []),
+                              *inputs.get("observations", [])]),
+            "document": _source([*inputs.get("line_items", []), *inputs.get("pen_marks", [])])}
+
+
+def results_notice(sources: Mapping[str, str]) -> str:
+    """The notice of an assessment labelled a fixture: which of its results are fixtures.
+
+    Real image records are never called fixtures; the document stages and the cost table still are.
+    """
+    if sources["image"] != "real":
+        return FIXTURE_NOTICE
+    return " ".join(filter(None, (_IMAGE_REAL_TEXT, _DOCUMENT_TEXT[sources["document"]], _RULES_TEXT)))
+
+
 def _damage_summary(inputs: Mapping[str, Any]) -> list[dict[str, Any]]:
     coverage = {(c["part_code"], c["side"]): c for c in inputs.get("coverage", [])}
     listed, rows = set(), []
     for summary in inputs.get("part_summaries", []):
         slot = coverage.get((summary["part_code"], summary["side"])) if summary["part_code"] else None
         state_code = slot["state"] if slot else "unresolved"
-        reasons = (slot["reasons"] if slot else []) + list(summary["reasons"])
+        # The group and its slot can give the same reason; it is named once.
+        reasons = list(dict.fromkeys([*(slot["reasons"] if slot else []), *summary["reasons"]]))
+        source = _source([summary, *([slot] if slot else [])])
         rows.append({"summary_id": summary["summary_id"], "part_code": summary["part_code"] or "unresolved",
                      "side": summary["side"], "identity_status": summary["identity_status"], "coverage": state_code,
                      "damage_codes": summary["damage_codes"], "observation_count": summary["observation_count"],
                      "photo_count": len(summary["supporting_photo_ids"]), "reason_codes": reasons,
-                     "reason": "Fixture observation; no model analysed the uploaded photographs. Coverage "
-                               f"{state_code.replace('_', ' ')}" + (f" ({', '.join(reasons)})." if reasons else ".")})
+                     "source_kind": source,
+                     "reason": f"{_OBSERVATION_ORIGIN[source]} Coverage {state_code.replace('_', ' ')}"
+                               + (f" ({', '.join(reasons)})." if reasons else ".")})
         listed.add((summary["part_code"], summary["side"]))
     for (part, side), slot in coverage.items():
         if side != "unknown" and (part, side) not in listed:
             rows.append({"summary_id": None, "part_code": part, "side": side, "identity_status": "resolved",
                          "coverage": slot["state"], "damage_codes": [], "observation_count": 0,
                          "photo_count": len(slot["covering_photo_ids"]), "reason_codes": list(slot["reasons"]),
+                         "source_kind": _source([slot]),
                          "reason": f"No damage observation. Coverage {slot['state'].replace('_', ' ')}."})
     return rows
 
@@ -337,6 +375,7 @@ def assessment_view(db: Session, claim: Mapping[str, Any], row: Mapping[str, Any
                    {r["code"] for r in body["missing_repairs_check"]["reasons"]} | set(body["incomplete_reasons"]))
     declaration = inputs.get("declaration")
     fixture = body["provenance"]["source_kind"] == "fixture"
+    sources = evidence_sources(inputs)
     view = {**body,
             "is_current": not_current is None,
             "is_latest": claim_v["latest_assessment_revision"] == row["assessment_revision"],
@@ -359,7 +398,8 @@ def assessment_view(db: Session, claim: Mapping[str, Any], row: Mapping[str, Any
             "reason_catalogue_version": REASON_CATALOGUE_VERSION,
             "reason_texts": {code: text_for(code) for code in codes},
             "cost_notice": SYNTHETIC_COST_NOTICE,
-            "fixture_notice": FIXTURE_NOTICE if fixture else None}
+            "evidence_sources": sources,
+            "fixture_notice": results_notice(sources) if fixture else None}
     from .review_service import gate, load
     domain = load(db, claim, row, review, claim_v=claim_v)
     view["review_overlay"] = {

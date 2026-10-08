@@ -1,0 +1,40 @@
+# Configuration for M2: Vehicle Damage Segmentation (SegFormer-B3 with Compound Loss)
+# Specifications: docs/specs/module-02-damage-segmentation.md
+#                 docs/specs/model_training_specification.md section 7.2
+
+model_id: "damage"
+model_version: "damage/0.1.0-b3-compound"
+taxonomy_version: "hitl-damage-1.0.0"
+config_version: "damage-cfg-0.1.0"
+
+# Architecture and Training Recipe
+architecture: "nvidia/mit-b3"
+num_labels: 9
+input_size: 512
+resize_policy: "longest_edge_pad"
+
+# Training Hyperparameters
+batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate_head: 6.0e-5
+learning_rate_encoder: 6.0e-6
+weight_decay: 0.01
+warmup_steps: 300
+num_epochs: 60
+early_stopping_patience: 10
+seed: 20260922
+
+# Loss Formulation (Compound Loss: Weighted CE + Soft Dice)
+loss_type: "compound"
+dice_lambda: 1.0
+loss_weighting: "inverse_sqrt_freq"
+background_weight: 0.20
+
+# Augmentation Mode
+augment_mode: "standard"
+
+# Serving and Inference Thresholds
+device: "cuda"
+min_damage_pixels: 32
+min_damage_confidence: 0.40
+write_overlay: true

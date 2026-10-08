@@ -128,7 +128,10 @@ interface Assessment {
     coverage: string;
     reason: string;
     photo_count: number;
+    source_kind?: string;
   }[];
+  // "real" when trained models or parsers read the uploaded evidence; an older API omits it.
+  evidence_sources?: { image: string; document: string };
   versions: Record<string, string>;
   declaration_completeness: string;
   fixture_notice: string;
@@ -597,6 +600,7 @@ function ReviewOverview({ id }: { id: string }) {
     files.find((f) => f.file_id === selectedFile) ??
     (selectedRow ? undefined : files[0]);
   const row = assessment?.line_items.find((r) => r.entry_id === selectedRow);
+  const imageFromModels = assessment?.evidence_sources?.image === "real";
   const frozen = review?.finalized ?? false;
   // A shown assessment that is not the claim's current one is read-only.
   const notCurrent =
@@ -659,9 +663,15 @@ function ReviewOverview({ id }: { id: string }) {
       <div className="fixture-banner">
         <Info size={18} />
         <p>
-          <strong>Demonstration results.</strong>{" "}
+          <strong>
+            {!assessment
+              ? "Demonstration prototype."
+              : imageFromModels
+                ? "Partly demonstration results."
+                : "Demonstration results."}
+          </strong>{" "}
           {assessment?.fixture_notice ??
-            "Processing uses illustrative fixtures. Uploaded evidence is preserved but is not analysed by trained models."}
+            "No results yet. When they appear, this notice says which come from trained models and which are demonstration fixtures."}
         </p>
       </div>
       {error && <ErrorBanner message={error} />}
@@ -799,7 +809,7 @@ function ReviewOverview({ id }: { id: string }) {
           <p>
             {claim.status === "awaiting_upload"
               ? "This sample claim has no original files. Start a new claim to try the upload workflow."
-              : "The worker prepares a versioned fixture assessment. Results will appear here when processing completes."}
+              : "The worker prepares a versioned assessment. Results will appear here when processing completes."}
           </p>
           {processing?.jobs.map((job) => (
             <div className="job-state" key={job.job_key}>
@@ -860,7 +870,11 @@ function ReviewOverview({ id }: { id: string }) {
                       <p>{part.reason}</p>
                       <small>
                         Coverage: {part.coverage} &middot; {part.photo_count}{" "}
-                        illustrative photographs
+                        {part.source_kind === "real"
+                          ? part.photo_count === 1
+                            ? "uploaded photograph"
+                            : "uploaded photographs"
+                          : "illustrative photographs"}
                       </small>
                     </div>
                   ))
@@ -872,6 +886,7 @@ function ReviewOverview({ id }: { id: string }) {
                 )}
                 <IdentityControls
                   photoIds={assessment.review_photo_ids}
+                  uploadedPhotos={imageFromModels}
                   submit={reviewAction}
                   locked={locked}
                 />
@@ -1379,8 +1394,9 @@ function ReviewOverview({ id }: { id: string }) {
               <div className="inline-info">
                 <Info size={16} />
                 <span>
-                  Mock processing does not produce evidence overlays or validate
-                  repair prices.
+                  {imageFromModels
+                    ? "The part and damage masks are stored but not shown here. Repair prices are not validated."
+                    : "Mock processing does not produce evidence overlays or validate repair prices."}
                 </span>
               </div>
             </aside>
@@ -1494,7 +1510,9 @@ function PrintReport({ id }: { id: string }) {
     "Input " + assessment.input_revision,
     "Assessment " + assessment.assessment_revision,
     "Review " + review.review_revision,
-    "Demonstration fixtures. Reference costs are synthetic.",
+    assessment.evidence_sources?.image === "real"
+      ? "Model results for photographs; demonstration fixtures for documents. Reference costs are synthetic."
+      : "Demonstration fixtures. Reference costs are synthetic.",
     ...Object.entries(assessment.versions).map(
       ([key, value]) => key + ": " + value,
     ),

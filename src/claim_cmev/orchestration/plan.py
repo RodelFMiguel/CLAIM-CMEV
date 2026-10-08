@@ -65,19 +65,47 @@ class VersionBundle:
         return cls(stages=stages)
 
     @classmethod
-    def for_runtime(cls, parts_producer: str = "fixture") -> VersionBundle:
-        """The bundle the orchestrator pins: the fixture tags, with the configured M1 checkpoint when parts are real.
+    def for_runtime(cls, parts_producer: str = "fixture", damage_producer: str = "fixture") -> VersionBundle:
+        """The bundle the orchestrator pins: the fixture tags, replaced for each stage a real worker owns.
 
-        Only the parts stage has a model worker. Its versions come from the parts configuration,
-        and that worker verifies them against the checkpoint it loads.
+        ``parts_producer="real"`` pins the configured M1 checkpoint. ``damage_producer="real"``
+        also pins the configured M2 checkpoint and the real M3 rules, and needs real parts,
+        because M2 reads the M1 mask. The workers verify these versions against what they load.
         """
         bundle = cls.fixture()
+        if damage_producer == "real" and parts_producer != "real":
+            raise ValueError("a real damage stage needs a real parts stage: M2 reads the M1 mask")
         if parts_producer != "real":
             return bundle
-        from ..vision.parts.config import load_parts_config
-
-        return cls(stages={**bundle.stages, "parts": load_parts_config().stage_versions(CODE_VERSION)},
+        stages = ("parts", "damage", "summary") if damage_producer == "real" else ("parts",)
+        return cls(stages={**bundle.stages, **{stage: real_stage_versions(stage) for stage in stages}},
                    intake=bundle.intake)
+
+
+def real_stage_versions(stage: str) -> dict[str, str]:
+    """The versions of one real image stage: the configured checkpoint, or the M2/M3 rules.
+
+    The orchestrator pins them and the stage's worker serves only commands pinned to them, so
+    both read them from here. Only the configuration that stage uses is loaded, and no model
+    library is imported.
+    """
+    from ..vision.parts.config import load_parts_config
+
+    parts = load_parts_config()
+    if stage == "parts":
+        return parts.stage_versions(CODE_VERSION)
+    if stage == "damage":
+        from ..vision.damage.config import load_assignment_config
+        from ..vision.damage.model_config import load_damage_model_config
+
+        return load_damage_model_config().stage_versions(
+            CODE_VERSION, parts_model=parts.model_version, assignment_config=load_assignment_config().config_version)
+    if stage == "summary":
+        from ..vision.multiview.config import load_summary_config
+
+        return {"summary_config": load_summary_config().config_version, "taxonomy": parts.taxonomy_version,
+                "code": CODE_VERSION}
+    raise KeyError(f"{stage!r} has no real worker")
 
 
 def consolidate_versions(rules_config_version: str, cost_table_version: str) -> dict[str, str]:
@@ -107,4 +135,5 @@ __all__ = [
     "BRANCH_OF", "CODE_VERSION", "COMMAND_TOPIC", "DOCUMENT_STAGES", "EVENT_TOPIC", "FAILED_TOPIC", "FIXTURE_FAMILY",
     "IMAGE_STAGES", "INPUT_TOPIC", "NEXT_STAGE", "PER_ITEM", "READY_TOPIC", "SERVICE", "STAGES", "STAGE_OF_EVENT",
     "STAGE_OF_TASK", "TASKS", "VersionBundle", "consolidate_versions", "job_key", "page_target", "pinned_versions",
+    "real_stage_versions",
 ]

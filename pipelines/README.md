@@ -39,5 +39,25 @@ The notebooks under `notebooks/` train with `pipelines/vision/training.py`, whic
 - **Same split.** `prepare_hitl(..., split_from="data/splits/parts/0.1.1")` gives every parts photograph its published partition; `data/processed/hitl/v3` is prepared that way. Earlier prepared versions drew their own split.
 - **Same frame.** `TrainingConfig(frame="serving")` builds the worker's model frame. The default, `"centred"`, is the frame of the runs saved before 2026-10-08.
 - **Export.** `pipelines.vision.registry.export_parts_run(run_dir, "parts/<name>")` writes a serving-frame parts run as a registry entry with status `candidate`. It refuses other runs and never replaces an entry.
+- **Damage export.** `export_damage_run(run_dir, "damage-cardd/<name>")` does the same for a damage run. The run's classes decide the vocabulary, so a HITL run is exported as `damage-hitl/<name>`. The run must be trained in the serving frame at the size in `configs/models/damage.yaml` (512); the CarDD notebook's `serving_512` recipe does that. To serve the entry, set `model_id`, `model_version` and `taxonomy_version` in `configs/models/damage.yaml`. No such CarDD run exists yet.
 
 A run saved under transformers 4 still reloads: `load_run` translates the tensor names with the library's own rename table. The notebook and script evaluators differ: the notebook masks use the `nested` overlap policy and leave padding out of the metrics, so their scores are not comparable with `eval_segmentation.py` scores.
+
+## M2 damage segmentation (`vision/`)
+
+```sh
+python pipelines/vision/convert_damage.py --raw-dir "<HITL damage export>"   # polygons -> masks in data/interim/damage_masks
+python pipelines/vision/train_damage.py --config configs/models/damage_b3_compound.yaml --output-dir <folder>
+python pipelines/vision/eval_damage.py --model-dir <folder>
+```
+
+The tracked split is `data/splits/damage/0.1.0` (558/124/132). Photographs it shares with the parts split are in the same partition there. Its records hold repository-relative paths from the workstation that built it (`data/raw/Car parts dataset/...`), so on another layout the files must be reachable under those paths; it has not been made portable the way parts split 0.1.1 was.
+
+The trainer's output folder is not yet a registry entry the M2 worker accepts: it has no weight hash, no frame record, default class names and the trainer's own version and taxonomy names. Complete it with:
+
+```python
+from pipelines.vision.registry import adopt_damage_run
+adopt_damage_run("<folder>")   # the entry of model_version in configs/models/damage.yaml
+```
+
+This checks the result with the worker's own verification and loader before writing, keeps the trainer's manifest as `manifest.trainer.json`, and never replaces an entry. A notebook damage run is exported with `export_damage_run` instead (see "Notebook runs" above). `benchmark_m1_m2_assignment.py`, `experiment_seam_split.py` and the `generate_*`/`build_*report*` scripts produce the reports under `artifacts/benchmarks/`; the worker uses none of them.
