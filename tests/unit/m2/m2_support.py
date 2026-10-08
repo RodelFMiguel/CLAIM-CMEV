@@ -83,7 +83,8 @@ def run(damage: np.ndarray, parts: np.ndarray | None, *, cfg: AssignmentConfig |
     conf = np.full(damage.shape, 0.8) if confidence is None else confidence
     ctx = kwargs.pop("ctx", None) or context(cfg, photo_id, part_ref=parts is not None, size=damage.shape[0])
     return assign_damage_to_part(
-        damage, parts, confidence=conf, config=cfg, damage_classes=DAMAGE_CLASSES, part_classes=PART_CLASSES,
+        damage, parts, confidence=conf, config=cfg, damage_classes=kwargs.pop("damage_classes", DAMAGE_CLASSES),
+        part_classes=PART_CLASSES,
         accepted_parts=set(PART_CODES) if accepted is None else accepted, context=ctx, **kwargs)
 
 

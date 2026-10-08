@@ -2,6 +2,8 @@
 
 Welcome! This document provides a complete onboarding and handoff guide for taking over, extending, or consuming **Module 1 (Vehicle Part Segmentation)** and **Module 2 (Damage Segmentation & Part Matching)** in the CLAIM-CMEV system.
 
+> **Status update (2026-10-08).** Since this guide was written, M2 and M3 gained real workers and the whole image branch can run on the trained models. Section 7's "primary next task" is done as a first version. Corrections made below are marked "(corrected 2026-10-08)". [CONTEXT.md](CONTEXT.md) has the current state and what was measured.
+
 ---
 
 ## 1. Executive Summary: What Has Been Built
@@ -41,8 +43,9 @@ Install project dependencies in editable mode:
 # Activate your Python 3.12 virtual environment
 source .venv/bin/activate
 
-# Install package with core vision and contract dependencies
-pip install -e .
+# Install the package with the model libraries (PyTorch and transformers 5.17 or later) and the test tools.
+# (corrected 2026-10-08: a plain `pip install -e .` installs neither)
+pip install -e ".[vision,dev]"
 ```
 
 ---
@@ -63,12 +66,22 @@ CLAIM-CMEV/
         │       ├── model.safetensors         # <-- [M1 SegFormer-B3, 181 MB]
         │       ├── config.json
         │       └── manifest.json
-        └── damage/
+        └── damage-hitl/                      # (corrected 2026-10-08: the served version is damage-hitl/0.1.0-b3-compound)
             └── 0.1.0-b3-compound/
                 ├── model.safetensors         # <-- [M2 SegFormer Champion, 181 MB]
                 ├── config.json
+                ├── config.yaml
                 └── manifest.json
 ```
+
+After unpacking the damage folder, complete it into a registry entry the M2 worker verifies (it adds the weight hash, the class numbering and the frame record, and keeps the trainer's manifest):
+
+```python
+from pipelines.vision.registry import adopt_damage_run
+adopt_damage_run("artifacts/models/damage-hitl/0.1.0-b3-compound")
+```
+
+The served M1 model is the SegFormer-B3. The YOLO checkpoints are comparison results; no worker can load them.
 
 > **Note:** `.gitignore` is configured to ignore `*.pt`, `*.safetensors`, and `/artifacts/models/**`, so you will not accidentally commit these large weights.
 
@@ -81,11 +94,12 @@ CLAIM-CMEV/
   - `run_parts_segmentation()`: Accepts photos, runs model inference, normalizes geometries, and generates visualization overlays.
 - **Color Palette & Overlay Utilities**: [`src/claim_cmev/vision/palette.py`](src/claim_cmev/vision/palette.py)
 - **Worker & Service Registration**: [`src/claim_cmev/worker.py`](src/claim_cmev/worker.py) (`role="parts"`), [`infra/Dockerfile.parts`](infra/Dockerfile.parts).
-- **Specification**: [`docs/specs/module-01-parts-segmentation.md`](docs/specs/module-01-parts-segmentation.md)
+- **Specification**: [`docs/specs/module-01-vehicle-part-segmentation.md`](docs/specs/module-01-vehicle-part-segmentation.md) (corrected 2026-10-08)
 
 ### Module 2: Damage & Part Matching
 - **Matching & Splitting Engine**: [`src/claim_cmev/vision/damage/assignment.py`](src/claim_cmev/vision/damage/assignment.py)
-  - `assign_component()`: Evaluates damage masks against M1 part masks, applies containment margins, and executes dual-gated seam splitting.
+  - `assign_damage_to_part()`: extracts the damage regions of one photograph, assigns each against the M1 part mask and, only when `split_components` is on, applies the dual-gated seam splitting. `assign_component()` decides one region. (corrected 2026-10-08)
+- **Serving Adapter and Worker**: [`src/claim_cmev/vision/damage/adapter.py`](src/claim_cmev/vision/damage/adapter.py) (`run_damage_segmentation`, `make_damage_handler`), served model in [`configs/models/damage.yaml`](configs/models/damage.yaml). (added 2026-10-08)
 - **Configuration & Thresholds**: [`configs/pipeline/m2_assignment.yaml`](configs/pipeline/m2_assignment.yaml)
   - Controls minimum pixel thresholds, containment boundaries (60%), ambiguity margin (20%), and dual-gating parameters (`split_min_pixels: 400`, `split_min_proportion: 0.20`).
 - **Specification**: [`docs/specs/module-02-damage-segmentation.md`](docs/specs/module-02-damage-segmentation.md)
@@ -151,14 +165,11 @@ python pipelines/vision/experiment_seam_split.py
 ## 7. Next Steps: Where to Continue Development
 
 ### Primary Next Task: Module 3 (Part Summary & Photographic Coverage Gating)
-- **Specification**: [`docs/specs/module-03-part-summary-and-coverage.md`](docs/specs/module-03-part-summary-and-coverage.md)
-- **What to build**:
-  1. Consume `cmev.evt.parts-segmented.v1` (from M1) and `cmev.evt.damage-localized.v1` (from M2).
-  2. Aggregate part observations across multiple claim photos.
-  3. Determine vehicle viewpoint coverage (front, rear, left, right) and flag missing photo coverage.
-  4. Emit `cmev.evt.part-summary-created.v1` event to feed downstream Module 8 assessment checks.
+- **Specification**: [`docs/specs/module-03-part-summary-coverage.md`](docs/specs/module-03-part-summary-coverage.md)
+- **Status (corrected 2026-10-08)**: a first real M3 worker exists in [`src/claim_cmev/vision/multiview/adapter.py`](src/claim_cmev/vision/multiview/adapter.py). It consumes `cmev.cmd.part-summary.v1`, reads the M1 predictions and M2 observations the command names, measures the screening signals on the real masks and publishes `cmev.evt.part-summarised.v1`. M3 does not estimate viewpoints: coverage is decided per part and side from a surveyor's identity and coverage confirmations plus the screen.
+- **What remains**: calibrating the screening thresholds on real photographs, and the items listed in the specification's serving note.
 
 ### Secondary Next Tasks:
-- **Module 4 (Document Extraction)**: Extract estimate line items from scanned PDF estimates ([`docs/specs/module-04-document-extraction.md`](docs/specs/module-04-document-extraction.md)).
-- **Module 8 (Cross-Check Assessment)**: Cross-reference declared repair line items against visual evidence from M2/M3 ([`docs/specs/module-08-damage-to-repair-crosscheck.md`](docs/specs/module-08-damage-to-repair-crosscheck.md)).
+- **Module 4 (Page Reading)** and **Module 5 (Line-Item Extraction)**: read estimate pages and extract their line items ([`docs/specs/module-04-page-reading.md`](docs/specs/module-04-page-reading.md), [`docs/specs/module-05-line-item-extraction.md`](docs/specs/module-05-line-item-extraction.md)). (corrected 2026-10-08)
+- **Module 8 (Cross-Check Assessment)**: Cross-reference declared repair line items against visual evidence from M2/M3 ([`docs/specs/module-08-consolidation-checks.md`](docs/specs/module-08-consolidation-checks.md), corrected 2026-10-08).
 - **Module 9 (Review Workbench UI)**: Render parts and damage overlays in the browser for surveyor validation ([`docs/specs/ui_specification.md`](docs/specs/ui_specification.md)).

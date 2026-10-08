@@ -28,9 +28,12 @@ def test_observation_valid_and_round_trip():
 
 @pytest.mark.parametrize("overrides", [
     {"side": "left"},  # a model never produces a side
-    {"damage_code": "corrosion"},  # a v1/HITL label under the CarDD taxonomy
+    {"damage_code": "corrosion"},  # a HITL label under the CarDD taxonomy
     {"damage_code": "unknown"},
-    {"versions": {"taxonomy": "damage-hitl-1.0.0"}},  # contingency taxonomy on a v2 record
+    {"versions": {"taxonomy": "damage-hitl-1.0.0"}, "damage_code": "glass-shatter"},  # a CarDD label under HITL
+    {"versions": {"taxonomy": "damage-hitl-1.0.0"}, "damage_code": "crack"},  # HITL says "cracked"
+    {"versions": {"taxonomy": "damage-coco-1.0.0"}},  # a damage taxonomy the contract does not know
+    {"versions": {"damage_model": "d-1"}},  # no damage taxonomy named at all
     {"part_code": None},  # assigned without a part
     {"assignment_status": "unresolved"},  # unresolved with a part and no reason
     {"part_code": None, "assignment_status": "unresolved"},  # null part without part_reason
@@ -45,6 +48,16 @@ def test_observation_valid_and_round_trip():
 def test_observation_invalid(overrides):
     with pytest.raises(ValidationError):
         ImageDamageObservation(**observation(**overrides))
+
+
+@pytest.mark.parametrize("code", ["dent", "cracked", "scratch", "flaking", "broken-part", "paint-chip",
+                                  "missing-part", "corrosion"])
+def test_observation_accepts_a_hitl_label_only_under_the_hitl_taxonomy(code):
+    """The HITL contingency vocabulary is a second, separate vocabulary: the record names which one it uses."""
+    obs = ImageDamageObservation(**observation(
+        damage_code=code, versions={"taxonomy": "damage-hitl-1.0.0", "damage_model": "d-1"}))
+    assert obs.damage_code == code and obs.versions["taxonomy"] == "damage-hitl-1.0.0"
+    assert ImageDamageObservation.model_validate_json(obs.model_dump_json()) == obs
 
 
 def test_unresolved_observation_keeps_candidates_and_reason():

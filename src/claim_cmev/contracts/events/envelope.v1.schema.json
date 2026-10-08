@@ -201,13 +201,20 @@
       ]
     },
     "damageCode": {
+      "description": "A code of either damage vocabulary. The message's versions.taxonomy says which one applies.",
       "enum": [
         "dent",
         "scratch",
         "crack",
         "glass-shatter",
         "lamp-broken",
-        "tire-flat"
+        "tire-flat",
+        "cracked",
+        "flaking",
+        "broken-part",
+        "paint-chip",
+        "missing-part",
+        "corrosion"
       ]
     },
     "operation": {
@@ -591,6 +598,32 @@
         "pad_top"
       ],
       "additionalProperties": false
+    },
+    "carddDamageCode": {
+      "enum": [
+        "dent",
+        "scratch",
+        "crack",
+        "glass-shatter",
+        "lamp-broken",
+        "tire-flat"
+      ]
+    },
+    "hitlDamageCode": {
+      "enum": [
+        "dent",
+        "cracked",
+        "scratch",
+        "flaking",
+        "broken-part",
+        "paint-chip",
+        "missing-part",
+        "corrosion"
+      ]
+    },
+    "damageTaxonomy": {
+      "type": "string",
+      "pattern": "^damage-(cardd|hitl)-\\d+\\.\\d+\\.\\d+$"
     }
   }
 }

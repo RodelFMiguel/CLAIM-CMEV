@@ -2,9 +2,10 @@
 
 Deterministic and weight-free: grouping of M2 observations under a part identity,
 the four view-screening signals, the ordered coverage table, the confirmation index and
-the reuse lineage. The Kafka consumer shell and ``run_part_summary`` adapter are not
-implemented here. The specification proposes renaming this package ``vision/summary``;
-the existing ``vision/multiview`` name is kept.
+the reuse lineage. ``run_part_summary`` and the Kafka handler over real M1 and M2 output
+are in ``adapter``, which reads the orchestration state and is therefore not imported here.
+The specification proposes renaming this package ``vision/summary``; the existing
+``vision/multiview`` name is kept.
 """
 from .config import SummaryConfig, SummarySettings, load_summary_config
 from .confirmations import (

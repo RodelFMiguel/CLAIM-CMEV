@@ -24,7 +24,7 @@ from typing import Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from ...contracts.common import PART_CODES, ContractError, Provenance, deterministic_id
+from ...contracts.common import PART_CODES, ContractError, Provenance, damage_codes_for, deterministic_id
 from ...contracts.imaging import AssignmentCandidate, ImageDamageObservation, MaskRef
 from ...contracts.imaging import ImageTransform as ContractImageTransform
 from ..transforms import ImageTransform as FrameTransform
@@ -242,10 +242,14 @@ def _check_geometry(shape: tuple[int, ...], confidence: NDArray, part_mask: NDAr
 
 
 def _check_context(context: ObservationContext, config: AssignmentConfig, part_mask: NDArray | None,
-                   part_mask_model_version: str | None) -> None:
+                   part_mask_model_version: str | None, damage_classes: Mapping[int, str]) -> None:
     missing = [key for key in REQUIRED_VERSIONS if not context.versions.get(key)]
     if missing:
         raise ContractError("versions_incomplete", f"observation versions lack {missing}")
+    foreign = sorted(set(damage_classes.values()) - set(damage_codes_for(context.versions["taxonomy"])))
+    if foreign:
+        raise ContractError("taxonomy_version_mismatch",
+                            f"{foreign} are not damage codes of {context.versions['taxonomy']}, which this job pins")
     if context.versions["assignment_config"] != config.config_version:
         raise ContractError("assignment_config_version_mismatch",
                             f"{context.versions['assignment_config']!r} != {config.config_version!r}")
@@ -301,7 +305,7 @@ def assign_damage_to_part(
     if damage_mask.ndim != 2:
         raise ContractError("mask_geometry_mismatch", "a damage mask is a 2-D class-index array")
     grid = damage_mask.shape
-    _check_context(context, config, part_mask, part_mask_model_version)
+    _check_context(context, config, part_mask, part_mask_model_version, damage_classes)
     _check_geometry(grid, confidence, part_mask, context, transform)
     _check_part_classes(part_classes, accepted_parts)
     if part_mask is not None:

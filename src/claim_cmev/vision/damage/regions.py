@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
-from ...contracts.common import DAMAGE_CODES, ContractError
+from ...contracts.common import DAMAGE_VOCABULARIES, ContractError
 from .config import RegionConfig
 
 BACKGROUND_ID = 0
@@ -63,9 +63,10 @@ class RegionSet:
 def check_damage_classes(damage_classes: Mapping[int, str]) -> None:
     if BACKGROUND_ID in damage_classes:
         raise ContractError("mask_encoding_mismatch", "class id 0 is background, not a damage class")
-    unknown = sorted(set(damage_classes.values()) - set(DAMAGE_CODES))
+    known = {code for codes in DAMAGE_VOCABULARIES.values() for code in codes}
+    unknown = sorted(set(damage_classes.values()) - known)
     if unknown:
-        raise ContractError("taxonomy_version_mismatch", f"not CarDD damage codes: {unknown}")
+        raise ContractError("taxonomy_version_mismatch", f"not damage codes of any known vocabulary: {unknown}")
 
 
 def extract_regions(damage_mask: NDArray, confidence: NDArray, damage_classes: Mapping[int, str],

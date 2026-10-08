@@ -208,6 +208,9 @@ def check_inputs(context: SummaryContext, config_version: str, observations: Seq
                             f"{context.versions['summary_config']!r} != {config_version!r}")
     if not context.versions["taxonomy"].startswith("parts-"):
         raise ContractError("taxonomy_version_mismatch", "summary rows pin the parts taxonomy (parts-x.y.z)")
+    taxonomies = sorted({o.versions.get("taxonomy", "") for o in observations})
+    if len(taxonomies) > 1:
+        raise ContractError("damage_taxonomy_mixed", f"observations of {taxonomies} are never summarised together")
     reuse = context.reuse_from_input_revision
     if reuse is not None and not 1 <= reuse < context.input_revision:
         raise ContractError("invalid_reuse_revision", f"cannot reuse revision {reuse} for {context.input_revision}")

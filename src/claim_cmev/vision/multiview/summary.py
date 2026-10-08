@@ -1,8 +1,7 @@
 """``summarise_parts``: grouping plus coverage for one input revision (pure).
 
-This is the deterministic core that the future ``run_part_summary`` adapter and
-``cmev-worker-summary`` consumer shell will call; it reads no pixels, loads no weights
-and never publishes. It returns the records, the ``cmev.evt.part-summarised.v1``
+This is the deterministic core that ``adapter.run_part_summary`` and the summary handler
+call; it reads no pixels, loads no weights and never publishes. It returns the records, the ``cmev.evt.part-summarised.v1``
 payload fields and the confirmation data the orchestrator folds into the job key.
 
 After a human confirmation creates a new input revision, the orchestrator reruns only

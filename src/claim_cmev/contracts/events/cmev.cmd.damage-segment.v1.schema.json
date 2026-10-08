@@ -7,6 +7,80 @@
   "allOf": [
     {
       "$ref": "envelope.v1.schema.json"
+    },
+    {
+      "properties": {
+        "versions": {
+          "properties": {
+            "taxonomy": {
+              "$ref": "envelope.v1.schema.json#/$defs/damageTaxonomy"
+            }
+          },
+          "required": [
+            "taxonomy"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "versions": {
+            "properties": {
+              "taxonomy": {
+                "pattern": "^damage-cardd-"
+              }
+            },
+            "required": [
+              "taxonomy"
+            ]
+          }
+        },
+        "required": [
+          "versions"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "taxonomy_version": {
+                "pattern": "^damage-cardd-"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "versions": {
+            "properties": {
+              "taxonomy": {
+                "pattern": "^damage-hitl-"
+              }
+            },
+            "required": [
+              "taxonomy"
+            ]
+          }
+        },
+        "required": [
+          "versions"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "taxonomy_version": {
+                "pattern": "^damage-hitl-"
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "required": [
@@ -38,8 +112,15 @@
           "$ref": "envelope.v1.schema.json#/$defs/version"
         },
         "taxonomy_version": {
-          "type": "string",
-          "pattern": "^damage-cardd-\\d+\\.\\d+\\.\\d+$"
+          "$ref": "envelope.v1.schema.json#/$defs/damageTaxonomy"
+        },
+        "accepted_parts": {
+          "description": "The part codes M1 accepted on this photograph. Copied forward from the parts job so M2 does not query the database for them.",
+          "type": "array",
+          "items": {
+            "$ref": "envelope.v1.schema.json#/$defs/partCode"
+          },
+          "uniqueItems": true
         }
       },
       "required": [

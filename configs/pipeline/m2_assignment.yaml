@@ -11,7 +11,7 @@
 #
 # File name follows this directory's m<N>_<name>.yaml convention; the specifications
 # call the same file configs/pipeline/damage_assignment.yaml.
-config_version: "m2-assignment/0.1.0"
+config_version: "m2-assignment/0.2.0"
 status: proposed
 
 regions:

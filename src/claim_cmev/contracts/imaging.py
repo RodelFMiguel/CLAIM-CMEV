@@ -18,7 +18,8 @@ from .common import (
     ClaimScoped,
     Confidence,
     ContractModel,
-    DamageCode,
+    AnyDamageCode,
+    ContractError,
     ObjectUri,
     PartCode,
     ReasonCode,
@@ -27,6 +28,7 @@ from .common import (
     Sha256,
     Side,
     UtcDatetime,
+    damage_codes_for,
 )
 
 PartReason = Literal["no_part_overlap", "below_containment_threshold", "ambiguous_between_parts",
@@ -162,11 +164,15 @@ class AssignmentCandidate(ContractModel):
 
 
 class ImageDamageObservation(ClaimRecord):
-    """One surviving damage region on one photo (M2), under the CarDD taxonomy only."""
+    """One surviving damage region on one photo (M2).
+
+    ``versions['taxonomy']`` names the damage vocabulary: CarDD or the HITL contingency. The
+    code must belong to that vocabulary; nothing is mapped from one to the other.
+    """
 
     observation_id: RecordId
     photo_id: RecordId
-    damage_code: DamageCode
+    damage_code: AnyDamageCode
     damage_confidence: Confidence
     assignment_status: Literal["assigned", "unresolved"]
     part_code: PartCode | None
@@ -188,9 +194,13 @@ class ImageDamageObservation(ClaimRecord):
 
     @model_validator(mode="after")
     def _rules(self) -> ImageDamageObservation:
-        taxonomy = self.versions.get("taxonomy", "")
-        if not taxonomy.startswith("damage-cardd-"):
-            raise ValueError("versions['taxonomy'] must name the CarDD damage taxonomy (damage-cardd-x.y.z)")
+        taxonomy = self.versions.get("taxonomy")
+        try:
+            allowed = damage_codes_for(taxonomy)
+        except ContractError as exc:
+            raise ValueError(f"versions['taxonomy'] must name a damage taxonomy: {exc.message}") from exc
+        if self.damage_code not in allowed:
+            raise ValueError(f"{self.damage_code!r} is not a damage code of {taxonomy}")
         if self.assignment_status == "assigned":
             if self.part_code is None or self.part_reason is not None:
                 raise ValueError("an assigned observation has a part_code and no part_reason")
@@ -224,7 +234,7 @@ class PartSummary(ClaimRecord):
     side: Side
     member_observation_ids: list[RecordId] = Field(min_length=1)
     observation_count: int = Field(ge=1)
-    damage_codes: list[DamageCode]
+    damage_codes: list[AnyDamageCode]
     supporting_photo_ids: list[RecordId] = Field(min_length=1)
     mask_refs: list[MaskRef] = Field(default_factory=list)
     aggregation_method: Literal["max_member"] = "max_member"

@@ -11,13 +11,19 @@
 #
 # Note: the module specification names this file configs/pipeline/consolidation.yaml;
 # the implementation task assigned configs/pipeline/m8_rules.yaml.
-rules_config_version: "m8-rules/0.1.0"
+rules_config_version: "m8-rules/0.2.0"
 
 damage:
   # Proposed. Below this, R7 withholds with damage_evidence_uncertain.
   min_observation_confidence: 0.50
-  # Frozen with Lane 1: the six CarDD categories.
+  # Frozen with Lane 1: the six CarDD categories. Applies to observations whose versions
+  # name damage-cardd-x.y.z.
   supported_types: [dent, scratch, crack, glass-shatter, lamp-broken, tire-flat]
+  # Accepted 2026-10-08 (ADR 0004): the eight HITL contingency categories. Applies only to observations
+  # whose versions name damage-hitl-x.y.z; the two lists are never mixed. In scope means the
+  # served model was trained on the label, not that it finds it reliably: on its test split
+  # the model's IoU is below 0.10 for cracked, flaking, paint-chip and corrosion.
+  supported_types_hitl: [dent, cracked, scratch, flaking, broken-part, paint-chip, missing-part, corrosion]
 
 coverage:
   # Fixed: R6 accepts nothing weaker than adequate.

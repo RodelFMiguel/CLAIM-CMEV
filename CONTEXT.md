@@ -1,8 +1,8 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-10-08 (Asia/Singapore), notebook pipeline joined to the M1 serving path on `image-worker`; the 2026-09-27 application verification remains historical.
-- **Implementation baseline:** branch `image-worker`, which the user rebased onto `M1-Implementation` (`92d9d69`). The 2026-10-08 notebook/serving changes are in the commit that contains this line, on top of `2929064`; use Git history for its identifier. The rebase rewrote the branch, so publishing it replaces the earlier `origin/image-worker`; `git status -sb` shows whether the remote has it.
-- **Read first for M1:** the [notebook-to-serving handoff](#notebook-pipeline-joined-to-the-m1-serving-path-2026-10-08), then the [served-checkpoint handoff](#m1-served-checkpoint-connected-and-run-in-the-compose-stack-2026-10-07) and the [worker start-up handoff](#m1-worker-start-up-model-loading-and-opt-in-switch-2026-10-07).
+Last updated: 2026-10-08 (Asia/Singapore), real M2 and M3 workers added on `M2-Implementation` and the three decisions about the served damage model accepted ([ADR 0004](docs/adr/0004-hitl-damage-model-and-vocabulary.md)): the image branch can run on the trained models; the 2026-09-27 application verification remains historical.
+- **Implementation baseline:** branch `M2-Implementation` at `dfa5fb6`, which the user rebased onto `main` (`f036e05`, containing the merged `M1-Implementation` and `image-worker` work). The 2026-10-08 M2/M3 work of the last two entries was committed on top of it on 2026-10-08 at the user's request; use Git history for the identifier. The local branch has diverged from `origin/M2-Implementation` because of the rebase; no push has been made.
+- **Read first for the image branch (M1, M2, M3):** the [real image branch handoff](#real-m2-and-m3-workers-the-image-branch-on-trained-models-2026-10-08) and the [decisions that followed it](#damage-model-decisions-accepted-and-the-path-to-a-cardd-model-2026-10-08), then the [notebook-to-serving handoff](#notebook-pipeline-joined-to-the-m1-serving-path-2026-10-08), the [served-checkpoint handoff](#m1-served-checkpoint-connected-and-run-in-the-compose-stack-2026-10-07) and the [worker start-up handoff](#m1-worker-start-up-model-loading-and-opt-in-switch-2026-10-07).
 - **Read first for training:** the [M2 CarDD notebook handoff](#m2-cardd-notebook-and-converter-2026-10-02), the [M2 recall/regularisation handoff](#m2-recallregularisation-presets-and-background-offset-2026-10-02), the [M2 failure-review handoff](#m2-failure-review-and-tiny-fitting-diagnostic-2026-10-02), then the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
 - **Application baseline:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
 - **Older entries:** the chronological handoffs below keep their original status, which is sometimes superseded.
@@ -24,12 +24,12 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 | --- | --- |
 | Repository | The pipeline is in `f280209`. The defect remediation, specification notes and this file are in `6e59bc2`. Both are local commits, and no push has been verified |
 | Specifications | The full target is broader than the implementation. Only three M9 checklist boxes are ticked, and all three are supported by code. The ticking understates progress, because several implemented items are still unticked |
-| Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes. Since 2026-10-07 an optional real M1 worker, `cmev-worker-parts`, can replace the fixture parts producer through `infra/compose/docker-compose.parts.yml`. It last ran in an isolated Compose project on 2026-10-07, before the 2026-10-08 frame check was added |
+| Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes. Two opt-in modes replace fixture image producers with real workers. `infra/compose/docker-compose.parts.yml` gives M1 to `cmev-worker-parts`. `infra/compose/docker-compose.image.yml` gives M1, M2 and M3 to `cmev-worker-image` (one process). The second ran in an isolated Compose project (lean, PostgreSQL, Redpanda, MinIO, no browser) on 2026-10-08. The document stages are still fixtures in every mode |
 | Application | Connected to the API/workbench: typed review actions, M6 decision replay, M3 reruns after human identity/coverage confirmations, pinned cost lookup, review-state overlays (dismissals and accepted scope), durable request retry, stage retry and frozen M9 reports. The evidence image overlays (`review/overlays.py`) are a library only; no endpoint or UI serves them |
-| Data and models | M1 has a serving adapter and worker (`vision/parts/`) and serves the teammate-trained SegFormer-B3 `parts/0.8.0-b3-compound` when the opt-in Compose file is used; the weights are local and not in Git. M2 to M8 do not read real M1 output, so every assessment is still a fixture. No M2 or M6 model is integrated. The M2 assignment, M4 raster/geometry/OCR, M5 parser and M6 linker are libraries covered by unit tests only; the pipeline never calls them. Derived masks and pages are placeholder URIs. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
-| Offline vision training (2026-10-08) | Two M1 pipelines. Scripts (`train_segformer.py`): SegFormer-B3 `parts/0.8.0-b3-compound`, validation foreground mIoU 0.7253 and test 0.7303 on split 0.1.1; that test partition was used to compare runs. Notebooks (`training.py`): SegFormer-B2 `f9be9131`, validation 0.799 on prepared data v2 in the centred frame; not comparable with the B3 figures (other labels, other split, and 109 of its training photographs are in the 0.1.1 test partition). Since 2026-10-08 the notebooks prepare v3 on the published split, M1 trains in the worker's frame and a run can be exported as a registry candidate; **no run exists on v3 yet**. M2 HITL: 0.222, 0.232 and 0.250 validation (`6203ed59`, `eacada43`, `3f7eb21b`). M2 CarDD: run `7981a76f`, validation foreground mIoU 0.737 on CarDD's official validation split (810 images). All notebook figures are validation results; their test splits are unused. No M2 runtime adapter exists |
+| Data and models | The image branch has real workers. M1 serves the SegFormer-B3 `parts/0.8.0-b3-compound`. M2 serves the SegFormer-B3 `damage-hitl/0.1.0-b3-compound`, trained on the HITL damage subset, so observations carry the eight HITL damage codes under `damage-hitl-1.0.0`; it assigns each region against the real M1 mask. M3 groups the real observations and measures screening signals on the real masks. All three are opt-in (`docker-compose.image.yml`) and both weight folders are local, not in Git. M4 raster/geometry/OCR, the M5 parser and the M6 linker are libraries covered by unit tests only; the pipeline never calls them, and no M6 detector exists. M8 runs on real image records when the image branch is real, but the assessment is still labelled a fixture because the document stages and the cost table are. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
+| Offline vision training (2026-10-08) | Two M1 pipelines. Scripts (`train_segformer.py`): SegFormer-B3 `parts/0.8.0-b3-compound`, validation foreground mIoU 0.7253 and test 0.7303 on split 0.1.1; that test partition was used to compare runs. Notebooks (`training.py`): SegFormer-B2 `f9be9131`, validation 0.799 on prepared data v2 in the centred frame; not comparable with the B3 figures (other labels, other split, and 109 of its training photographs are in the 0.1.1 test partition). Since 2026-10-08 the notebooks prepare v3 on the published split, M1 trains in the worker's frame and a run can be exported as a registry candidate; **no run exists on v3 yet**. M2 served model (scripts, `train_damage.py`): SegFormer-B3 on HITL damage, validation foreground mIoU 0.2235 and test 0.1576 on `data/splits/damage/0.1.0`; that test partition was used to compare three architectures. M2 HITL notebooks: 0.222, 0.232 and 0.250 validation (`6203ed59`, `eacada43`, `3f7eb21b`). M2 CarDD: run `7981a76f`, validation foreground mIoU 0.737 on CarDD's official validation split (810 images). All notebook figures are validation results; their test splits are unused. The CarDD notebook run is not served: the M2 worker serves the HITL model |
 | Shared agent workflows | Canonical skills remain under `.agents/skills`, with no workflow changes |
-| Validation | On the 2026-10-08 working tree: the full Python suite has 1605 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript build, the browser tests and Docker were not re-run for it. Earlier, at `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. The `full` profile and the browser tests have not been re-run in Docker since `6e59bc2`; the lean stack with the M1 worker ran in an isolated Compose project on 2026-10-07. Independent verification found remaining and new defects; see the 2026-09-27 section |
+| Validation | On the 2026-10-08 `M2-Implementation` working tree: the full Python suite has 1694 passed and 1 skipped (the optional real-PaddleOCR test); the lean stack with the image overlay ran in an isolated Compose project; the TypeScript build and the browser tests were not re-run. Earlier, at `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. The `full` profile and the browser tests have not been re-run in Docker since `6e59bc2`; the lean stack with the M1 worker ran in an isolated Compose project on 2026-10-07. Independent verification found remaining and new defects; see the 2026-09-27 section |
 | Evaluation | No model accuracy, real price calibration, real claim outcome, usability comparison or financial benefit measured |
 
 
@@ -1981,3 +1981,148 @@ Validation Evidence:
 
 
 
+
+
+## Real M2 and M3 workers: the image branch on trained models (2026-10-08)
+
+Date/time and timezone: 2026-10-08, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request, after the user rebased `M2-Implementation` onto `main` and placed the trained damage model in `artifacts/models/damage-hitl/0.1.0-b3-compound`.
+Task and relevant module: review lane 1's M2 implementation (`d73ea0c`, `dfa5fb6`), make the trained damage model replace the M2 fixtures, and start M3 on real M1 and M2 output.
+Branch / baseline commit / resulting commit or PR: `M2-Implementation` / `dfa5fb6` / committed with the next entry's work on 2026-10-08; use Git history for the identifier. Not pushed.
+
+### Review of the M2 implementation as it was on the branch
+
+- **No serving path.** The branch added conversion, splits, training, evaluation, a benchmark and a seam-splitting option to the assignment library. It had no adapter, worker or served configuration, so the fixture damage producer still produced every M2 row.
+- **The trainer's output could not be verified by a worker.** `train_damage.py` writes no weight hash, no frame record and no class names (`LABEL_0` to `LABEL_8`), and its manifest uses `model_version` and the taxonomy name `hitl-damage-1.0.0`, where the registry and the taxonomy file use `version` and `damage-hitl-1.0.0`.
+- **The model's vocabulary was refused by the contracts.** It predicts the eight HITL damage classes; records and schemas accepted the six CarDD codes only.
+- **Reported scores are correct and low.** Re-evaluated here: validation foreground mIoU 0.2234 (recorded 0.2235), test 0.1576 (recorded 0.1576), per-class IoU within 0.0002. Test IoU is 0.0 for cracked and below 0.10 for flaking, paint-chip and corrosion. The test split was used to pick this model from three architectures.
+- **The split is sound against the parts split.** All 441 shared photographs are in the same partition in `data/splits/damage/0.1.0` and `data/splits/parts/0.1.1`. Its records hold workstation paths, so it is not portable. The notebooks' prepared data v3 agrees with it on the shared photographs but not on all of the 373 damage-only ones.
+- **Smaller points.**
+  - `m2_assignment.yaml` gained two keys without a version change.
+  - The model recipe carries its own region thresholds (32 px, 0.40) beside the assignment configuration's (256 px, 0.50).
+  - With `split_components` on, two observations share one `component_index` and a pruned sliver's area disappears.
+  - About 41 MB of generated benchmark images are tracked under `artifacts/benchmarks/`.
+  - The conversion, split, training and evaluation scripts have no tests.
+  - `HANDSHAKE.md` named specification files and events that do not exist.
+
+### Changed paths and completed behaviour
+
+- **Two damage vocabularies in the contracts.**
+  - `contracts/common.py`, `contracts/imaging.py`: an observation's damage code must belong to the vocabulary its `versions.taxonomy` names (`damage-cardd-*` or `damage-hitl-*`).
+  - `contracts/events/*.schema.json`: the damage command and event accept the HITL codes only under a HITL taxonomy; `versions.taxonomy` is required; the command gained optional `accepted_parts`.
+  - `vision/damage/{regions,assignment}.py`, `vision/multiview/confirmations.py`: the class map must be of the pinned vocabulary; observations of two vocabularies are never summarised together.
+  - `comparison/{config,adapter,additions}.py`, `configs/pipeline/m8_rules.yaml`: M8 judges an observation by the supported list of its own vocabulary (`supported_types_hitl`); rules version `m8-rules/0.2.0`.
+  - `configs/taxonomy/damage_hitl.yaml` and `damage_cardd.yaml` are unchanged. An edit made to them here was reverted later the same day; see the next entry.
+- **Shared vision modules** (new): `vision/frame.py` (the one model frame), `vision/registry.py` (entry verification), `vision/segformer.py` (strict loading), `vision/artifacts.py` (object reads). `vision/parts/adapter.py` uses them; its behaviour is unchanged.
+- **M2 worker** (new): `vision/damage/adapter.py`, `vision/damage/model_config.py`, `configs/models/damage.yaml`.
+  - Verifies the registry entry, builds the same frame as M1, refuses a part mask made in another frame, zeroes padding, and calls `assign_damage_to_part` with the real M1 mask and M1's accepted parts.
+  - Stores `mask.png` and `components.png` under the version signature, persists observations and publishes the event.
+- **Registry entry for the damage model.** `pipelines/vision/registry.py: adopt_damage_run` completes a damage trainer's folder into a verifiable entry. The user's folder was completed in place: `label_schema.json`, `preprocessing.json` and a rewritten `manifest.json` were added, and the trainer's manifest was kept as `manifest.trainer.json`. The weights were not touched.
+- **M3 worker** (new): `vision/multiview/adapter.py`. It reads the M1 and M2 rows the command names, measures the screening signals on the real photographs and masks, uses only the surveyor's recorded confirmations, and serves the rerun after a confirmation. `orchestration/review_summary.py` shares the confirmation conversion.
+- **Wiring.**
+  - `orchestration/plan.py`: `VersionBundle.for_runtime(parts_producer, damage_producer)`, `real_stage_versions`.
+  - `orchestration/services.py`: `CMEV_DAMAGE_PRODUCER` (needs real parts), roles `damage`, `summary` and `image`.
+  - `worker.py`: loaders and start-up refusals for those roles.
+  - `orchestration/orchestrator.py`, `vision/parts/adapter.py`: the damage command carries `accepted_parts`.
+  - `infra/compose/docker-compose.image.yml` (new), `docker-compose.yml`, `Dockerfile.parts`, `Dockerfile.api`: `cmev-worker-image` and its one-file switch.
+- **Tests** (new): `tests/unit/m2/test_m2_serving.py`, `tests/integration/test_image_branch.py`; additions to the contract, M2, M3, M8 and registry tests.
+- **Documentation.** Dated notes in the M2, M3 and M8 specifications, data contracts 3.3 and integration contracts 6.3; `infra/README.md`, `pipelines/README.md`; corrections in `HANDSHAKE.md`.
+
+### Decisions (accepted/proposed) and references
+
+- Accepted by the user on 2026-10-08: serve the HITL-trained damage model in place of the M2 fixtures.
+- Accepted by the user later on 2026-10-08 ([ADR 0004](docs/adr/0004-hitl-damage-model-and-vocabulary.md); the next entry has the detail):
+  - The HITL vocabulary is carried on the existing `.v1` damage topics, bound to the taxonomy version, as a narrow exception to integration contracts 6.2.
+  - All eight HITL labels are "supported" in M8, so M8 may report `unsupported` from this model's output; the surveyor judges it.
+- Proposed, all recorded in the specification notes:
+  - The served version is `damage-hitl/0.1.0-b3-compound`, at the folder where the user placed it; the trainer's own name was `damage/0.1.0-b3-compound`.
+  - One container, `cmev-worker-image`, runs M1, M2 and M3. The specifications list three containers.
+  - Assignment configuration version `m2-assignment/0.2.0`; `split_components` stays off.
+- The M2 specification names SegFormer-B0 on CarDD. A CarDD-trained notebook run exists (`7981a76f`, validation 0.737) and matches the specified vocabulary, but it was trained in the centred frame and is not exported; it is not served.
+
+### Checks actually run, results and artifact locations
+
+- Full Python suite: 1676 passed, 1 skipped (the optional real-PaddleOCR test). The unmodified branch head, run in a temporary worktree without the local data, gave 1606 passed, 4 skipped.
+- Every new test was seen to fail before its implementation. Removing the padding rule, the frame check, the confirmations or the pixel measurements each makes tests fail.
+- Unit tests hold the M2 input tensor equal to the M1 input tensor for one photograph.
+- The served M1 and M2 adapters over the 132 photographs of the damage test split, on the CPU:
+
+| | Regions | Assigned | Ambiguous | Below threshold | Mostly background | No overlap |
+| --- | --- | --- | --- | --- | --- | --- |
+| Served adapters | 468 | 366 (78.2%) | 71 | 25 | 5 | 1 |
+| Lane 1's benchmark | 469 | 367 (78.2%) | 71 | 25 | 5 | 1 |
+
+- Isolated Compose project (own project name, image tags and volumes): lean profile with `docker-compose.image.yml`, PostgreSQL, Redpanda and MinIO, without `cmev-web`.
+  - All six services were healthy. The image worker loaded and verified both checkpoints from the read-only registry mount; it used 1.98 GiB.
+  - A claim with three photographs of the test splits, uploaded over the HTTP API, reached `in_review` in 12 seconds: 3 parts, 3 damage, 1 summary and 1 consolidate job succeeded.
+  - PostgreSQL held 38 part predictions, 9 damage observations (7 assigned, 2 ambiguous), 6 summary groups and 21 coverage rows, all `source_kind = real` with the pinned versions. MinIO held the part and damage masks. The same nine observations came out of a local run.
+  - Every coverage slot was `unresolved` (`identity_not_resolved`), and M8 withheld every photo check.
+  - A surveyor's identity and then coverage confirmation for the left fender, posted over the API, each produced a new assessment in 2 seconds. Only intake, summary and consolidate jobs ran for those revisions. The fender group became `resolved` and its slot `adequate`, with both views passing the measured screen.
+  - The only dead letters were the seed claim's three parts commands (`artifact_missing`), as documented.
+  - The project, its volumes and its images were removed afterwards. The user's `claim-cmev` images were not touched.
+- `docker compose config` for the base file, the image overlay (lean and full) and the parts overlay.
+- Not run: `cmev-web` and the browser, the `full` profile, the TypeScript build, a GPU, duplicate delivery, superseded revisions, broker or store outages.
+
+### Uncommitted work, limitations and missing prerequisites
+
+- Committed on 2026-10-08 at the user's request, in one commit with the next entry's work; not pushed. The local branch has diverged from `origin/M2-Implementation` because of the rebase, so a push would replace the remote branch.
+- The served damage model is weak (test mIoU 0.158). An absence of detected damage is weak evidence, and assignment accuracy against jointly labelled ground truth is not measured; 78.2% is the share of regions assigned, not the share assigned correctly.
+- Every M3 screening threshold is the proposed default and none is calibrated on real photographs.
+- The document stages are fixtures, so assessments are still labelled fixtures and a photos-only claim is `incomplete`.
+- `train_damage.py` itself still writes an incomplete entry; `adopt_damage_run` is the step that completes it.
+- The workbench was not exercised with real image records. Its identity and coverage controls were built against fixture IDs.
+- Still open from earlier entries: the vision image installs a CUDA PyTorch build on CPU, there is no warm-up inference, and module-specific superseded-revision handling is not implemented.
+
+Next concrete step and agreed owner (or unassigned): the user decides when to push. The `.v1` question and the negative-finding question were decided later the same day (next entry). Unassigned: exercise the workbench against a real image branch; then start on the document stages.
+
+
+## Damage model decisions accepted, and the path to a CarDD model (2026-10-08)
+
+Date/time and timezone: 2026-10-08, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request, after the user answered the three open questions of the previous entry.
+Task and relevant module: M2 serving and its contracts, M8 supported damage types, the CarDD training notebook.
+Branch / baseline commit / resulting commit or PR: `M2-Implementation` / `dfa5fb6` / the commit containing this entry, together with the previous entry's work; use Git history for its identifier. Not pushed.
+
+Changed paths and completed behaviour:
+- `docs/adr/0004-hitl-damage-model-and-vocabulary.md` (new) and `docs/adr/README.md`: the three decisions, the alternatives and the measurements behind them.
+- `docs/specs/integration_contracts.md` 6.2 and 6.3: the "deviation" note is now an accepted exception with three conditions. `docs/specs/data_contracts.md` 3.3 and the M8 specification note say accepted; `configs/pipeline/m8_rules.yaml` has a comment change only.
+- `pipelines/vision/registry.py`: new `export_damage_run`. It writes a notebook damage run as a registry entry named after the run's vocabulary (`damage-cardd/<name>` or `damage-hitl/<name>`), refuses a run trained in another frame or size, and checks the entry with the damage worker's own verification and loader. It shares its staged export with `export_parts_run`.
+- `notebooks/M2_CarDD_damage_training.ipynb`: new recipe `serving_512` (`damage_focus` at 512 in the serving frame) and an export section that is off by default. The outputs of the changed recipe cell were cleared.
+- `configs/taxonomy/damage_hitl.yaml` and `damage_cardd.yaml`: restored to their committed bytes. The previous entry's work had changed a comment in each and set `active: true` in the HITL file.
+- Tests: `tests/contracts/test_taxonomy.py` pins the SHA-256 of the three taxonomy files; `tests/integration/test_image_branch.py` runs the whole branch on a CarDD-vocabulary checkpoint selected by `CMEV_DAMAGE_CONFIG` alone; `tests/unit/test_vision_registry_export.py` covers the damage export.
+- `pipelines/README.md`, `notebooks/README.md`, `docs/training-hitl-notebooks.md`: the damage export, the recipe, and the rule about the taxonomy files.
+
+Decisions (accepted/proposed) and references:
+- Accepted by the user on 2026-10-08, recorded in [ADR 0004](docs/adr/0004-hitl-damage-model-and-vocabulary.md):
+  - **Model.** Keep serving the HITL model. Make a CarDD model servable later by configuration alone.
+  - **Topics.** Keep the `.v1` damage topics. The exception to integration contracts 6.2 holds only while the schemas bind each code to its vocabulary, every producer and consumer is in this repository, and no earlier message must still be read.
+  - **Negative findings.** All eight HITL labels stay supported in M8. The implementer recommended withholding `unsupported` under this model; the user chose to keep it and let the surveyor judge. No M8 rule changed.
+- Proposed: the `serving_512` recipe values, which are `damage_focus` unchanged apart from size and frame.
+- Not decided: targets for the HITL vocabulary, and the affected proposal sections (11.2, 12.4).
+
+Checks actually run, results and artifact locations:
+- Full Python suite: 1694 passed, 1 skipped (the optional real-PaddleOCR test).
+- **A regression made and fixed in this session.** The preparation functions record the SHA-256 of each taxonomy file, so the comment edits made every prepared dataset refuse to reload (`Preparation inputs/configuration changed`). It was found by running the CarDD notebook's preparation cell. After the restore, `prepare_hitl` reloads `data/processed/hitl/v1`, `v2` and `v3` with manifests `ea054e85...`, `d28a613c...` and `21afa6b3...`, and `prepare_cardd` reloads `data/processed/cardd/v1` with `fc89ec07...`: the hashes recorded in earlier entries. The new hash test fails when a comment is appended to a taxonomy file.
+- CarDD notebook: the setup, inspection, preparation, class-support, recipe and export cells ran against the real prepared data. With `RECIPE = "serving_512"` the configuration is frame `serving`, size 512, the ADE20K SegFormer-B2. **No training was run**, so no serving-frame CarDD model exists.
+- The CarDD switch test was seen to fail when the orchestrator was made to ignore the configured damage model, and to pass again after the restore.
+- Model comparison behind the decisions, validation photographs only, "any damage" against "no damage", each model in its own trained frame. Script and output: `artifacts/evaluation/damage-model-choice-20261008/` (ignored by Git). A second run reproduced every figure.
+
+| Photographs | Model | Any-damage IoU | Recall | Labelled regions found | Photographs with damage and no detection |
+| --- | --- | ---: | ---: | ---: | ---: |
+| HITL validation, 71 | HITL B3 (served) | 0.389 | 0.501 | 141 of 210 (67%) | 2 of 71 |
+| HITL validation, 71 | CarDD B2 (notebook, `7981a76f`) | 0.229 | 0.268 | 70 of 210 (33%) | 10 of 71 |
+| CarDD validation, 810 | HITL B3 (served) | 0.253 | 0.303 | 1,022 of 1,411 (72%) | 55 of 810 |
+| CarDD validation, 810 | CarDD B2 (notebook, `7981a76f`) | 0.809 | 0.920 | 1,313 of 1,407 (93%) | 0 of 810 |
+
+- Not run: Docker (the image was not rebuilt after these changes; the worker code did not change), the TypeScript build, the browser tests, any training.
+
+Uncommitted work, limitations and missing prerequisites:
+- Committed on 2026-10-08 at the user's request; not pushed. The local branch has diverged from `origin/M2-Implementation` because of the rebase, so a push would replace the remote branch.
+- Not committed: two presentation files under `docs/`, left untracked as before, and the model weights and evaluation outputs in ignored locations. A leftover `autostash` entry in the stash list was not touched.
+- An `unsupported` finding from the served model is weak evidence: it leaves one labelled damage region in three undetected on HITL validation, and finds 0.15 of flaking pixels. The review screen shows the pinned model version and no warning about this.
+- The comparison used validation photographs of two public datasets, not claim photographs. The CarDD model's own-data row is optimistic, because that validation set selected its checkpoint.
+- Each model is strong only on its own dataset. A CarDD model trained in the serving frame may score differently from the centred-frame run.
+- `damage_hitl.yaml` still says `active: false`. That flag is not read by any code; `DAMAGE_VOCABULARIES` in `contracts/common.py` and `configs/models/damage.yaml` decide what is accepted and served.
+- The export and the switch were tested with small random-weight models, not with a trained CarDD export.
+
+Next concrete step and agreed owner (or unassigned): the user decides when to push. To serve CarDD: train `serving_512` in the CarDD notebook, compare on validation, export, then name the entry in `configs/models/damage.yaml`. Unassigned: targets for the HITL vocabulary; exercise the workbench against a real image branch; then the document stages.

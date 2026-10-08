@@ -17,7 +17,6 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 import hashlib
 import io
-import json
 import logging
 from pathlib import Path
 import time
@@ -43,21 +42,22 @@ from claim_cmev.contracts.imaging import (
     MaskRef,
     PartPrediction,
 )
-from claim_cmev.messaging.consumer import Context, PermanentError, TransientError
+from claim_cmev.messaging.consumer import Context, PermanentError
 from claim_cmev.messaging.outbox import build_message
 from claim_cmev.persistence.store import insert_records
 from claim_cmev.review.overlays import render_photo_overlay
 from claim_cmev.storage import Storage
+from claim_cmev.vision.artifacts import read_object
+from claim_cmev.vision.frame import PAD_VALUE, PIXEL_MEAN, PIXEL_STD
 from claim_cmev.vision.palette import ID_TO_PART_CODE, build_palette
+from claim_cmev.vision.registry import ModelUnavailable, verify_registry_entry
+from claim_cmev.vision.registry import serving_preprocessing as _frame_settings
 from claim_cmev.vision.transforms import decode_oriented, letterbox, plan_model_frame
 
 from .config import PartsConfig, load_parts_config
 
 log = logging.getLogger("cmev.vision.parts.adapter")
 
-PIXEL_MEAN = (0.485, 0.456, 0.406)
-PIXEL_STD = (0.229, 0.224, 0.225)
-PAD_VALUE = 0
 IMAGENET_MEAN = np.array(PIXEL_MEAN, dtype=np.float32)
 IMAGENET_STD = np.array(PIXEL_STD, dtype=np.float32)
 
@@ -145,80 +145,21 @@ class PartsSegmentResult:
     retryable: bool
 
 
-WEIGHT_FILES = ("model.safetensors", "pytorch_model.bin")
-
-
-class ModelUnavailable(RuntimeError):
-    """The configured checkpoint cannot be served, so the worker must refuse to start."""
-
-    def __init__(self, reason_code: str, reason_text: str):
-        super().__init__(f"{reason_code}: {reason_text}")
-        self.reason_code, self.reason_text = reason_code, reason_text
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(1 << 20):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def serving_preprocessing(config: PartsConfig) -> dict[str, Any]:
     """The model frame this worker builds, in the vocabulary of a registry entry's ``preprocessing.json``."""
-    return {"input_size": config.input_size, "resize_policy": config.resize_policy, "pixel_mean": list(PIXEL_MEAN),
-            "pixel_std": list(PIXEL_STD), "pad_value": PAD_VALUE}
-
-
-def _same_setting(recorded: Any, served: Any) -> bool:
-    if isinstance(served, list):
-        return (isinstance(recorded, list) and len(recorded) == len(served)
-                and all(isinstance(value, (int, float)) and abs(value - expected) < 1e-6
-                        for value, expected in zip(recorded, served)))
-    return recorded == served
+    return _frame_settings(config.input_size, config.resize_policy)
 
 
 def verify_checkpoint(model_dir: str | Path, config: PartsConfig) -> dict[str, Any]:
     """Check a registry entry against its manifest and the configuration; returns the manifest.
 
-    Technical specification 9.3: a worker verifies the weight file's SHA-256 against its
-    manifest at start and refuses to start on a mismatch. Another model version, taxonomy
-    version or class numbering is refused as well, never remapped. So is a model trained in
-    another frame than the one this worker builds: its recorded scores would not describe
-    what is served.
+    See ``claim_cmev.vision.registry``: the version, the taxonomy, the weight hash, the class
+    numbering of the checkpoint itself and the frame it was trained in.
     """
-    model_dir = Path(model_dir)
-    if not model_dir.is_dir():
-        raise ModelUnavailable("model_not_found", f"no registry entry at {model_dir}")
-    manifest_path = model_dir / "manifest.json"
-    if not manifest_path.is_file():
-        raise ModelUnavailable("model_manifest_missing", f"{manifest_path} does not exist")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("version") != config.model_version:
-        raise ModelUnavailable("model_version_mismatch", f"the manifest names {manifest.get('version')!r}, "
-                               f"the configuration {config.model_version!r}")
-    if manifest.get("taxonomy_version") != config.taxonomy_version:
-        raise ModelUnavailable("taxonomy_version_mismatch", f"the manifest names {manifest.get('taxonomy_version')!r}, "
-                               f"the configuration {config.taxonomy_version!r}")
-    weights = next((model_dir / name for name in WEIGHT_FILES if (model_dir / name).is_file()), None)
-    if weights is None:
-        raise ModelUnavailable("model_weights_missing", f"no weight file in {model_dir}")
-    if _sha256_file(weights) != manifest.get("weights_sha256"):
-        raise ModelUnavailable("model_weights_hash_mismatch", f"{weights.name} does not match its manifest hash")
-    labels = json.loads((model_dir / "config.json").read_text(encoding="utf-8")).get("id2label") or {}
-    if {int(class_id): code for class_id, code in labels.items()} != ID_TO_PART_CODE:
-        raise ModelUnavailable("label_map_mismatch", "the checkpoint's class map is not the parts taxonomy's")
-    preprocessing_path = model_dir / "preprocessing.json"
-    if not preprocessing_path.is_file():
-        raise ModelUnavailable("preprocessing_missing", f"{preprocessing_path} does not exist, so the frame the "
-                               "model was trained in is not recorded")
-    trained = json.loads(preprocessing_path.read_text(encoding="utf-8"))
-    served = serving_preprocessing(config)
-    differing = [key for key, value in served.items() if not _same_setting(trained.get(key), value)]
-    if differing:
-        raise ModelUnavailable("preprocessing_mismatch", "; ".join(
-            f"{key}: trained with {trained.get(key)!r}, served with {served[key]!r}" for key in differing))
-    return manifest
+    return verify_registry_entry(
+        model_dir, model_version=config.model_version, taxonomy_version=config.taxonomy_version,
+        preprocessing=serving_preprocessing(config), labels_match=lambda labels: labels == ID_TO_PART_CODE,
+        taxonomy_name="parts taxonomy", labels_from_schema=False)
 
 
 class PartsSegmenter:
@@ -512,23 +453,9 @@ def run_parts_segmentation(
     )
 
 
-def _storage_key(object_uri: str) -> str:
-    if object_uri.startswith("s3://"):
-        return object_uri.split("/", 3)[-1]
-    return object_uri.removeprefix("file://local-evidence/")
-
-
 def _read_photo(storage: Storage, object_uri: str, photo_id: str) -> bytes:
     """Photo bytes by URI. An absent object is final; any other storage failure is worth a retry."""
-    try:
-        return storage.read(_storage_key(object_uri))
-    except Exception as exc:  # noqa: BLE001 - classified below
-        response = getattr(exc, "response", None)  # botocore's ClientError carries the S3 error code here
-        s3_code = response.get("Error", {}).get("Code") if isinstance(response, dict) else None
-        if isinstance(exc, FileNotFoundError) or s3_code in ("NoSuchKey", "404", "NotFound"):
-            raise PermanentError("artifact_missing", f"photo {photo_id} is not in the object store") from exc
-        raise TransientError("artifact_read_failed",
-                             f"could not read photo {photo_id}: {type(exc).__name__}") from exc
+    return read_object(storage, object_uri, f"photo {photo_id}")
 
 
 def make_parts_handler(segmenter: PartsSegmenter, storage: Storage, versions: Mapping[str, str]):
@@ -633,6 +560,7 @@ def make_parts_handler(segmenter: PartsSegmenter, storage: Storage, versions: Ma
             "part_prediction_ids": event_payload["part_prediction_ids"],
             "part_mask_ref": event_payload["part_mask_ref"],
             "transform": event_payload["transform"],
+            "accepted_parts": [p.part_code for p in accepted_parts],
             "accepted_parts_count": len(accepted_parts),
         }
 

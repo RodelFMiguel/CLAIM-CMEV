@@ -180,11 +180,14 @@ class Orchestrator:
         v = self.versions.for_stage("damage")
         model_id, model_version = _split(v.get("damage_model"))
         result = parts_job["result_ref"] or {}
-        return {"photo": parts_job["command"]["payload"]["photo"], "part_mask_ref": result["part_mask_ref"],
-                "transform": result["transform"], "model_id": model_id, "model_version": model_version,
-                "preprocess_config_version": _preprocess_version(self.versions.for_stage("parts")),
-                "assignment_config_version": v.get("assignment_config", "not-recorded"),
-                "taxonomy_version": v.get("taxonomy", "not-recorded")}
+        payload = {"photo": parts_job["command"]["payload"]["photo"], "part_mask_ref": result["part_mask_ref"],
+                   "transform": result["transform"], "model_id": model_id, "model_version": model_version,
+                   "preprocess_config_version": _preprocess_version(self.versions.for_stage("parts")),
+                   "assignment_config_version": v.get("assignment_config", "not-recorded"),
+                   "taxonomy_version": v.get("taxonomy", "not-recorded")}
+        if "accepted_parts" in result:  # a real M1 worker names them; the fixture parts producer does not
+            payload["accepted_parts"] = list(result["accepted_parts"])
+        return payload
 
     def _summary_payload(self, session: Session, claim: str, rev: int) -> dict[str, Any]:
         v = self.versions.for_stage("summary")

@@ -1,9 +1,10 @@
 """M2 damage regions and deterministic damage-to-part assignment (docs/specs/module-02-*.md).
 
-The SegFormer damage model, its adapter (``run_damage_segmentation``) and the Kafka
-consumer shell are not implemented here. These pure functions take the model's class
-mask and confidence map plus the M1 part mask on the same grid and return contract
-``ImageDamageObservation`` records. Side is always ``unknown``.
+These pure functions take the model's class mask and confidence map plus the M1 part mask
+on the same grid and return contract ``ImageDamageObservation`` records. Side is always
+``unknown``. The served model, ``run_damage_segmentation`` and the Kafka handler are in
+``adapter`` and the served model's configuration in ``model_config``; ``adapter`` imports the
+model libraries, so it is not imported here.
 """
 from .assignment import (
     REASON_PRECEDENCE,

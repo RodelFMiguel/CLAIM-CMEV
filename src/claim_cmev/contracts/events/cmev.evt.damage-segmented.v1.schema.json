@@ -7,6 +7,92 @@
   "allOf": [
     {
       "$ref": "envelope.v1.schema.json"
+    },
+    {
+      "properties": {
+        "versions": {
+          "properties": {
+            "taxonomy": {
+              "$ref": "envelope.v1.schema.json#/$defs/damageTaxonomy"
+            }
+          },
+          "required": [
+            "taxonomy"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "versions": {
+            "properties": {
+              "taxonomy": {
+                "pattern": "^damage-cardd-"
+              }
+            },
+            "required": [
+              "taxonomy"
+            ]
+          }
+        },
+        "required": [
+          "versions"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "observations": {
+                "items": {
+                  "properties": {
+                    "damage_type": {
+                      "$ref": "envelope.v1.schema.json#/$defs/carddDamageCode"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "versions": {
+            "properties": {
+              "taxonomy": {
+                "pattern": "^damage-hitl-"
+              }
+            },
+            "required": [
+              "taxonomy"
+            ]
+          }
+        },
+        "required": [
+          "versions"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "observations": {
+                "items": {
+                  "properties": {
+                    "damage_type": {
+                      "$ref": "envelope.v1.schema.json#/$defs/hitlDamageCode"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "required": [

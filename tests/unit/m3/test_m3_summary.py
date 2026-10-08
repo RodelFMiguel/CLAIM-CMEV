@@ -176,3 +176,23 @@ def test_observations_with_missing_part_masks_stay_visible():
     [group] = outcome.summaries
     assert (group.identity_status, group.reasons) == ("unresolved", ["part_masks_missing"])
     assert outcome.unresolved_observation_ids == ("o_1",)
+
+
+# ---------------------------------------------------------------- damage vocabularies
+def _hitl(observation):
+    return observation.model_copy(update={"versions": {**observation.versions, "taxonomy": "damage-hitl-1.0.0"}})
+
+
+def test_a_summary_groups_hitl_observations_and_keeps_their_labels():
+    observations = [_hitl(obs("ob1", "ph_01", "dent", "front-door")),
+                    _hitl(obs("ob2", "ph_02", "scratch", "front-door")).model_copy(update={"damage_code": "corrosion"})]
+    outcome = run(observations, [pred("ph_01", "front-door"), pred("ph_02", "front-door")])
+    [group] = outcome.summaries
+    assert set(group.damage_codes) == {"dent", "corrosion"} and group.observation_count == 2
+
+
+def test_observations_of_two_damage_taxonomies_are_never_summarised_together():
+    observations = [obs("ob1", "ph_01", "dent", "front-door"), _hitl(obs("ob2", "ph_02", "dent", "front-door"))]
+    with pytest.raises(ContractError) as mixed:
+        run(observations, [pred("ph_01", "front-door"), pred("ph_02", "front-door")])
+    assert mixed.value.reason_code == "damage_taxonomy_mixed"

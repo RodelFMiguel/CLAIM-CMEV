@@ -306,18 +306,18 @@ def _evaluate(item: LineItem, ctx: _Context) -> _Outcome:
     refs += [EvidenceRef(kind="photo", ref_id=p) for p in sorted(slot.covering_photo_ids)]
 
     # R7 and R8: confident, in-scope damage on the same physical part.
-    supported, threshold = set(cfg.damage.supported_types), cfg.damage.min_observation_confidence
+    supported, threshold = cfg.damage.supports, cfg.damage.min_observation_confidence
     summaries = index.resolved_summaries(part, side)
     observations = [o for s in summaries for o in index.members(s)]
-    confident = [o for o in observations if o.damage_code in supported and o.damage_confidence >= threshold]
+    confident = [o for o in observations if supported(o) and o.damage_confidence >= threshold]
     if confident:
         refs += [EvidenceRef(kind="summary", ref_id=s.summary_id) for s in summaries] + _obs_refs(confident)
         photo = _check("passed", ["damage_supported"], "R8",
                        supporting_observation_ids=[o.observation_id for o in confident],
                        max_confidence=max(o.damage_confidence for o in confident))
     else:
-        low = [o for o in observations if o.damage_code in supported]
-        out_of_scope = [o for o in observations if o.damage_code not in supported]
+        low = [o for o in observations if supported(o)]
+        out_of_scope = [o for o in observations if not supported(o)]
         nearby = index.unsided_observations(part)
         codes = (["damage_evidence_uncertain"] if low or nearby else []) + (
             ["damage_type_out_of_scope"] if out_of_scope else [])

@@ -83,7 +83,7 @@ def propose_additions(observations: Sequence[ImageDamageObservation], line_items
             for item in line_items]
     unlinked_anywhere = any(m.state != "rejected" and m.entry_id is None for m in pen_marks)
     pending_anywhere = any(m.state == "pending" for m in pen_marks)
-    supported = set(config.damage.supported_types)
+    supported = config.damage.supports
     threshold = config.additions.min_observation_confidence
     candidates = []
     for summary in index.summaries:
@@ -91,7 +91,7 @@ def propose_additions(observations: Sequence[ImageDamageObservation], line_items
             continue  # Already part of the separate human-agreed scope.
         members = index.members(summary)
         part, side = summary.part_code, summary.side
-        confident = [o for o in members if o.damage_code in supported and o.damage_confidence >= threshold]
+        confident = [o for o in members if supported(o) and o.damage_confidence >= threshold]
         code, shown, suppressed_by = None, members, None
         if part is None or side not in RESOLVED_SIDES or not index.summary_resolved(summary):
             code = "addition_withheld_identity_unresolved"                                   # A2

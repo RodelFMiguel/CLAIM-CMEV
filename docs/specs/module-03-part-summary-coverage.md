@@ -1,6 +1,6 @@
 # M3 - Part summary and coverage
 
-Owner lane: 1 (Vision). Runtime container: `cmev-worker-summary`. Code: `src/claim_cmev/vision/multiview/`. Training pipeline: none, this module has no neural weights. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 8.1, 8.4, 9.3, 9.4, 10 (M3), 11.2, 11.5, 12.1, 13.1. Status: specified for v2; not implemented, not measured. RQ3 is exploratory.
+Owner lane: 1 (Vision). Runtime container: `cmev-worker-summary`. Code: `src/claim_cmev/vision/multiview/`. Training pipeline: none, this module has no neural weights. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 8.1, 8.4, 9.3, 9.4, 10 (M3), 11.2, 11.5, 12.1, 13.1. Status: specified for v2; not implemented, not measured. RQ3 is exploratory. A first real worker exists since 2026-10-08; see the serving note at the end of this document for what it does and what was measured.
 
 > **Runtime note.** The user directed containerised modules with Kafka as the transport between them on 2026-09-22. Proposal v2 section 9.1 has since been rewritten to describe this same runtime directly; it originally specified one API process plus one worker, a jobs table and no broker. Every v2 domain rule is unchanged: the decision rules in section 8, the exchanged records in section 9.3, module scope in section 10, datasets in section 11 and targets in section 13.1.
 
@@ -259,3 +259,17 @@ Targets are hypotheses from v2 section 13.1. RQ3 is an exploratory case study wi
 The current identity record names a photo and part, without an instance-region selector. Confirmations for different sides of the same part on one photo that are stated together (the same review revision) are retained and withhold photo-level assignment; neither side is assigned. Repeated same-side statements may supersede earlier same-side statements. To resolve a photo that genuinely shows both sides requires instance-level identity evidence, which remains outside this photo-level adapter. Unaffected measured view-quality signals are reused during confirmation reassessment, never replaced with missing/default signals.
 
 Precedence (2026-09-27): a surveyor's own confirmation (`provenance.source_kind = real`) outranks a fixture stand-in confirmation, whatever their review-revision counters, which are never compared across the two. Within one tier the later statement wins: a later identity statement for the same photo and part supersedes an earlier one, including one with a different side, so a surveyor can correct their own identity; a later coverage statement for the same part and side, including `covers_enough = false`, supersedes an earlier one. Superseded records stay stored and are listed in `superseded_confirmation_ids`. Because sequential actions now count as corrections, the photo-level adapter cannot express "this photo shows both sides" through two separate actions; that case needs instance-level identity evidence.
+
+
+### Serving as implemented (2026-10-08)
+
+**Proposed**, like the notes above. The M3 worker is `claim_cmev.vision.multiview.adapter`.
+
+- **What it reads.** The command names record IDs only. The handler reads the M1 part predictions and the M2 observations of the effective parts and damage jobs from `cmev-db`, following reuse lineage, and refuses the job when they are not the rows the command names (`upstream_records_mismatch`). It reads each photograph and its M1 mask from the object store.
+- **Screening signals are measured.** For every accepted part on every photograph, the four signals are computed on the photograph rebuilt in the frame M1 recorded and on the M1 mask, after checking the mask's hash and the frame. A missing photograph or mask leaves the view `not_run`.
+- **Confirmations.** Only the surveyor's recorded `confirm_identity` and `confirm_coverage` actions of the input revision are used. The fixture stand-in confirmations are not. So a first run has no resolved group and every coverage slot is `unresolved` with `identity_not_resolved`, and M8 withholds every photo conclusion until the surveyor confirms.
+- **Reuse after a confirmation.** The same handler serves the rerun: it reads the earlier revision's rows and artifacts and records `reuse_from_input_revision`. No model runs. A surveyor's coverage confirmation does not override a failed screen.
+- **One damage vocabulary per run.** Observations pinned to two damage taxonomies are refused (`damage_taxonomy_mixed`).
+- **Versions.** `summary_config`, `taxonomy` (parts) and `code`. A command pinned to the fixture tags is refused.
+- **Container.** M3 runs inside `cmev-worker-image` with M1 and M2 (see the M2 note). There is no separate `cmev-worker-summary` service yet.
+- **Not done.** Threshold calibration on real photographs (every screening threshold is still the proposed default, and the sharpness scale depends on crop size), `summary.write_debug_crops`, superseded-revision handling specific to this module, the confirmation-set digest in the job key (a new confirmation arrives as a new input revision, which changes the key), and any RQ3 measurement.

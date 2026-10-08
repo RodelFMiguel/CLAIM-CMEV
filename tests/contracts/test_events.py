@@ -116,6 +116,41 @@ def test_detector_marks_are_pending_and_damage_side_is_unknown_in_events():
     assert {o["side"] for o in damage["payload"]["observations"]} == {"unknown"}
 
 
+def _retagged(topic: str, taxonomy: str) -> dict:
+    """The topic's valid example, re-pinned to another damage taxonomy (job key and dedup key follow the versions)."""
+    message = load_example(topic)
+    versions = {**message["versions"], "taxonomy": taxonomy}
+    task, target = message["job_key"].split(":")[2:4]
+    envelope = Envelope.build(topic, claim_id=message["claim_id"], input_revision=message["input_revision"], task=task,
+                              versions=versions, provenance=message["provenance"], trace_id=message["trace_id"],
+                              occurred_at=datetime(2026, 9, 22, 3, 14, 20, tzinfo=UTC), target=target)
+    return envelope.message(message["payload"])
+
+
+def test_damage_events_accept_the_hitl_vocabulary_only_under_the_hitl_taxonomy():
+    event = _retagged("cmev.evt.damage-segmented.v1", "damage-hitl-1.0.0")
+    event["payload"]["observations"][0]["damage_type"] = "corrosion"
+    event["payload"]["observations"][1]["damage_type"] = "cracked"
+    assert validate_message("cmev.evt.damage-segmented.v1", event) == event
+    event["payload"]["observations"][0]["damage_type"] = "glass-shatter"  # a CarDD label under HITL
+    with pytest.raises(ContractError) as refused:
+        validate_message("cmev.evt.damage-segmented.v1", event)
+    assert refused.value.reason_code == "payload_invalid"
+    other = _retagged("cmev.evt.damage-segmented.v1", "damage-coco-1.0.0")
+    with pytest.raises(ContractError):
+        validate_message("cmev.evt.damage-segmented.v1", other)
+
+
+def test_damage_command_names_one_taxonomy_in_its_versions_and_its_payload():
+    command = _retagged("cmev.cmd.damage-segment.v1", "damage-hitl-1.0.0")
+    command["payload"]["taxonomy_version"] = "damage-hitl-1.0.0"
+    assert validate_message("cmev.cmd.damage-segment.v1", command) == command
+    command["payload"]["taxonomy_version"] = "damage-cardd-1.0.0"  # the payload names another family
+    with pytest.raises(ContractError) as refused:
+        validate_message("cmev.cmd.damage-segment.v1", command)
+    assert refused.value.reason_code == "payload_invalid"
+
+
 def test_part_reason_required_when_event_part_is_null():
     message = load_example("cmev.evt.damage-segmented.v1")
     message["payload"]["observations"][1]["part_reason"] = None

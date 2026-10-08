@@ -282,3 +282,32 @@ def test_dual_gated_split_sub_threshold_stays_unresolved():
     assert obs.part_reason == "ambiguous_between_parts"
     assert obs.area_pixels == 400
 
+
+
+# ---------------------------------------------------------------- damage vocabularies
+HITL_CLASSES = {1: "missing-part", 2: "broken-part", 3: "scratch", 4: "cracked", 5: "dent", 6: "flaking",
+                7: "paint-chip", 8: "corrosion"}
+
+
+def _hitl_context(cfg):
+    base = context(cfg)
+    return type(base)(**{**base.__dict__, "versions": {**base.versions, "taxonomy": "damage-hitl-1.0.0"}})
+
+
+def test_hitl_classes_are_observed_under_the_hitl_taxonomy():
+    cfg = config()
+    damage = paint(blank(), 8, 10, 30, 30, 50)  # class 8 is corrosion in this checkpoint's numbering
+    result = run(damage, door_and_fender(), cfg=cfg, ctx=_hitl_context(cfg), damage_classes=HITL_CLASSES)
+    obs = _one(result)
+    assert (obs.damage_code, obs.part_code, obs.versions["taxonomy"]) == ("corrosion", "front-door", "damage-hitl-1.0.0")
+
+
+def test_a_class_map_from_another_taxonomy_than_the_job_pins_is_refused():
+    cfg = config()
+    damage = paint(blank(), 8, 10, 30, 30, 50)
+    with pytest.raises(ContractError) as mixed:
+        run(damage, door_and_fender(), cfg=cfg, damage_classes=HITL_CLASSES)  # the job pins damage-cardd
+    assert mixed.value.reason_code == "taxonomy_version_mismatch"
+    with pytest.raises(ContractError) as mixed:
+        run(paint(blank(), DAMAGE_ID["crack"], 10, 30, 30, 50), door_and_fender(), cfg=cfg, ctx=_hitl_context(cfg))
+    assert mixed.value.reason_code == "taxonomy_version_mismatch"
