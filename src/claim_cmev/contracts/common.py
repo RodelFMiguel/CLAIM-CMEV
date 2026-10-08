@@ -196,6 +196,18 @@ class Provenance(ContractModel):
     derivation_refs: list[str] = Field(default_factory=list)
 
 
+def evidence_source(source_kinds: Iterable[str]) -> Literal["real", "fixture", "none"]:
+    """How a set of records may be described to a reviewer, from their ``provenance.source_kind``.
+
+    ``real`` only when every record is real: a mix is never described as model output.
+    ``none`` when there are no records.
+    """
+    kinds = set(source_kinds)
+    if not kinds:
+        return "none"
+    return "real" if kinds == {"real"} else "fixture"
+
+
 class ArtifactRef(ContractModel):
     """Bytes are reached only through the backend, never via a presigned browser URL."""
 

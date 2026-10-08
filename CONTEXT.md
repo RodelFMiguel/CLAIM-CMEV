@@ -1,8 +1,8 @@
 # CLAIM-CMEV shared development context
 
 Last updated: 2026-10-08 (Asia/Singapore), real M2 and M3 workers added on `M2-Implementation` and the three decisions about the served damage model accepted ([ADR 0004](docs/adr/0004-hitl-damage-model-and-vocabulary.md)): the image branch can run on the trained models; the 2026-09-27 application verification remains historical.
-- **Implementation baseline:** branch `M2-Implementation` at `dfa5fb6`, which the user rebased onto `main` (`f036e05`, containing the merged `M1-Implementation` and `image-worker` work). The 2026-10-08 M2/M3 work of the last two entries was committed on top of it on 2026-10-08 at the user's request; use Git history for the identifier. The local branch has diverged from `origin/M2-Implementation` because of the rebase; no push has been made.
-- **Read first for the image branch (M1, M2, M3):** the [real image branch handoff](#real-m2-and-m3-workers-the-image-branch-on-trained-models-2026-10-08) and the [decisions that followed it](#damage-model-decisions-accepted-and-the-path-to-a-cardd-model-2026-10-08), then the [notebook-to-serving handoff](#notebook-pipeline-joined-to-the-m1-serving-path-2026-10-08), the [served-checkpoint handoff](#m1-served-checkpoint-connected-and-run-in-the-compose-stack-2026-10-07) and the [worker start-up handoff](#m1-worker-start-up-model-loading-and-opt-in-switch-2026-10-07).
+- **Implementation baseline:** branch `M2-Implementation` at `dfa5fb6`, which the user rebased onto `main` (`f036e05`, containing the merged `M1-Implementation` and `image-worker` work). The 2026-10-08 M2/M3 work was committed on top of it as `2ee1a8b`, and the review-screen label fix and Codex's filtering and photo-hash fixes in a second commit, both on 2026-10-08 at the user's request; use Git history for the identifiers. The local branch has diverged from `origin/M2-Implementation` because of the rebase; no push has been made.
+- **Read first for the image branch (M1, M2, M3):** the [real image branch handoff](#real-m2-and-m3-workers-the-image-branch-on-trained-models-2026-10-08) the [decisions that followed it](#damage-model-decisions-accepted-and-the-path-to-a-cardd-model-2026-10-08) the [review-screen label fix](#review-screen-labels-follow-record-provenance-2026-10-08) and the [filtering and photo-hash fixes](#preserve-discarded-damage-uncertainty-and-verify-m3-photo-bytes-2026-10-08), then the [notebook-to-serving handoff](#notebook-pipeline-joined-to-the-m1-serving-path-2026-10-08), the [served-checkpoint handoff](#m1-served-checkpoint-connected-and-run-in-the-compose-stack-2026-10-07) and the [worker start-up handoff](#m1-worker-start-up-model-loading-and-opt-in-switch-2026-10-07).
 - **Read first for training:** the [M2 CarDD notebook handoff](#m2-cardd-notebook-and-converter-2026-10-02), the [M2 recall/regularisation handoff](#m2-recallregularisation-presets-and-background-offset-2026-10-02), the [M2 failure-review handoff](#m2-failure-review-and-tiny-fitting-diagnostic-2026-10-02), then the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
 - **Application baseline:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
 - **Older entries:** the chronological handoffs below keep their original status, which is sometimes superseded.
@@ -29,7 +29,7 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 | Data and models | The image branch has real workers. M1 serves the SegFormer-B3 `parts/0.8.0-b3-compound`. M2 serves the SegFormer-B3 `damage-hitl/0.1.0-b3-compound`, trained on the HITL damage subset, so observations carry the eight HITL damage codes under `damage-hitl-1.0.0`; it assigns each region against the real M1 mask. M3 groups the real observations and measures screening signals on the real masks. All three are opt-in (`docker-compose.image.yml`) and both weight folders are local, not in Git. M4 raster/geometry/OCR, the M5 parser and the M6 linker are libraries covered by unit tests only; the pipeline never calls them, and no M6 detector exists. M8 runs on real image records when the image branch is real, but the assessment is still labelled a fixture because the document stages and the cost table are. M7 costs are synthetic and built offline. PaddleOCR was smoke-run on synthetic pages only |
 | Offline vision training (2026-10-08) | Two M1 pipelines. Scripts (`train_segformer.py`): SegFormer-B3 `parts/0.8.0-b3-compound`, validation foreground mIoU 0.7253 and test 0.7303 on split 0.1.1; that test partition was used to compare runs. Notebooks (`training.py`): SegFormer-B2 `f9be9131`, validation 0.799 on prepared data v2 in the centred frame; not comparable with the B3 figures (other labels, other split, and 109 of its training photographs are in the 0.1.1 test partition). Since 2026-10-08 the notebooks prepare v3 on the published split, M1 trains in the worker's frame and a run can be exported as a registry candidate; **no run exists on v3 yet**. M2 served model (scripts, `train_damage.py`): SegFormer-B3 on HITL damage, validation foreground mIoU 0.2235 and test 0.1576 on `data/splits/damage/0.1.0`; that test partition was used to compare three architectures. M2 HITL notebooks: 0.222, 0.232 and 0.250 validation (`6203ed59`, `eacada43`, `3f7eb21b`). M2 CarDD: run `7981a76f`, validation foreground mIoU 0.737 on CarDD's official validation split (810 images). All notebook figures are validation results; their test splits are unused. The CarDD notebook run is not served: the M2 worker serves the HITL model |
 | Shared agent workflows | Canonical skills remain under `.agents/skills`, with no workflow changes |
-| Validation | On the 2026-10-08 `M2-Implementation` working tree: the full Python suite has 1694 passed and 1 skipped (the optional real-PaddleOCR test); the lean stack with the image overlay ran in an isolated Compose project; the TypeScript build and the browser tests were not re-run. Earlier, at `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. The `full` profile and the browser tests have not been re-run in Docker since `6e59bc2`; the lean stack with the M1 worker ran in an isolated Compose project on 2026-10-07. Independent verification found remaining and new defects; see the 2026-09-27 section |
+| Validation | On the 2026-10-08 `M2-Implementation` working tree: the full Python suite has 1721 passed and 1 skipped (the optional real-PaddleOCR test); the lean stack with the image overlay ran in an isolated Compose project; the TypeScript and Vite builds pass and the review screen was checked in a browser on a local stack with real image workers; the browser test scripts were not re-run. Earlier, at `6e59bc2`: the full Python suite has 1314 passed and 1 skipped (the optional real-PaddleOCR test); the TypeScript and Vite builds pass; the Chromium baseline, review-controls, review-defects and print e2e tests pass on a local SQLite stack. The `full` profile and the browser tests have not been re-run in Docker since `6e59bc2`; the lean stack with the M1 worker ran in an isolated Compose project on 2026-10-07. Independent verification found remaining and new defects; see the 2026-09-27 section |
 | Evaluation | No model accuracy, real price calibration, real claim outcome, usability comparison or financial benefit measured |
 
 
@@ -2126,3 +2126,107 @@ Uncommitted work, limitations and missing prerequisites:
 - The export and the switch were tested with small random-weight models, not with a trained CarDD export.
 
 Next concrete step and agreed owner (or unassigned): the user decides when to push. To serve CarDD: train `serving_512` in the CarDD notebook, compare on validation, export, then name the entry in `configs/models/damage.yaml`. Unassigned: targets for the HITL vocabulary; exercise the workbench against a real image branch; then the document stages.
+
+
+## Review-screen labels follow record provenance (2026-10-08)
+
+Date/time and timezone: 2026-10-08, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request, after the user ran the real image branch and the review screen described its results as fixtures.
+Task and relevant module: M9 review screen and report; the API assessment view.
+Branch / baseline commit / resulting commit or PR: `M2-Implementation` / `2ee1a8b` / committed on 2026-10-08 with the next entry's work (see the check-in entry at the end); use Git history for the identifier. Not pushed.
+
+The defect: with `docker-compose.image.yml`, each damage row said "Fixture observation; no model analysed the uploaded photographs" and the page notice said the uploaded pixels were not read. Both were false: the rows were M1, M2 and M3 output. The row sentence was hardcoded, and the notice followed the assessment's own label, which stays `fixture` while the document stages and the cost table are.
+
+Changed paths and completed behaviour:
+- `src/claim_cmev/contracts/common.py`: new `evidence_source`. A set of records is `real` only when every record is; a mix is `fixture`; no records is `none`.
+- `src/claim_cmev/api/views.py`:
+  - The assessment view gains `evidence_sources` (`image`, `document`), taken from the provenance of the stored records.
+  - Each `damage_summary` row gains `source_kind`, and its sentence says "Model observation from the uploaded photographs" when real. Fixture rows are unchanged.
+  - `fixture_notice` states what is real and what is a fixture. With no real image records it is the earlier text, byte for byte.
+  - A reason code given by both the group and its coverage slot is listed once.
+- `src/claim_cmev/review/report.py`, `review/config.py`, `configs/pipeline/m9_review.yaml`: the frozen report uses a second notice, `fixture_notice_documents_only`, when the part and damage records are real. Config version `m9-review/0.2.0`.
+- `src/workbench/src/ClaimReview.tsx`, `ReviewControls.tsx`: the notice title, the photograph count, the evidence note, the identity and coverage form's text and the print footer follow `evidence_sources` and `source_kind`. The two texts shown before an assessment exists no longer claim that processing uses fixtures.
+- Tests: additions to `tests/contracts/test_fixtures_and_records.py`, `tests/integration/test_image_branch.py`, `tests/integration/test_pipeline_end_to_end.py` and `tests/unit/m9/test_m9_report.py`.
+- Notes in the M9 and UI specifications.
+
+Decisions (accepted/proposed) and references:
+- Proposed: labels follow record provenance, per branch. A branch with any non-real record is called a fixture.
+- Proposed: the wording of the new notices and the title "Partly demonstration results".
+- Not changed, although seen in the same screenshot: M3 still waits for an identity confirmation on unsided parts such as the front bumper. The user asked for the labelling only.
+
+Checks actually run, results and artifact locations:
+- Each new test failed before the change for the intended reason. Two tests pin behaviour that must stay: the all-fixture report notice, and that only real image records change the wording.
+- Full Python suite: 1705 passed, 1 skipped (the optional real-PaddleOCR test).
+- `npm run build` in `src/workbench`: TypeScript and Vite pass; the two changed files pass the project's formatter. The workbench dependencies were installed from the lockfile for this (`node_modules` is ignored by Git).
+- Browser check on a throwaway local stack (SQLite, local files, in-process transport, the real M1, M2 and M3 handlers; no Docker):
+  - The CarDD photograph from the user's screenshot (`000049.jpg`) and a synthetic estimate page gave the same four rows: front bumper, headlight, fender, and one region left unassigned as `mostly_background`.
+  - The page showed "Partly demonstration results", the new notice, "Model observation from the uploaded photographs" on every row with "1 uploaded photograph", and the new form and evidence texts.
+  - A seeded fixture claim on the same stack kept every original fixture label. A claim with no upload showed the neutral notice.
+  - The processes were stopped and the browser tool's files were removed from the repository afterwards.
+- Not run: the printed report in a browser (it needs a finalized review), the e2e scripts under `tests/e2e`, and Docker. The web, API and vision images must be rebuilt (`--build`) before a Compose stack shows the change.
+
+Uncommitted work, limitations and missing prerequisites:
+- Committed on 2026-10-08 at the user's request; not pushed.
+- A review frozen before this change keeps the notice it was frozen with.
+- Estimate rows and pen marks carry no per-row source label; the page notice covers them.
+- `src/claim_cmev/orchestration/corrections.py` still writes the literal `m9-review/0.1.0` on marks made by review actions. It was never read from the configuration, so the version change above does not reach it.
+- The row for damage that was not assigned to a part is still titled "Unresolved" and its sentence still reads "Coverage unresolved (mostly_background)", which names an assignment reason as if it were a coverage reason.
+
+Next concrete step and agreed owner (or unassigned): the user decides when to push. Unassigned: let M3 resolve unsided parts without a confirmation; give the unassigned-damage row its own wording.
+
+
+## Preserve discarded damage uncertainty and verify M3 photo bytes (2026-10-08)
+
+Date/time and timezone: 2026-10-08, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request to fix the two image-worker review findings.
+Task and relevant module: M2 filtering diagnostics, M3 photo integrity and reuse, M8 negative photographic findings.
+Branch / baseline commit / resulting commit or PR: `M2-Implementation` / `2ee1a8b` plus the existing uncommitted M9 provenance-label changes / uncommitted; no push.
+
+Changed paths and completed behaviour:
+- `contracts/imaging.py`: `DamageFiltering` has three required nonnegative integer counts; optional `PartCoverage.damage_filtering` carries per-photo counts or unknown/null. Old records still load without invented measurements.
+- `vision/damage/assignment.py`, `vision/damage/adapter.py`, `contracts/events/cmev.evt.damage-segmented.v1.schema.json`: publish and persist low-confidence pixel, small-component and capped-component counts on every M2 result, including empty results.
+- `vision/multiview/adapter.py`: verify photographs against the original M1 command SHA-256 before screening, including reused jobs; reject mismatches permanently with `artifact_hash_mismatch` and write no summary rows. Copy filtering metadata from effective M2 job results to persisted coverage, retaining unknown historical diagnostics.
+- `comparison/adapter.py`, `comparison/reason_codes.py`: absent confident supporting damage, any discarded or unknown filtering in a confirmed covering photograph yields R7 `insufficient_evidence` / `damage_evidence_uncertain`. The check stores affected photo IDs and counts. Confident positives still pass, and measured zero filtering still permits `unsupported` under the existing rules.
+- Versioned configurations: `damage-cfg-0.1.1`, `m3-summary/0.1.1`, `m8-rules/0.2.1`. No threshold, taxonomy file, checkpoint or notebook changes.
+- Tests: additions to contract events/imaging, M2 assignment, M8 experiment A and image-branch integration tests, plus updated config-version assertions. Existing uncommitted M9/API/UI/test edits were preserved.
+- Documentation: M2/M3/M8 specifications, data contracts and integration contracts describe the diagnostics, compatibility, negative gate and hash refusal.
+
+Decisions (accepted/proposed) and references:
+- Implements the user's requested fixes. ADR 0004's HITL model, vocabulary and permission to produce negative findings remain in force; this correction preserves known discarded uncertainty rather than banning negatives for the model.
+- Conservative photo-level scope: any discarded damage in a confirmed covering photo can withhold the slot's negative conclusion; the counts do not localise uncertainty to one physical part. Unrelated photos do not gate a slot. Future refinement needs spatial diagnostics and validation rather than invented clean evidence.
+- Optional additions remain under record schema `0.2.0` and the existing `.v1` event. New consumers accept historical messages/rows; absent diagnostics on real coverage withhold negatives on new assessments. Strict older consumers reject the added event field, so deploy schemas and workers together. No database migration/backfill and no historical assessment/report rewrite.
+
+Checks actually run, results and artifact locations:
+- Created a temporary test environment at `/private/tmp/cmev-fix-venv` from the project's `.[dev,vision]` dependencies; no repository environment or dependency manifest was changed.
+- `/private/tmp/cmev-fix-venv/bin/python -m pytest -q tests/contracts tests/unit/m2 tests/unit/m3 tests/unit/m8 tests/unit/m9/test_m9_report.py tests/integration/test_image_branch.py tests/integration/test_pipeline_end_to_end.py tests/integration/test_worker_cleanup.py`: **826 passed**, one dependency deprecation warning (FastAPI/Starlette test client).
+- New integration regressions use synthetic logits and photographs through actual adapters, SQLite persistence and in-memory messaging. Confirmations rerun only M3/M8, preserve prior rows, and carry filtering into the stored finding. Cases: low-confidence-only damage, discarded small component, clean negative, confident positive alongside discarded pixels, historical missing diagnostics, and a same-size replacement photo rejected on a confirmation rerun. Unit/contract cases also cover component-cap counts, malformed diagnostics and unrelated photos.
+- `git diff --check`: passed.
+- Not run: Docker/Kafka/PostgreSQL, browser/TypeScript, full Python suite, trained-checkpoint accuracy or calibration. These results establish runtime/rule regression behaviour, not model accuracy.
+
+Uncommitted work, limitations and missing prerequisites:
+- Both fixes and this handoff are uncommitted alongside the earlier M9 label changes. The two unrelated presentation files remain untouched and untracked.
+- The photo-level gate can withhold more negatives than a spatially localised uncertainty representation. Thresholds remain uncalibrated; no new performance claim is made.
+- Previously completed assessments retain their recorded findings. Existing real results without filtering metadata cannot establish measured zero without rerunning M2.
+
+Next concrete step and agreed owner (or unassigned): rebuild the API/worker images together and assess a new input revision in the real image stack; exercise the review display of `damage_evidence_uncertain`. Deployment and a trained-model/browser acceptance run were not performed in this task.
+
+
+## Check-in of the label fix and the filtering and photo-hash fixes (2026-10-08)
+
+Date/time and timezone: 2026-10-08, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request.
+Task and relevant module: check in the pending changes on this branch. No behaviour changed in this step.
+Branch / baseline commit / resulting commit or PR: `M2-Implementation` / `2ee1a8b` / the commit containing this entry; use Git history for its identifier. Not pushed.
+Changed paths and completed behaviour:
+- One commit holds the work of the two entries above: the review-screen label fix (Claude Code) and the discarded-damage diagnostics, the M8 gate on them and the M3 photo hash check (Codex). They share test files, so they were not split.
+- Entries above that say "uncommitted" were written before this check-in. Codex's entry was left as written.
+Checks actually run, results and artifact locations:
+- Full Python suite on the combined tree: 1721 passed, 1 skipped (the optional real-PaddleOCR test). Codex's entry records that it had run a subset only.
+- `npm run build` in `src/workbench` passes. `git diff --check` and `scripts/sync_skills.py --check` pass. The taxonomy files are unchanged.
+- The candidates were screened for credential-like strings and large or binary files; none were found.
+- Not run for this step: Docker, the browser, the e2e scripts. The browser check in the label-fix entry was made before Codex's changes.
+Uncommitted work, limitations and missing prerequisites:
+- Not pushed. The local branch has diverged from `origin/M2-Implementation` because of the earlier rebase, so a push would replace the remote branch.
+- [ADR 0004](docs/adr/0004-hitl-damage-model-and-vocabulary.md) says that no rule withholds an `unsupported` finding under the HITL model. Codex's change adds one: discarded or unknown damage filtering in a confirmed covering photograph gives `insufficient_evidence`. The ADR was not edited and needs a dated amendment.
+- The two presentation files under `docs/` stay untracked, and the `autostash` stash entry was not touched.
+Next concrete step and agreed owner (or unassigned): the user decides when to push, and whether ADR 0004 gets the amendment. Then rebuild the API, web and vision images together and assess a new claim in the real image stack.

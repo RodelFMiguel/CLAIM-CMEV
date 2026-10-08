@@ -8,7 +8,7 @@
 #
 # File name follows this directory's m<N>_<name>.yaml convention; the specification
 # calls the same file configs/pipeline/part_summary.yaml.
-config_version: "m3-summary/0.1.0"
+config_version: "m3-summary/0.1.1"
 status: proposed
 
 summary:

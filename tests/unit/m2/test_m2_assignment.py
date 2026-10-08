@@ -311,3 +311,22 @@ def test_a_class_map_from_another_taxonomy_than_the_job_pins_is_refused():
     with pytest.raises(ContractError) as mixed:
         run(paint(blank(), DAMAGE_ID["crack"], 10, 30, 30, 50), door_and_fender(), cfg=cfg, ctx=_hitl_context(cfg))
     assert mixed.value.reason_code == "taxonomy_version_mismatch"
+
+
+def test_filter_counts_are_published_even_without_an_observation():
+    damage = paint(blank(), DAMAGE_ID["dent"], 10, 30, 30, 50)
+    result = run(damage, door_and_fender(), confidence=np.full(damage.shape, 0.49))
+    payload = validate_event(result, config())["payload"]
+    assert payload["observation_ids"] == [] and payload["dropped_region_count"] == 0
+    assert payload["filtering"] == {"dropped_low_confidence_pixels": 400, "below_min_pixels_count": 0,
+                                    "max_components_exceeded_count": 0}
+
+
+def test_component_cap_and_small_regions_are_distinct_filter_counts():
+    damage = paint(blank(), DAMAGE_ID["dent"], 10, 30, 30, 50)
+    paint(damage, DAMAGE_ID["dent"], 10, 60, 30, 80)
+    paint(damage, DAMAGE_ID["dent"], 10, 90, 15, 95)
+    cfg = config(regions={"max_components_per_photo": 1})
+    payload = validate_event(run(damage, door_and_fender(), cfg=cfg), cfg)["payload"]
+    assert payload["filtering"] == {"dropped_low_confidence_pixels": 0, "below_min_pixels_count": 1,
+                                    "max_components_exceeded_count": 1}

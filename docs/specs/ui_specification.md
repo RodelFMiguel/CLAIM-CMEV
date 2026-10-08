@@ -1229,3 +1229,10 @@ Pending requests are keyed by the authenticated actor and claim. IndexedDB compa
 - After a failed reassessment the surveyor can open `latest_assessment_revision` read-only beside the stage retry control. It is labelled not current and has no finalize control.
 - Pending requests: removing a request that no longer occupies the per-claim slot is a no-op, so a request that commits after another tab discarded it is treated as success, clears its committed note draft and reloads. A `/processing` failure leaves a loaded review usable with a non-blocking warning.
 - Drafts: a legacy per-claim draft moves once into the current tab's draft key. Empty drafts are not stored; drafts older than 14 days, and empty drafts of closed tabs, are pruned.
+
+### Fixture and model labels (2026-10-08)
+
+- The notice above the review is titled "Partly demonstration results" when the image results are model output (`evidence_sources.image` is `real`), and "Demonstration results" otherwise. Its text comes from the API.
+- A damage row counts "uploaded photographs" when it is model output and "illustrative photographs" when it is a fixture.
+- With model image results, the identity and coverage form says its photo IDs are the uploaded photographs, the evidence panel says the masks are stored but not shown, and the print footer names both sources.
+- Before an assessment exists the notice makes no claim about how the evidence will be processed, because the page does not know which workers are running.

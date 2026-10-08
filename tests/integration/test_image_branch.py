@@ -22,8 +22,9 @@ from transformers import SegformerConfig, SegformerForSemanticSegmentation
 import yaml
 
 from claim_cmev import worker
+from claim_cmev.api import views
 from claim_cmev.contracts.common import deterministic_id, version_signature
-from claim_cmev.fixtures import _bundle, seed_files
+from claim_cmev.fixtures import FIXTURE_NOTICE, _bundle, seed_files
 from claim_cmev.messaging import kafka
 from claim_cmev.orchestration.consolidation import Consolidator
 from claim_cmev.orchestration.intake import commit_input_revision
@@ -383,6 +384,38 @@ def test_the_assessment_is_made_from_the_real_image_records_and_passes_no_photo_
     assert assessment["provenance"]["source_kind"] == "fixture"
 
 
+def _review_screen(database, cid: str) -> dict:
+    """The assessment as the workbench receives it."""
+    with database.session() as db:
+        return views.assessment_view(db, get(db, "claim:" + cid), views.assessment_row(db, cid, 1))
+
+
+def test_the_review_screen_says_the_image_results_are_model_output(database, processed):
+    view = _review_screen(database, processed.cid)
+    assert view["evidence_sources"] == {"image": "real", "document": "fixture"}
+    assert view["damage_summary"]
+    for row in view["damage_summary"]:
+        assert row["source_kind"] == "real"
+        assert row["reason"].startswith("Model observation from the uploaded photographs. ")
+        assert "ixture" not in row["reason"] and "no model" not in row["reason"]
+
+
+def test_the_review_screen_notice_separates_the_real_photographs_from_the_fixture_documents(database, processed):
+    notice = _review_screen(database, processed.cid)["fixture_notice"]
+    # Still a notice: the estimate rows, the pen marks and the cost table are not real.
+    assert notice and notice != FIXTURE_NOTICE
+    assert "uploaded pixels were not read" not in notice
+    assert "trained part and damage models analysed the uploaded photographs" in notice
+    assert "uploaded pages were not read" in notice and "synthetic cost table" in notice
+
+
+def test_a_damage_row_names_each_reason_once(database, processed):
+    [door] = [r for r in _review_screen(database, processed.cid)["damage_summary"] if r["part_code"] == "front-door"]
+    # The group and its coverage slot both say the identity is not resolved.
+    assert door["reason_codes"] == ["identity_not_resolved"]
+    assert door["reason"].endswith("Coverage unresolved (identity_not_resolved).")
+
+
 def _confirm(database, cid: str, cost_tables, versions, events: list[dict]) -> int:
     """Commit the next input revision carrying surveyor confirmations, reusing every stage but the summary."""
     with database.session.begin() as db:
@@ -500,3 +533,120 @@ def test_a_damage_command_pinned_to_the_fixture_versions_is_dead_lettered(databa
     assert damage_jobs and {(j["state"], j["reason_code"]) for j in damage_jobs} == \
         {("dead_lettered", "model_version_unsupported")}
     assert observations == []
+
+
+class _ControlledLogits:
+    """Synthetic logits for worker regression tests, not an evaluated model."""
+
+    def __init__(self, stage: str, damage_mode: str):
+        self.stage, self.damage_mode = stage, damage_mode
+
+    def __call__(self, *, pixel_values):
+        count = 22 if self.stage == "parts" else len(DAMAGE_CLASSES)
+        logits = torch.zeros((1, count, 512, 512), device=pixel_values.device)
+        logits[:, 0] = 100
+        if self.stage == "parts":
+            part_id = next(i for i, name in ID_TO_PART_CODE.items() if name == "front-bumper")
+            logits[:, 0, 64:320, 64:448] = 0
+            logits[:, part_id, 64:320, 64:448] = 100
+        elif self.damage_mode != "clean":
+            dent = DAMAGE_CLASSES.index("dent")
+            end = 110 if self.damage_mode == "small" else 120
+            logits[:, 0, 100:end, 100:end] = 0
+            # With nine classes, exp(2)/(8+exp(2)) = 0.480: dent wins but is uncertain.
+            logits[:, dent, 100:end, 100:end] = 100 if self.damage_mode == "small" else 2
+            if self.damage_mode == "positive":
+                logits[:, 0, 200:240, 200:240] = 0
+                logits[:, dent, 200:240, 200:240] = 100
+        return SimpleNamespace(logits=logits)
+
+
+def _controlled_image_pipeline(database, storage, cost_tables, versions, damage_mode):
+    parts = SimpleNamespace(config=load_parts_config(), device=torch.device("cpu"),
+                            id_to_part_code=ID_TO_PART_CODE, model=_ControlledLogits("parts", damage_mode))
+    damage = SimpleNamespace(config=load_damage_model_config(), device=torch.device("cpu"),
+                             damage_classes={i: name for i, name in enumerate(DAMAGE_CLASSES) if i},
+                             model=_ControlledLogits("damage", damage_mode))
+    common = {"profile": "lean", "clock": Clock(), "sleep": lambda _s: None}
+    runtimes = [*build_runtimes(database.session, "combined", versions=versions,
+                               consolidator=Consolidator(cost_table_root=cost_tables),
+                               parts_producer="real", damage_producer="real", **common),
+                *build_runtimes(database.session, "image", **common,
+                               parts_handler=make_parts_handler(parts, storage, versions.for_stage("parts")),
+                               damage_handler=make_damage_handler(damage, storage, versions.for_stage("damage")),
+                               summary_handler=make_summary_handler(storage, versions.for_stage("summary")))]
+    return LocalPipeline(database.session, runtimes, clock=Clock())
+
+
+@pytest.mark.parametrize("mode, expected", [
+    ("uncertain", "insufficient"), ("small", "insufficient"), ("clean", "failed"), ("positive", "passed"),
+    ("legacy", "insufficient"),
+])
+def test_discarded_damage_survives_storage_and_confirmation_before_m8(
+        database, cost_tables, versions, tmp_path, mode, expected):
+    from sqlalchemy import update
+
+    storage = Storage(directory=tmp_path / "evidence")
+    pipeline = _controlled_image_pipeline(database, storage, cost_tables, versions,
+                                          "clean" if mode == "legacy" else mode)
+    cid, photos = _claim_with_stored_photos(database, storage, cost_tables, versions)
+    pipeline.drain()
+    with database.session.begin() as db:
+        old_coverage = _records(db, cid, "part_coverage", 1)
+        damage_jobs = _stage_jobs(db, cid, "damage")
+        assert all(j["state"] == "succeeded" for j in damage_jobs)
+        for job in damage_jobs:
+            stats = job["result_ref"]["filtering"]
+            assert stats["dropped_low_confidence_pixels"] == (400 if mode in ("uncertain", "positive") else 0)
+            assert stats["below_min_pixels_count"] == (1 if mode == "small" else 0)
+            if mode == "legacy":  # simulate a historical job; missing metadata must not become measured zero
+                result = {k: v for k, v in job["result_ref"].items() if k != "filtering"}
+                db.execute(update(jobs).where(jobs.c.job_key == job["job_key"]).values(result_ref=result))
+
+    revision = _confirm(database, cid, cost_tables, versions, [
+        {"action_type": "confirm_identity", "part_code": "front-bumper", "side": "not_applicable",
+         "photo_ids": photos},
+        {"action_type": "confirm_coverage", "part_code": "front-bumper", "side": "not_applicable",
+         "photo_ids": photos, "covers_enough": True}])
+    pipeline.drain()
+    with database.session() as db:
+        assert not _stage_jobs(db, cid, "parts", revision) and not _stage_jobs(db, cid, "damage", revision)
+        [slot] = [c for c in _records(db, cid, "part_coverage", revision)
+                  if (c["part_code"], c["side"]) == ("front-bumper", "not_applicable")]
+        assert slot["state"] == "adequate"
+        assert set(slot["damage_filtering"]) == set(photos)
+        expected_stats = None if mode == "legacy" else damage_jobs[0]["result_ref"]["filtering"]
+        assert all(s == expected_stats for s in slot["damage_filtering"].values())
+        body = db.execute(select(assessments.c.body).where(
+            assessments.c.claim_id == cid, assessments.c.input_revision == revision)).scalar_one()
+        [item] = [i for i in _records(db, cid, "line_item") if i["part_code"] == "front-bumper"]
+        [finding] = [f for f in body["findings"] if f["entry_id"] == item["entry_id"]]
+        assert finding["photographic_check"]["result"] == expected
+        if expected == "insufficient":
+            assert finding["overall_result"] == "insufficient_evidence"
+            assert [r["code"] for r in finding["photographic_check"]["reasons"]] == ["damage_evidence_uncertain"]
+            assert sorted(finding["photographic_check"]["detail"]["uncertain_damage_photo_ids"]) == sorted(photos)
+        elif mode == "clean":
+            assert finding["overall_result"] == "unsupported"
+        assert _records(db, cid, "part_coverage", 1) == old_coverage
+
+
+def test_m3_refuses_changed_same_size_photo_on_confirmation_rerun(database, processed, cost_tables, versions):
+    from claim_cmev.vision.artifacts import storage_key
+
+    with database.session() as db:
+        before = _records(db, processed.cid, "part_coverage", 1)
+        photo = _stage_jobs(db, processed.cid, "parts")[0]["command"]["payload"]["photo"]
+    replacement = _photo(98765)
+    assert hashlib.sha256(replacement).hexdigest() != photo["sha256"]
+    assert Image.open(io.BytesIO(replacement)).size == (photo["width"], photo["height"])
+    processed.storage.write(storage_key(photo["object_uri"]), replacement, "image/png")
+    revision = _confirm(database, processed.cid, cost_tables, versions, [
+        {"action_type": "confirm_identity", "part_code": "front-door", "side": "left",
+         "photo_ids": processed.photo_ids}])
+    processed.pipeline.drain()
+    with database.session() as db:
+        [job] = _stage_jobs(db, processed.cid, "summary", revision)
+        assert (job["state"], job["reason_code"]) == ("dead_lettered", "artifact_hash_mismatch")
+        assert _records(db, processed.cid, "part_coverage", revision) == []
+        assert _records(db, processed.cid, "part_coverage", 1) == before

@@ -273,3 +273,9 @@ Precedence (2026-09-27): a surveyor's own confirmation (`provenance.source_kind 
 - **Versions.** `summary_config`, `taxonomy` (parts) and `code`. A command pinned to the fixture tags is refused.
 - **Container.** M3 runs inside `cmev-worker-image` with M1 and M2 (see the M2 note). There is no separate `cmev-worker-summary` service yet.
 - **Not done.** Threshold calibration on real photographs (every screening threshold is still the proposed default, and the sharpness scale depends on crop size), `summary.write_debug_crops`, superseded-revision handling specific to this module, the confirmation-set digest in the job key (a new confirmation arrives as a new input revision, which changes the key), and any RQ3 measurement.
+
+### Photo integrity and damage-filtering handoff (2026-10-08)
+
+The real summary handler checks each photograph's SHA-256 against the original parts command before measuring signals, including when earlier jobs are reused after confirmation. A mismatch raises permanent `artifact_hash_mismatch` and writes no summary or coverage rows. The existing mask-hash and frame checks remain required.
+
+Each coverage slot carries `damage_filtering`, keyed by its view photo IDs, from the effective M2 jobs. Values are the three M2 counts or null for unrecorded historical diagnostics. The summary does not manufacture zero counts, and invalid counts fail with `damage_filtering_invalid`. Coverage still describes whether the part can be seen; filtering uncertainty is separately consumed by M8. Summary configuration is `m3-summary/0.1.1`.

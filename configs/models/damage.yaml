@@ -15,7 +15,7 @@
 model_id: "damage-hitl"
 model_version: "damage-hitl/0.1.0-b3-compound"
 taxonomy_version: "damage-hitl-1.0.0"
-config_version: "damage-cfg-0.1.0"
+config_version: "damage-cfg-0.1.1"
 
 # Architecture and Training Recipe
 architecture: "nvidia/mit-b3"

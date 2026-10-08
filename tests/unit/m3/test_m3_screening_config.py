@@ -90,7 +90,7 @@ def test_screen_never_records_obstruction():
 def test_default_configuration_is_the_proposed_specification_values():
     cfg = load_summary_config()
     s = cfg.summary
-    assert cfg.status == "proposed" and cfg.config_version == "m3-summary/0.1.0"
+    assert cfg.status == "proposed" and cfg.config_version == "m3-summary/0.1.1"
     assert (s.area_policy, s.min_part_area_fraction, s.min_blur_score, s.min_mean_luma, s.max_mean_luma,
             s.max_clipped_fraction, s.max_border_touch_fraction, s.require_coverage_confirmation) == (
         "max_member", 0.02, 100.0, 40, 220, 0.10, 0.25, True)

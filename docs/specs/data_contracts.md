@@ -443,3 +443,9 @@ Only `cmev-api` writes to the `claim` and `review` schemas. Only the owning work
 | The `part_key` format used in the review API path, given that side may be `unknown` | Lane 5 | [application platform](application_platform.md) |
 | Whether CarDD consent arrives, and therefore which damage taxonomy is active | Lane 1 | v2 section 12.4, day-2 checkpoint |
 | Retention and anonymisation policy before any real claim material is accepted | All | Not yet decided. Until it exists, real claim content must not enter this prototype |
+
+### Damage filtering diagnostics (2026-10-08)
+
+`DamageFiltering` contains three required nonnegative integer counts: `dropped_low_confidence_pixels`, `below_min_pixels_count`, and `max_components_exceeded_count`. An object with three zeros is measured zero filtering; an absent object or null is unknown.
+
+`PartCoverage.damage_filtering` is an optional map from photo ID to `DamageFiltering` or null, defaulting to an empty map for historical records. The real M3 worker supplies a value for each slot view from the effective M2 job, including explicit reuse lineage. M8 uses confirmed covering photos when gating negative conclusions, treating missing diagnostics on real coverage as unknown. The map is retained in persisted and frozen coverage records. Record schema stays `0.2.0`; there is no database migration or invented backfill. New assessments use the bumped rule/configuration versions.

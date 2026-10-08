@@ -296,6 +296,30 @@
         },
         "empty_result": {
           "type": "boolean"
+        },
+        "filtering": {
+          "description": "Per-photo discarded damage counts. Absent on historical messages means unknown, not zero.",
+          "type": "object",
+          "properties": {
+            "dropped_low_confidence_pixels": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "below_min_pixels_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_components_exceeded_count": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "dropped_low_confidence_pixels",
+            "below_min_pixels_count",
+            "max_components_exceeded_count"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

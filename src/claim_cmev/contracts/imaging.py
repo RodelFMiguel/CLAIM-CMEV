@@ -273,6 +273,19 @@ class ViewScreen(ContractModel):
     reasons: list[ReasonCode] = Field(default_factory=list)
 
 
+class DamageFiltering(ContractModel):
+    """Damage discarded on one photograph. Required counts distinguish measured zero from unknown."""
+
+    dropped_low_confidence_pixels: int = Field(ge=0, strict=True)
+    below_min_pixels_count: int = Field(ge=0, strict=True)
+    max_components_exceeded_count: int = Field(ge=0, strict=True)
+
+    @property
+    def discarded(self) -> bool:
+        return bool(self.dropped_low_confidence_pixels or self.below_min_pixels_count
+                    or self.max_components_exceeded_count)
+
+
 class PartCoverage(ClaimRecord):
     """Coverage for one (part, side) slot. Recorded for every slot, damaged or not."""
 
@@ -285,6 +298,8 @@ class PartCoverage(ClaimRecord):
     reasons: list[ReasonCode] = Field(default_factory=list)
     coverage_confirmation_id: RecordId | None = None
     identity_confirmation_ids: list[RecordId] = Field(default_factory=list)
+    # Per-photo M2 counts, carried through reuse. Missing/null is unknown, never measured zero.
+    damage_filtering: dict[RecordId, DamageFiltering | None] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _rules(self) -> PartCoverage:

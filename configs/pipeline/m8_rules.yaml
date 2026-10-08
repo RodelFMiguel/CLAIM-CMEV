@@ -11,7 +11,7 @@
 #
 # Note: the module specification names this file configs/pipeline/consolidation.yaml;
 # the implementation task assigned configs/pipeline/m8_rules.yaml.
-rules_config_version: "m8-rules/0.2.0"
+rules_config_version: "m8-rules/0.2.1"
 
 damage:
   # Proposed. Below this, R7 withholds with damage_evidence_uncertain.

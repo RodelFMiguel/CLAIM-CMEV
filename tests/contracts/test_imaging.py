@@ -190,3 +190,23 @@ def test_letterbox_round_trip_to_original_photo():
                                 "pad_top": 0.0})
     assert rotated.original_size == (3024, 4032)
     assert rotated.model_box_to_original_norm((64.0, 0.0, 448.0, 512.0)) == pytest.approx((0.0, 0.0, 1.0, 1.0))
+
+
+def test_coverage_filtering_round_trip_preserves_zero_unknown_and_historical_absence():
+    from claim_cmev.contracts.imaging import DamageFiltering
+
+    historical = PartCoverage(**coverage())
+    assert historical.damage_filtering == {}
+    counts = DamageFiltering(dropped_low_confidence_pixels=0, below_min_pixels_count=0,
+                              max_components_exceeded_count=0)
+    row = PartCoverage.model_validate({**historical.model_dump(), "damage_filtering": {
+        "photo-clean": counts, "photo-unknown": None,
+        "photo-uncertain": counts.model_copy(update={"dropped_low_confidence_pixels": 400})}})
+    assert PartCoverage.model_validate_json(row.model_dump_json()) == row
+    assert row.damage_filtering["photo-unknown"] is None
+    assert not row.damage_filtering["photo-clean"].discarded
+    assert row.damage_filtering["photo-uncertain"].discarded
+    for bad in ({}, {**counts.model_dump(), "dropped_low_confidence_pixels": -1},
+                {**counts.model_dump(), "dropped_low_confidence_pixels": None}):
+        with pytest.raises(ValidationError):
+            DamageFiltering.model_validate(bad)

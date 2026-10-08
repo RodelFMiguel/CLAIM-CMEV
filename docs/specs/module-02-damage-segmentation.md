@@ -264,3 +264,7 @@ These notes record what the M2 worker does. They narrow or differ from the table
 - **Container.** M2 runs inside `cmev-worker-image` (role `image`: M1, M2 and M3 in one process), added by `infra/compose/docker-compose.image.yml`. The roles `damage` and `summary` exist for separate containers; no Compose service uses them yet.
 - **Consistency with the lane's benchmark.** Run over the 132 test photographs, the served M1 and M2 adapters give 468 regions with 366 assigned (78.2%), and 71, 25, 5 and 1 unresolved for the four reasons. The lane's benchmark script reports 469 and 367 with the same four counts.
 - **Not done.** Superseded-revision handling specific to this module, a warm-up inference, the `parts_version_mismatch` check from the mask's own producer version (the orchestrator pins both from one bundle), latency and memory measurement, and assignment accuracy against jointly labelled ground truth.
+
+### Discarded damage remains uncertainty (2026-10-08)
+
+The served M2 worker now publishes and stores `filtering` on each photo result, including empty results: `dropped_low_confidence_pixels`, `below_min_pixels_count` and `max_components_exceeded_count`. All three are nonnegative integers; explicit zeros mean measured no filtering. These are diagnostics, not observations or evidence that damage is absent. Historical results without the object mean unknown. The assignment thresholds and model weights are unchanged; serving configuration is `damage-cfg-0.1.1`.

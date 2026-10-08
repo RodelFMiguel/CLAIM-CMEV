@@ -6,7 +6,7 @@
 # configs/pipeline/review.yaml; the M9 implementation keeps it under the
 # module-prefixed name used by the other pipeline configurations. Bump
 # config_version on any change.
-config_version: "m9-review/0.1.0"
+config_version: "m9-review/0.2.0"
 
 review:
   # Proposal v2 section 2.6 and data contracts section 10. Must equal
@@ -49,6 +49,8 @@ print:
   cost_basis_statement: "Basis: one part, SGD, before tax, quantity 1, no discount."
   final_approval_not_recorded: "Final approved amount: not recorded. Approval happens outside this prototype."
   fixture_notice: "Fixture data: these results come from labelled fixtures, not from model output."
+  # Used instead when the part and damage records are real and other records are fixtures.
+  fixture_notice_documents_only: "Fixture data: the estimate rows and pen marks come from labelled fixtures. The part and damage results are model output on the uploaded photographs."
   no_judgement_statement: "No result in this report means that a repair is unnecessary or that a price is wrong."
 
 overlay:

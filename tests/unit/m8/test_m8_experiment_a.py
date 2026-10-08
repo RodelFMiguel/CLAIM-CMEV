@@ -718,3 +718,47 @@ def test_a22_a_hitl_observation_is_judged_by_the_hitl_supported_list():
     without_dent = CONFIG.with_overrides({"damage": {"supported_types_hitl": ["corrosion"]}})
     assert photo(_as_hitl(clean()), config=without_dent) == ["damage_type_out_of_scope"]
     assert photo(clean(), config=without_dent) == ["damage_supported"]  # a CarDD observation is unaffected
+
+
+@pytest.mark.parametrize("stats", [
+    None,
+    {"dropped_low_confidence_pixels": 400, "below_min_pixels_count": 0, "max_components_exceeded_count": 0},
+    {"dropped_low_confidence_pixels": 0, "below_min_pixels_count": 1, "max_components_exceeded_count": 0},
+    {"dropped_low_confidence_pixels": 0, "below_min_pixels_count": 0, "max_components_exceeded_count": 1},
+])
+def test_negative_photo_finding_withheld_for_discarded_or_unrecorded_damage(stats):
+    from claim_cmev.contracts.imaging import PartCoverage
+
+    world = World()
+    world.seen("front-door", "left", damage=())
+    world.item("e1")
+    [slot] = world.coverage
+    photo = slot.covering_photo_ids[0]
+    world.coverage = [PartCoverage.model_validate({**slot.model_dump(), "damage_filtering": {photo: stats}})]
+    f = finding(world.run(), "e1")
+    assert f.overall_result == "insufficient_evidence"
+    assert codes(f.photographic_check) == ["damage_evidence_uncertain"]
+    assert f.photographic_check.detail["damage_filtering"] == {photo: stats}
+
+
+def test_historical_real_coverage_without_filtering_is_unknown_not_clean():
+    world = World()
+    world.seen("front-door", "left", damage=())
+    world.item("e1")
+    world.coverage = [c.model_copy(update={"provenance": c.provenance.model_copy(update={"source_kind": "real"})})
+                      for c in world.coverage]
+    assert finding(world.run(), "e1").overall_result == "insufficient_evidence"
+
+
+def test_filtering_in_another_photo_does_not_withhold_the_confirmed_clean_views():
+    from claim_cmev.contracts.imaging import DamageFiltering
+
+    world = World()
+    world.seen("front-door", "left", damage=())
+    world.item("e1")
+    clean_stats = DamageFiltering(dropped_low_confidence_pixels=0, below_min_pixels_count=0,
+                                  max_components_exceeded_count=0)
+    world.coverage = [c.model_copy(update={"damage_filtering": {
+        c.covering_photo_ids[0]: clean_stats, "other-photo": clean_stats.model_copy(
+            update={"dropped_low_confidence_pixels": 400})}}) for c in world.coverage]
+    assert finding(world.run(), "e1").overall_result == "unsupported"

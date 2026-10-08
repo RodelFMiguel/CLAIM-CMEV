@@ -15,17 +15,19 @@ artifacts through the reuse lineage, so no model runs again.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import hashlib
 import io
 from typing import Any
 
 import numpy as np
 from PIL import Image
+from pydantic import ValidationError
 
 from ...contracts.common import ContractError, Provenance
 from ...contracts.imaging import (
     CoverageConfirmation,
+    DamageFiltering,
     IdentityConfirmation,
     ImageDamageObservation,
     PartPrediction,
@@ -61,6 +63,7 @@ class PartSummaryRequest:
     photos: Mapping[str, bytes] = field(default_factory=dict, repr=False)
     part_masks: Mapping[str, bytes] = field(default_factory=dict, repr=False)
     photo_ids: Iterable[str] | None = None
+    damage_filtering: Mapping[str, DamageFiltering | None] = field(default_factory=dict)
 
 
 def measure_view_signals(part_predictions: Sequence[PartPrediction], photos: Mapping[str, bytes],
@@ -101,10 +104,16 @@ def run_part_summary(request: PartSummaryRequest, config: SummaryConfig | None =
     """
     config = config or load_summary_config()
     signals = measure_view_signals(request.part_predictions, request.photos, request.part_masks)
-    return summarise_parts(
+    outcome = summarise_parts(
         request.observations, request.part_predictions, request.identity_confirmations,
         request.coverage_confirmations, context=request.context, config=config, view_signals=signals,
         photo_ids=request.photo_ids)
+    # Keep photographic coverage separate from damage confidence: positive evidence remains
+    # usable, while M8 can withhold a negative conclusion on filtered or unrecorded damage.
+    return replace(outcome, coverage=tuple(
+        slot.model_copy(update={"damage_filtering": {
+            view.photo_id: request.damage_filtering.get(view.photo_id) for view in slot.views}})
+        for slot in outcome.coverage))
 
 
 def make_summary_handler(storage: Any, versions: Mapping[str, str], config: SummaryConfig | None = None):
@@ -140,6 +149,10 @@ def make_summary_handler(storage: Any, versions: Mapping[str, str], config: Summ
         photo_refs = {j["target"]: j["command"]["payload"]["photo"] for j in parts_jobs}
         photos = {photo_id: read_object(storage, photo_refs[photo_id]["object_uri"], f"photo {photo_id}")
                   for photo_id in sorted(needed)}
+        for photo_id, photo in photos.items():
+            if hashlib.sha256(photo).hexdigest() != photo_refs[photo_id]["sha256"]:
+                raise PermanentError("artifact_hash_mismatch",
+                                     f"photo {photo_id} is not the one its parts job names")
         mask_uris = {p.photo_id: p.mask_ref.object_uri for p in predictions if p.accepted}
         masks = {photo_id: read_object(storage, uri, f"the part mask of {photo_id}")
                  for photo_id, uri in sorted(mask_uris.items())}
@@ -152,10 +165,16 @@ def make_summary_handler(storage: Any, versions: Mapping[str, str], config: Summ
             claim_id=env.claim_id, input_revision=env.input_revision, job_key=env.job_key, versions=dict(env.versions),
             provenance=Provenance(**ctx.provenance(derivation_refs=actions)), reuse_from_input_revision=reuse)
         try:
+            filtering = {j["target"]: (DamageFiltering.model_validate(j["result_ref"]["filtering"])
+                                      if (j["result_ref"] or {}).get("filtering") is not None else None)
+                         for j in damage_jobs}
             outcome = run_part_summary(PartSummaryRequest(
                 context=context, observations=observations, part_predictions=predictions,
                 identity_confirmations=identities, coverage_confirmations=coverage_confirmations, photos=photos,
-                part_masks=masks, photo_ids=sorted(set(payload["photo_ids"]) | needed)), config)
+                part_masks=masks, photo_ids=sorted(set(payload["photo_ids"]) | needed),
+                damage_filtering=filtering), config)
+        except ValidationError as exc:
+            raise PermanentError("damage_filtering_invalid", "stored M2 filtering counts are invalid") from exc
         except ContractError as exc:
             raise PermanentError(exc.reason_code, exc.message) from exc
 

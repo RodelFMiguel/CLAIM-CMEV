@@ -327,6 +327,7 @@ def make_damage_handler(segmenter: DamageSegmenter, storage: Any, versions: Mapp
                 "damage_mask_ref": event_payload["damage_mask_ref"],
                 "unknown_part_count": event_payload["unknown_part_count"],
                 "dropped_region_count": event_payload["dropped_region_count"],
+                "filtering": event_payload["filtering"],
                 "part_mask_present": part_mask is not None}
 
     return handler

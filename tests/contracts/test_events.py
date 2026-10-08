@@ -340,3 +340,21 @@ def test_record_object_uris_require_the_wire_scheme(uri):
         assert not list(wire.iter_errors(good))
         assert ArtifactRef(**{**artifact(), "object_uri": good}).object_uri == good
         assert MaskRef(**{**mask(), "object_uri": good}).object_uri == good
+
+
+def test_damage_filtering_metadata_is_optional_but_complete_when_present():
+    topic = "cmev.evt.damage-segmented.v1"
+    message = load_example(topic)
+    validate_message(topic, message)  # historical messages do not invent zero counts
+    fields = ("dropped_low_confidence_pixels", "below_min_pixels_count", "max_components_exceeded_count")
+    counts = dict.fromkeys(fields, 0)
+    message["payload"]["filtering"] = counts
+    validate_message(topic, message)
+    for field in fields:
+        for invalid in (-1, None, "0"):
+            message["payload"]["filtering"] = {**counts, field: invalid}
+            with pytest.raises(ContractError):
+                validate_message(topic, message)
+        message["payload"]["filtering"] = {k: v for k, v in counts.items() if k != field}
+        with pytest.raises(ContractError):
+            validate_message(topic, message)

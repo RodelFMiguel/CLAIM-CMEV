@@ -25,7 +25,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ...contracts.common import PART_CODES, ContractError, Provenance, damage_codes_for, deterministic_id
-from ...contracts.imaging import AssignmentCandidate, ImageDamageObservation, MaskRef
+from ...contracts.imaging import AssignmentCandidate, DamageFiltering, ImageDamageObservation, MaskRef
 from ...contracts.imaging import ImageTransform as ContractImageTransform
 from ..transforms import ImageTransform as FrameTransform
 from ..transforms import box_to_quad, map_points, normalise_box, quad_to_box
@@ -179,6 +179,12 @@ class DamageAssignmentResult:
         """A successful run with no surviving region; never proof the vehicle is undamaged."""
         return not self.observations
 
+    @property
+    def filtering(self) -> DamageFiltering:
+        return DamageFiltering(dropped_low_confidence_pixels=self.dropped_low_confidence_pixels,
+                               below_min_pixels_count=self.below_min_pixels_count,
+                               max_components_exceeded_count=self.max_components_exceeded_count)
+
     def event_payload(self) -> dict[str, Any]:
         """The ``cmev.evt.damage-segmented.v1`` payload (``damage_code`` travels as ``damage_type``)."""
         ref = self.damage_mask_ref
@@ -191,6 +197,7 @@ class DamageAssignmentResult:
             "dropped_region_count": self.dropped_region_count,
             "unknown_part_count": self.unknown_part_count,
             "empty_result": self.empty_result,
+            "filtering": self.filtering.model_dump(mode="json"),
         }
 
 
