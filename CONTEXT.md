@@ -2230,3 +2230,27 @@ Uncommitted work, limitations and missing prerequisites:
 - [ADR 0004](docs/adr/0004-hitl-damage-model-and-vocabulary.md) says that no rule withholds an `unsupported` finding under the HITL model. Codex's change adds one: discarded or unknown damage filtering in a confirmed covering photograph gives `insufficient_evidence`. The ADR was not edited and needs a dated amendment.
 - The two presentation files under `docs/` stay untracked, and the `autostash` stash entry was not touched.
 Next concrete step and agreed owner (or unassigned): the user decides when to push, and whether ADR 0004 gets the amendment. Then rebuild the API, web and vision images together and assess a new claim in the real image stack.
+
+
+## Two-photo windshield case diagnosis (2026-10-08)
+
+Date/time and timezone: 2026-10-08, Asia/Singapore.
+Contributor / coding agent: Codex, following the user's request to diagnose the two uploaded examples.
+Task and relevant module: M1/M2 serving inference and damage-to-part assignment; read-only trace of M3 grouping and identity gating.
+Branch / baseline commit / resulting commit or PR: `M2-Implementation`; inference manifest records `2ee1a8b` plus the then-dirty fixes. Another contributor committed those fixes as `5e0b920` during diagnosis. No commit or push by this task.
+
+Changed paths and completed behaviour:
+- Generated an ignored case-diagnosis bundle at `artifacts/evaluation/photo-diagnosis-20261008/`: inference and rendering scripts, report, original-grid model masks, numbered overlays, per-region JSON, run log, dependency freeze and manifest. Only this handoff changes a tracked file.
+- Used the current serving adapters and configured parts/HITL-damage checkpoints with unchanged thresholds; no notebook path, training, promotion or application-state mutation.
+
+Checks actually run, results and artifact locations:
+- Both real model inferences completed on CPU. Ten regions survived extraction; six remained unassigned. The assignment totals and code-traced grouping explain the screenshot's two named groups plus six generic unresolved rows.
+- Visual inspection identifies windshield/front-window/background confusion in M1 and incomplete, fragmented crack segmentation in M2. These are case findings, not measured dataset accuracy. Detailed photo-level evidence is in the ignored report.
+- Rendering verifies source-photo hashes, equal 512-by-512 mask grids and pixel counts for all ten retained components. Inspected the generated overlays. No serving source code changed or unit-test rerun was needed.
+
+Decisions/status and limitations:
+- Two views of one vehicle, sourced from local CarDD train2017; no independent annotation or held-out evaluation, and no threshold tuning. No broad model-quality claim.
+- The actual Docker assessment and pinned versions were not inspected. M3 was traced in source, not rerun through persisted assessment/review. The local inference does not prove an exact replay of the uploaded claim.
+- Existing contributor changes and the concurrent check-in/handoff were preserved. Detailed generated artifacts are local and ignored.
+
+Next concrete step and agreed owner (or unassigned): unassigned—independently annotate part and damage masks, rerun assignment with only the part mask corrected to isolate M1's contribution, and score M2 separately. Use a separate vehicle-grouped validation cohort before calibration or a general model-quality conclusion.
