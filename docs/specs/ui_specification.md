@@ -668,7 +668,7 @@ Data source names below are **proposed** and follow the records in proposal v2 s
 | Field | Control | Source field | Editable | Validation | Empty state | Effect |
 | --- | --- | --- | --- | --- | --- | --- |
 | Part / side | Read-only text | `PartCoverage.part_code`, `.side` | No | - | - | `unknown` side is printed as "side unknown", never guessed |
-| Damage detected | Read-only list of damage codes | `DamageObservation.damage_type` grouped by part | No | - | "no supported damage type detected" | Only the six supported damage categories appear |
+| Damage detected | Read-only list of damage codes | `PartSummary.damage_codes`, with `ImageDamageObservation.damage_code` on expansion | No | - | "No damage observation recorded"; missing legacy fields say "Details unavailable" | Display the recorded HITL or CarDD vocabulary without mapping between them |
 | Views | Read-only count | count of `PartCoverage.covering_photo_ids` | No | - | "0" | Count of covering photographs, not of damage instances |
 | Coverage | Badge plus reason | `PartCoverage.state`, `.reasons` | No | - | `unresolved` | adequate, inadequate, not_visible, unresolved, each with its reason code |
 | Confirmed by | Read-only text | `PartCoverage.human_confirmation` | No | - | Hidden | Actor and timestamp when a human confirmed identity or coverage |
@@ -676,6 +676,8 @@ Data source names below are **proposed** and follow the records in proposal v2 s
 | Confirm identity | Button | - | - | Enabled only when identity is unresolved | - | Opens the evidence panel at the identity control |
 | Confirm coverage | Button | - | - | Enabled when coverage is `inadequate` or `unresolved` and at least one view exists | - | Opens the evidence panel at the coverage control |
 | Unresolved observations | Read-only list | observations with no resolved part | No | - | Hidden when none | States plainly that they support no conclusion either way |
+
+Display implementation note (2026-10-09): the damage summary shows predicted damage independently of confirmation and photo coverage. The recorded `unresolved` coverage state reads "Needs confirmation" when its reason is `identity_not_resolved`, and "Not established" otherwise. Explanations translate reason codes without changing decisions. Unknown side remains explicit. Unassigned observations appear in a separate collapsible group, open initially, with their damage type, candidate parts and mask-overlap percentages. Source observations are joined by summary membership IDs and can select their uploaded photograph. Missing part masks show unavailable overlap, not a measured zero. Fixture provenance stays explicit. The print view renders all retained details without collapsed disclosures, using the frozen assessment data.
 
 ### 6.5 Line-item table
 

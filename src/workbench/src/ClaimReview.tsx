@@ -49,6 +49,12 @@ import {
   type ReviewRow,
 } from "./ReviewControls";
 import { ErrorBanner, Loading, Status } from "./App";
+import {
+  DamageSummary,
+  type DamageRow,
+  type DamageGroup,
+  type DamageObservation,
+} from "./DamageSummary";
 
 interface Evidence {
   file_id: string;
@@ -122,14 +128,9 @@ interface Assessment {
   line_items: LineItem[];
   marks: Mark[];
   files: Evidence[];
-  damage_summary: {
-    part_code: string;
-    side: string;
-    coverage: string;
-    reason: string;
-    photo_count: number;
-    source_kind?: string;
-  }[];
+  damage_summary: DamageRow[];
+  part_summaries?: DamageGroup[];
+  observations?: DamageObservation[];
   // "real" when trained models or parsers read the uploaded evidence; an older API omits it.
   evidence_sources?: { image: string; document: string };
   versions: Record<string, string>;
@@ -854,30 +855,24 @@ function ReviewOverview({ id }: { id: string }) {
                   </span>
                   <div>
                     <h2>Damage summary</h2>
-                    <p>Part identity and coverage stay explicit.</p>
+                    <p>
+                      Predicted damage is shown separately from part identity
+                      and photograph coverage.
+                    </p>
                   </div>
                 </div>
                 {assessment.damage_summary.length ? (
-                  assessment.damage_summary.map((part, i) => (
-                    <div className="damage-item" key={i}>
-                      <div>
-                        <strong>{label(part.part_code)}</strong>
-                        <span className="muted">Side: {part.side}</span>
-                      </div>
-                      <span className="result-info">
-                        Coverage: {label(part.coverage)}
-                      </span>
-                      <p>{part.reason}</p>
-                      <small>
-                        Coverage: {part.coverage} &middot; {part.photo_count}{" "}
-                        {part.source_kind === "real"
-                          ? part.photo_count === 1
-                            ? "uploaded photograph"
-                            : "uploaded photographs"
-                          : "illustrative photographs"}
-                      </small>
-                    </div>
-                  ))
+                  <DamageSummary
+                    rows={assessment.damage_summary}
+                    groups={assessment.part_summaries}
+                    observations={assessment.observations}
+                    files={assessment.files}
+                    onPhoto={(photoId) => {
+                      setSelectedRow(null);
+                      setSelectedFile(photoId);
+                      document.getElementById("evidence-panel")?.focus();
+                    }}
+                  />
                 ) : (
                   <p className="muted">
                     No photographic assessment is available. Missing photographs
@@ -1620,12 +1615,13 @@ function PrintReport({ id }: { id: string }) {
         </table>
         {!assessment.line_items.length && <p>No estimate rows available.</p>}
         <h2>Photographic coverage</h2>
-        {assessment.damage_summary.map((part, i) => (
-          <p key={i}>
-            {label(part.part_code)} / {label(part.side)}: {label(part.coverage)}
-            . {part.reason}
-          </p>
-        ))}
+        <DamageSummary
+          rows={assessment.damage_summary}
+          groups={assessment.part_summaries}
+          observations={assessment.observations}
+          files={assessment.files}
+          print
+        />
         <h2>Declaration and missing repairs</h2>
         <p>
           Declaration: {assessment.declaration_completeness}. Missing-repairs
