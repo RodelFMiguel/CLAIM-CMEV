@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections import defaultdict
 from decimal import Decimal
 import hashlib
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 import platform
 from typing import Any, Mapping, Sequence
@@ -101,11 +102,10 @@ def select_method(validation: Mapping[str, Mapping[str, Any]], band: tuple[Decim
 
 def _environment() -> dict[str, Any]:
     try:
-        import lightgbm
-        version = lightgbm.__version__
-    except (ImportError, OSError):
-        version = None
-    return {"python": platform.python_version(), "platform": platform.platform(), "lightgbm": version}
+        library_version = version("lightgbm")
+    except PackageNotFoundError:
+        library_version = None
+    return {"python": platform.python_version(), "platform": platform.platform(), "lightgbm": library_version}
 
 
 def _policy_note(policy: Mapping[str, Any]) -> dict[str, Any]:

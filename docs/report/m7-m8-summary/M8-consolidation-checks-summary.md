@@ -2,11 +2,13 @@
 
 7 October 2026 · Edwin
 
+Integration status updated 9 October 2026 after rebasing onto the real image-worker implementation.
+
 ## Summary
 
 M8 is the module that decides. For each estimate row it combines the photo evidence (M3), the read estimate (M5), the pen-mark decisions (M6) and the pinned cost table (M7) into one of four results: `ok`, `unsupported`, `cost_outlier` or `insufficient_evidence`.
 
-The rule engine is complete and runs for real inside the `cmev-consolidator` container. All 42 required rule cases pass. Its inputs are still fixture records, because M3, M5 and M6 do not yet run on real model output. End-to-end evaluation (experiment B) and seven design decisions remain open.
+The rule engine is complete and runs for real inside the `cmev-consolidator` container. All 42 required rule cases pass. With `docker-compose.image.yml`, M1 and M2 run the configured trained models and M3 supplies real summaries and coverage to M8. The document stages remain fixture producers. End-to-end evaluation (experiment B) remains outstanding; the decision table below distinguishes implemented behaviour from proposals.
 
 M8 uses deterministic rules only. No language model takes part, so every result is reproducible and names the rule that produced it.
 
@@ -30,6 +32,8 @@ Each row stores four separate checks plus the overall result, so a passed photo 
 | Documentary | R4, R5 | Is the row readable, mapped, and its part and side resolved? |
 | Photographic | R6 to R8 | Is damage visible on that physical part in adequate views? |
 | Cost | R9 to R12 | Is the effective price inside the pinned range? |
+
+**Negative photographic findings.** Under `m8-rules/0.2.1`, when there is no confident supporting damage, discarded or unknown M2 filtering in a confirmed covering photo withholds the negative conclusion as `damage_evidence_uncertain`. This preserves uncertainty even after identity and coverage are confirmed.
 
 **Cost arithmetic.** Money is exact decimals, rounded once to cents. Equality at a bound is inside the range. A missing quantity, a quantity other than 1, another currency or basis, or a withheld range gives no comparison and no deviation. A zero-width range never divides.
 
@@ -62,16 +66,16 @@ On 2026-10-07 the M8 unit and integration suites passed (130 tests), and the ful
 
 ## What is not done yet
 
-- **Real inputs.** M8 has only consumed fixture records. M3, M5 and M6 still run as fixture producers; the M1 adapter exists but is not wired, and there is no M2 adapter.
+- **Real document inputs.** The real M1/M2/M3 image branch is integrated, including reassessment after confirmations. M5 and M6 remain fixtures in the current Compose modes. This integration does not establish model accuracy or complete real-document evaluation.
 - **Experiment B, the full-pipeline evaluation.** Not built. It measures flag precision (target 0.70), false flags on clean cases (target 0.05 per case), withholding on unphotographed parts (target 0.95) and the decision rate.
 - **Experiment C through M8.** Injected price anomalies were scored against the M7 tables directly, not through `consolidate()`.
-- **Threshold tuning.** Every value in `m8_rules.yaml` (`m8-rules/0.1.0`) is proposed, not chosen on validation data.
+- **Threshold tuning.** The confidence thresholds in `m8_rules.yaml` (`m8-rules/0.2.1`) remain proposed, not chosen on validation data.
 
 A point for the evaluation: sided parts reach `ok` or `unsupported` only after a surveyor confirms the side, and `unsupported` also needs a coverage confirmation. The automatic decision rate on doors and fenders will be near zero by design, so experiment B must report automatic and human-assisted rates separately.
 
 ## Open decisions
 
-Seven decisions are open; the code follows the current behaviour below until the team records them.
+The original report listed seven decisions. The current implementation already settles D6 as described below; the remaining recommendations are not new accepted changes.
 
 | # | Decision | Current behaviour | Recommendation |
 | --- | --- | --- | --- |
@@ -80,15 +84,15 @@ Seven decisions are open; the code follows the current behaviour below until the
 | D3 | Carry a dismissal forward when the finding is unchanged? | Yes, by content hash | Keep |
 | D4 | Does an exclusion with unknown side suppress an addition? | No | Keep; no damage gets hidden |
 | D5 | Stricter confidence for additions (0.60) than for R7 (0.50)? | Placeholders | Select both on validation |
-| D6 | Can a photos-only claim be finalized? | Unresolved | Only after the estimate arrives or the surveyor confirms an empty scope |
+| D6 | Can a photos-only claim be finalized? | Yes, with missing-evidence reasons preserved; covered by `test_photos_only_and_pages_only_can_freeze_with_missing_evidence_reasons` | Preserve the implemented incomplete-evidence semantics |
 | D7 | Does any pending or unlinked mark block all additions? | Yes, strict reading | Narrow to marks whose candidate rows could match the same part |
 
 ## Next steps
 
-- [ ] Record decisions D1 to D7 in the M8 specification; implement D7 if the narrower reading is chosen
+- [ ] Reconcile the remaining decision notes with current behaviour; implement D7 only if the narrower reading is chosen
 - [ ] Build the experiment B case set and scorer against fixtures, so they are ready for real outputs
 - [ ] Score the injected anomalies through `consolidate()` to complete experiment C at the M8 level
-- [ ] Run M8 on real M3, M5 and M6 output once those stages are wired
+- [ ] Evaluate M8 with real document outputs alongside the already integrated real image branch
 - [ ] Select the R7 and A3 confidence thresholds on validation data and freeze them
 
 The [M8 specification](../../specs/module-08-consolidation-checks.md)'s implementation checklist was updated on 2026-10-07 to tick what this report lists as verified.

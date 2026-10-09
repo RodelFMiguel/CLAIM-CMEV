@@ -4,7 +4,12 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 import hashlib
+import importlib.util
+import os
 import shutil
+import subprocess
+import sys
+import textwrap
 
 import pytest
 import yaml
@@ -18,8 +23,7 @@ from claim_cmev.costs.reference.lightgbm_quantile import EXCLUDED_FEATURES, FEAT
 from claim_cmev.costs.reference.lookup import load_table
 from claim_cmev.costs.reference.validation import BuildValidationError, validate_ranges
 
-from conftest import SEED
-from m7_support import read_json, record
+from m7_support import SEED, read_json, record
 
 KEY_FIELDS = ("part_code", "operation", "vehicle_class", "currency")
 Q = (Decimal("0.05"), Decimal("0.95"))
@@ -125,6 +129,50 @@ def test_a_key_outside_the_frozen_grid_is_refused(needs_lightgbm):
     rows = [record(f"r{i}", f"b{i}", "100", part="licence-plate") for i in range(30)]
     with pytest.raises(ValueError, match="outside the frozen eligible grid"):
         fit_lightgbm(rows, [], quantiles=Q, recipe=config.lightgbm, eligible_keys=config.grid.eligible_keys())
+
+
+def test_fit_with_pytorch_loaded_keeps_native_runtimes_separate(needs_lightgbm):
+    """The caller used to abort with OMP Error 15 on macOS; contain regressions in a subprocess."""
+    if importlib.util.find_spec("torch") is None:
+        pytest.skip("vision extra not installed")
+    code = textwrap.dedent('''
+        import sys
+        import torch
+        from dataclasses import replace
+        from datetime import date
+        from decimal import Decimal
+        from claim_cmev.costs.reference.config import load_cost_table_config
+        from claim_cmev.costs.reference.lightgbm_quantile import fit_lightgbm
+        from claim_cmev.costs.reference.records import PriceRecord
+        assert torch.ones(2).sum().item() == 2
+        config = load_cost_table_config()
+        rows = [PriceRecord(f"r{i}", f"b{i}", "w", "front-bumper", "replace", "sedan_standard", "SGD",
+                            config.grid.cost_basis, Decimal(600 + i * 7), date(2026, 1, 1), "0" * 64)
+                for i in range(60)]
+        fit = fit_lightgbm(rows, [], quantiles=config.quantiles,
+                           recipe=replace(config.lightgbm, n_estimators=2),
+                           eligible_keys=config.grid.eligible_keys())
+        assert fit.report["train_rows"] == 60
+        assert len(fit.fits) == 1 and set(fit.model_text) == {"lower", "upper"}
+        assert "lightgbm" not in sys.modules
+        assert torch.ones(2).sum().item() == 2
+    ''')
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                            env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_native_worker_failure_is_reported_without_a_fit(monkeypatch):
+    from claim_cmev.costs.reference.lightgbm_quantile import fit_lightgbm
+
+    def aborted(*args, **kwargs):
+        return subprocess.CompletedProcess(args[0], -6, stdout="", stderr="native worker aborted")
+
+    monkeypatch.setattr(subprocess, "run", aborted)
+    config = load_cost_table_config()
+    with pytest.raises(RuntimeError, match="exit -6.*native worker aborted"):
+        fit_lightgbm([], [], quantiles=config.quantiles, recipe=config.lightgbm,
+                      eligible_keys=config.grid.eligible_keys())
 
 
 # ---------------------------------------------------------------- crossed bounds (no LightGBM needed)

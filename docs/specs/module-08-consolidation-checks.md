@@ -1,6 +1,6 @@
 # M8 - Consolidation and checks
 
-Owner: Lane 4. Runtime container: `cmev-consolidator`, Compose profiles `lean` and `full`. Code: `src/claim_cmev/comparison/`. No neural weights and no pipeline path. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 2.4, 8.1, 8.2, 8.3, 8.4, 9.2, 9.3, 9.4, 9.6, 10 (M8), 13.2 and 13.3. Status (updated 2026-10-07): the rule engine is implemented and runs in `cmev-consolidator` over fixture branch records. All 42 experiment A cases pass (`tests/unit/m8/test_m8_experiment_a.py`). Real M3, M5 and M6 inputs, experiment B, experiment C through M8, and the open decisions below remain. No model-based measurement exists.
+Owner: Lane 4. Runtime container: `cmev-consolidator`, Compose profiles `lean` and `full`. Code: `src/claim_cmev/comparison/`. No neural weights and no pipeline path. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 2.4, 8.1, 8.2, 8.3, 8.4, 9.2, 9.3, 9.4, 9.6, 10 (M8), 13.2 and 13.3. Status (updated 2026-10-09): the deterministic rule engine is implemented. The opt-in image Compose mode supplies real M1/M2/M3 records; document stages remain fixtures. Experiment A covers the 42 required rule cases. Experiment B and experiment C through M8 remain uncompleted; runtime integration is not model-accuracy evidence.
 
 ## Purpose and scope
 

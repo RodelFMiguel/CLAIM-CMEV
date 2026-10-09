@@ -61,3 +61,7 @@ adopt_damage_run("<folder>")   # the entry of model_version in configs/models/da
 ```
 
 This checks the result with the worker's own verification and loader before writing, keeps the trainer's manifest as `manifest.trainer.json`, and never replaces an entry. A notebook damage run is exported with `export_damage_run` instead (see "Notebook runs" above). `benchmark_m1_m2_assignment.py`, `experiment_seam_split.py` and the `generate_*`/`build_*report*` scripts produce the reports under `artifacts/benchmarks/`; the worker uses none of them.
+
+## M7 cost fitting process
+
+The LightGBM method fits in a fresh Python subprocess, so an offline caller that has already loaded PyTorch does not initialise a second OpenMP runtime in the same process. The caller receives the fitted bounds and booster text and performs calibration, validation and immutable publication. A worker failure raises an error rather than falling back to another method or producing an empty successful build. The empirical fallback remains explicitly selectable with `--method empirical_percentile`.

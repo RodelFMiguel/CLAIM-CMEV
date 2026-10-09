@@ -18,9 +18,13 @@ exceeds its upper prediction is kept as a crossed ``KeyFit`` and withheld as ``r
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from decimal import Decimal
+import json
 import math
+import os
+import subprocess
+import sys
 from typing import Any, Mapping, Sequence
 
 from .config import LightGBMRecipe
@@ -97,6 +101,43 @@ def _pinball(target, prediction, alpha: float) -> float:
 def fit_lightgbm(train: Sequence[PriceRecord], validation: Sequence[PriceRecord], *,
                  quantiles: tuple[Decimal, Decimal], recipe: LightGBMRecipe,
                  eligible_keys: Sequence[CostKeyTuple]) -> LightGBMFit:
+    """Fit offline in a fresh interpreter, keeping LightGBM's OpenMP runtime out of the caller.
+
+    Vision notebooks and integration tests may already have loaded PyTorch's OpenMP
+    runtime. Fitting in that process can abort Python on macOS; importing lazily or
+    using one thread does not prevent it. Only plain JSON crosses this boundary.
+    The child fits both bounds once and returns their unchanged decimal values and
+    booster text. Publication, policy selection and table lookup remain in the caller.
+    """
+    payload = {"train": [asdict(r) for r in train], "validation": [asdict(r) for r in validation],
+               "quantiles": quantiles, "recipe": asdict(recipe), "eligible_keys": eligible_keys}
+    # Use the same source tree/environment as the caller, including pytest's source
+    # path or a notebook checkout, without inheriting any loaded native libraries.
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(str(p) for p in sys.path)}
+    result = subprocess.run([sys.executable, "-m", "claim_cmev.costs.reference._lightgbm_worker"],
+                            input=json.dumps(payload, default=str), capture_output=True, text=True, env=env)
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"LightGBM fit worker failed (exit {result.returncode}): {result.stderr.strip()}") from exc
+    if result.returncode:
+        error = response.get("error", {})
+        message = error.get("message") or result.stderr.strip() or "no diagnostic returned"
+        if error.get("type") == "LightGBMUnavailable":
+            raise LightGBMUnavailable(message)
+        if error.get("type") == "ValueError":
+            raise ValueError(message)
+        raise RuntimeError(f"LightGBM fit worker failed (exit {result.returncode}): {message}")
+    fits = {tuple(row["key"]): KeyFit(tuple(row["key"]), Decimal(row["lower_raw"]), Decimal(row["upper_raw"]),
+                                     row["independent_base_case_count"], row["record_count"])
+            for row in response["fits"]}
+    return LightGBMFit(fits, tuple(tuple(k) for k in response["crossed_keys"]),
+                       response["report"], response["model_text"])
+
+
+def _fit_lightgbm(train: Sequence[PriceRecord], validation: Sequence[PriceRecord], *,
+                  quantiles: tuple[Decimal, Decimal], recipe: LightGBMRecipe,
+                  eligible_keys: Sequence[CostKeyTuple]) -> LightGBMFit:
     """Fit on the train partition only; the validation partition is used for early stopping only.
 
     Returns one ``KeyFit`` for every key with at least one train base case, carrying the

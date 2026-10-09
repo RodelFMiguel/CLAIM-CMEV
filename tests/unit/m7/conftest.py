@@ -4,12 +4,14 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 import stat
+import subprocess
+import sys
 
 import pytest
 
 from claim_cmev.costs.reference.build import run
 
-SEED = 20260924
+from m7_support import SEED
 
 
 @pytest.fixture(scope="session")
@@ -24,10 +26,9 @@ def built(tmp_path_factory):
 @pytest.fixture(scope="session")
 def needs_lightgbm():
     """Skip when lightgbm (or its OpenMP runtime) is not usable in this environment."""
-    try:
-        import lightgbm  # noqa: F401
-    except (ImportError, OSError) as exc:
-        pytest.skip(f"lightgbm is not usable here: {exc}")
+    probe = subprocess.run([sys.executable, "-c", "import lightgbm"], capture_output=True, text=True)
+    if probe.returncode:
+        pytest.skip(f"lightgbm is not usable here: {probe.stderr.strip()}")
 
 
 @pytest.fixture(scope="session")

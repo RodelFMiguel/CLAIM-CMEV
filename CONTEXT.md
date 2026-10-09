@@ -1,7 +1,8 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-10-08 (Asia/Singapore), real M2 and M3 workers added on `M2-Implementation` and the three decisions about the served damage model accepted ([ADR 0004](docs/adr/0004-hitl-damage-model-and-vocabulary.md)): the image branch can run on the trained models; the 2026-09-27 application verification remains historical.
-- **Implementation baseline:** branch `M2-Implementation` at `dfa5fb6`, which the user rebased onto `main` (`f036e05`, containing the merged `M1-Implementation` and `image-worker` work). The 2026-10-08 M2/M3 work was committed on top of it as `2ee1a8b`, and the review-screen label fix and Codex's filtering and photo-hash fixes in a second commit, both on 2026-10-08 at the user's request; use Git history for the identifiers. The local branch has diverged from `origin/M2-Implementation` because of the rebase; no push has been made.
+Last updated: 2026-10-09 (Asia/Singapore), `m7-lightgbm` rebased onto the latest fetched `origin/main`, with M7 fitting isolated from the image libraries and the combined Python suite passing. Earlier handoffs retain their historical status.
+- **Implementation baseline:** branch `m7-lightgbm`, rebased onto `origin/main` at `9bcdf4a` (which includes the M2 image-worker changes). The rewritten branch commits are `8ac371b` and `8e5d5bd`; the compatibility fixes are checked in with the final handoff below (use Git history for the commit identifier). No push was made. The local branch has diverged from `origin/m7-lightgbm` because of the rebase.
+- **Read first for M7/M8:** the [rebase and compatibility fixes](#m7-branch-rebase-and-vision-compatibility-fixes-2026-10-09), then the historical [LightGBM method handoff](#m7-lightgbm-quantile-method-2026-10-02). LightGBM remains the default offline cost method; empirical remains an explicit fallback.
 - **Read first for the image branch (M1, M2, M3):** the [real image branch handoff](#real-m2-and-m3-workers-the-image-branch-on-trained-models-2026-10-08) the [decisions that followed it](#damage-model-decisions-accepted-and-the-path-to-a-cardd-model-2026-10-08) the [review-screen label fix](#review-screen-labels-follow-record-provenance-2026-10-08) and the [filtering and photo-hash fixes](#preserve-discarded-damage-uncertainty-and-verify-m3-photo-bytes-2026-10-08), then the [notebook-to-serving handoff](#notebook-pipeline-joined-to-the-m1-serving-path-2026-10-08), the [served-checkpoint handoff](#m1-served-checkpoint-connected-and-run-in-the-compose-stack-2026-10-07) and the [worker start-up handoff](#m1-worker-start-up-model-loading-and-opt-in-switch-2026-10-07).
 - **Read first for training:** the [M2 CarDD notebook handoff](#m2-cardd-notebook-and-converter-2026-10-02), the [M2 recall/regularisation handoff](#m2-recallregularisation-presets-and-background-offset-2026-10-02), the [M2 failure-review handoff](#m2-failure-review-and-tiny-fitting-diagnostic-2026-10-02), then the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
 - **Application baseline:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
@@ -22,7 +23,7 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 
 | Area | Verified state at this handoff |
 | --- | --- |
-| Repository | The pipeline is in `f280209`. The defect remediation, specification notes and this file are in `6e59bc2`. Both are local commits, and no push has been verified |
+| Repository | `m7-lightgbm`, rebased onto `origin/main` (`9bcdf4a`), with compatibility fixes committed on top of `8e5d5bd`. No push in this task |
 | Specifications | The full target is broader than the implementation. Only three M9 checklist boxes are ticked, and all three are supported by code. The ticking understates progress, because several implemented items are still unticked |
 | Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes. Two opt-in modes replace fixture image producers with real workers. `infra/compose/docker-compose.parts.yml` gives M1 to `cmev-worker-parts`. `infra/compose/docker-compose.image.yml` gives M1, M2 and M3 to `cmev-worker-image` (one process). The second ran in an isolated Compose project (lean, PostgreSQL, Redpanda, MinIO, no browser) on 2026-10-08. The document stages are still fixtures in every mode |
 | Application | Connected to the API/workbench: typed review actions, M6 decision replay, M3 reruns after human identity/coverage confirmations, pinned cost lookup, review-state overlays (dismissals and accepted scope), durable request retry, stage retry and frozen M9 reports. The evidence image overlays (`review/overlays.py`) are a library only; no endpoint or UI serves them |
@@ -2304,3 +2305,41 @@ Uncommitted work, limitations and missing prerequisites:
 Docker check for the default switch: **not verified**. On 2026-10-02 an image build from `infra/Dockerfile.api` followed by the bootstrap command was stopped at its 30-minute limit without output. A separate `docker pull python:3.12-slim-bookworm` on the same machine also did not finish within 2 minutes, while the host reached Docker Hub, PyPI and the Debian mirror in under a second, so the stall is in this machine's Docker image pulls and never reached the changed Dockerfile lines. The `libgomp1` line and the LightGBM build inside the Linux image are therefore untested.
 
 Next concrete step and agreed owner (or unassigned): unassigned. On a machine whose Docker can pull images, build `infra/Dockerfile.api`, run `cmev-cost-bootstrap` and the lean Compose browser smoke, and record whether the Linux table version matches `ct-20260922-76c1a65a`; then review and commit this work, and have Lane 4 review the proposed recipe and the selection evidence.
+
+
+## M7 branch rebase and vision compatibility fixes (2026-10-09)
+
+Date/time and timezone: 2026-10-09, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request following the branch review.
+Task and relevant module: rebase `m7-lightgbm` onto current main and fix the reviewed M7/native-runtime and test-collection regressions; reconcile the incoming M8 status report. Relevant requirements: M7 FR-29/FR-30 (offline ranges and comparison), FR-48 (versioned provenance), and preservation of M8 evidence gates.
+Branch / baseline commit / resulting commit or PR: fetched `origin/main` at `9bcdf4a`; checked out remote `m7-lightgbm` at `741013f` and rebased its two commits as `8ac371b` and `8e5d5bd`. Fixes below are uncommitted. No push or PR change.
+
+Changed paths and completed behaviour:
+- Rebase conflicts resolved in `CONTEXT.md`, `pipelines/README.md` and `pyproject.toml`: preserved current image-worker documentation/dependencies and added the incoming LightGBM dependency and M7 handoff.
+- `src/claim_cmev/costs/reference/lightgbm_quantile.py` and new `_lightgbm_worker.py`: fit both quantile models in a fresh Python process, exchanging JSON records, decimal bounds and model text. This avoids loading LightGBM's OpenMP runtime into a caller using PyTorch. Native worker failures fail the build; there is no automatic method fallback. Calibration, validation and publication remain in the parent, and claim-time lookups remain table-only.
+- `evaluation.py` reads the LightGBM version through package metadata without loading the native library. No change to the fitting recipe, features, support policy or cost contracts.
+- `tests/unit/m7/{conftest.py,m7_support.py,test_m7_lightgbm.py}`: move the shared seed out of `conftest`, probe LightGBM in a separate process, and cover a fit with PyTorch loaded plus an aborted fit worker.
+- `docs/specs/module-07-reference-cost-ranges.md` and `pipelines/README.md`: document the offline process boundary. `docs/specs/module-08-consolidation-checks.md` and `docs/report/m7-m8-summary/M8-consolidation-checks-summary.md`: correct stale fixture-only image status, document the existing `m8-rules/0.2.1` uncertainty gate and photos-only finalization behaviour. M8 decision logic did not need a further change.
+
+Checks actually run, results and artifact locations:
+- On macOS, using a temporary Python 3.13 environment with PyTorch 2.14.1 and LightGBM 4.7.0: combined M7 and image/parts-worker tests passed (159 tests), without the review-only workaround.
+- Full Python suite after adding the regressions: `PYTHONPATH=src MPLCONFIGDIR=/private/tmp/cmev-mpl-review /private/tmp/cmev-fix-venv/bin/python -m pytest -q` — **1742 passed, 1 skipped**, one Starlette/httpx deprecation warning. The skip is the optional real-PaddleOCR smoke. Log: `/private/tmp/cmev-m7-fixed-full-suite.log` (temporary, not versioned).
+- Full suite includes deterministic same-seed cost builds, validation/error propagation, M8 rule cases, and image/backend integration. `git diff --check` passed; `origin/main` is an ancestor of the rebased branch.
+
+Uncommitted work, limitations and missing prerequisites:
+- Fixes and this handoff are uncommitted. The rebase rewrote branch history; no remote branch was updated. Both untracked presentation files were preserved.
+- No Docker image build, running-stack change, browser test, model retraining or new accuracy evaluation in this task. Cost evidence remains synthetic. Passing the Python suite does not verify the Linux image or real-price accuracy.
+- The historical M7 handoff above retains its original commit/publication status; it is not the status of this checkout or a newly published cost table.
+
+Next concrete step and agreed owner (or unassigned): unassigned—build the API image and run the cost bootstrap plus a Compose smoke check to verify the Linux/OpenMP packaging, then commit the reviewed fixes and coordinate publication of the rebased branch.
+
+## Check-in of M7 compatibility fixes (2026-10-09)
+
+Date/time and timezone: 2026-10-09, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request.
+Task and relevant module: commit the M7 compatibility fixes, regression tests and M7/M8 documentation described above.
+Branch / baseline commit / resulting commit or PR: `m7-lightgbm` / `8e5d5bd` / the commit containing this entry; use Git history for its identifier. No push.
+Changed paths and completed behaviour: the preceding handoff lists the implementation paths. This check-in updates only the handoff status; no additional runtime changes.
+Checks actually run, results and artifact locations: `git diff --check` passes. The unchanged code was already verified by the preceding full Python run (1742 passed, 1 skipped); tests were not repeated for this check-in.
+Uncommitted work, limitations and missing prerequisites: the two unrelated presentation files remain untracked and untouched. Earlier entries saying these fixes are uncommitted describe their status before this check-in. Docker and browser validation remain outstanding.
+Next concrete step and agreed owner (or unassigned): unassigned—verify the Linux image/cost bootstrap and coordinate publication of the rebased branch.

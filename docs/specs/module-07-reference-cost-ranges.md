@@ -88,6 +88,8 @@ Both methods publish the same lookup key, the same basis and the same row schema
 | `empirical_percentile` | Per key, the 5th and 95th percentiles of the training amounts, computed with a documented percentile definition, one value per base case first so repeated quotes cannot dominate | Baseline and **contingency fallback** under proposal section 12.4 |
 | `lightgbm_quantile` | Two LightGBM regressors with `objective="quantile"`, `alpha=0.05` and `alpha=0.95`, features `part_code`, `operation`, `vehicle_class` as categoricals. One training row per independent base case (the median of its quotes), target `ln(amount)`. Bounded recipe, small trees, early stopping on validation | The learned comparator for RQ4 |
 
+LightGBM fitting runs in a fresh offline Python subprocess, returning per-key decimal bounds and booster text to the builder. This keeps its OpenMP runtime separate from PyTorch in callers such as vision notebooks and integration tests. Worker failures propagate as build failures; no table is published from a failed fit. Calibration, validation and publication stay in the parent, and claim-time lookup loads no model.
+
 Optional conformal adjustment, Conformalized Quantile Regression, is fitted on the **separate calibration partition** only, never on training, validation or test. It is selected on validation and then frozen.
 
 If the LightGBM comparison cannot finish, publish the empirical table and report the missing learned comparator and the effect on the course evidence. Do not invent model results.
