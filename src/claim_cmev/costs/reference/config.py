@@ -309,6 +309,52 @@ def load_split_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> SplitConfig:
 
 
 @dataclass(frozen=True)
+class LightGBMRecipe:
+    """The bounded recipe for method ``lightgbm_quantile`` (training specification 7.4.2)."""
+
+    n_estimators: int
+    learning_rate: float
+    num_leaves: int
+    min_data_in_leaf: int
+    lambda_l2: float
+    feature_fraction: float
+    early_stopping_rounds: int
+    seed: int
+    min_data_per_group: int
+    cat_smooth: float
+
+    def params(self) -> dict[str, Any]:
+        """LightGBM parameters; single-threaded and deterministic so one seed gives one model."""
+        return {"learning_rate": self.learning_rate, "num_leaves": self.num_leaves,
+                "min_data_in_leaf": self.min_data_in_leaf, "lambda_l2": self.lambda_l2,
+                "feature_fraction": self.feature_fraction, "min_data_per_group": self.min_data_per_group,
+                "cat_smooth": self.cat_smooth, "seed": self.seed, "deterministic": True, "force_row_wise": True,
+                "num_threads": 1, "verbosity": -1}
+
+    def describe(self) -> dict[str, Any]:
+        return {"n_estimators": self.n_estimators, "early_stopping_rounds": self.early_stopping_rounds,
+                **{k: v for k, v in self.params().items() if k != "verbosity"}}
+
+
+def load_lightgbm_recipe(data: Mapping[str, Any] | None) -> LightGBMRecipe | None:
+    if data is None:
+        return None
+    if data.get("target") != "log_amount" or data.get("row_unit") != "base_case_median":
+        raise ConfigError("implemented LightGBM target is log_amount over base_case_median rows")
+    number = lambda name: float(dec(data[name], f"lightgbm.{name}"))
+    recipe = LightGBMRecipe(
+        n_estimators=int(data["n_estimators"]), learning_rate=number("learning_rate"),
+        num_leaves=int(data["num_leaves"]), min_data_in_leaf=int(data["min_data_in_leaf"]),
+        lambda_l2=number("lambda_l2"), feature_fraction=number("feature_fraction"),
+        early_stopping_rounds=int(data["early_stopping_rounds"]), seed=int(data["seed"]),
+        min_data_per_group=int(data["min_data_per_group"]), cat_smooth=number("cat_smooth"))
+    if min(recipe.n_estimators, recipe.num_leaves - 1, recipe.min_data_in_leaf, recipe.early_stopping_rounds,
+           recipe.min_data_per_group) < 1 or not 0 < recipe.learning_rate <= 1 or not 0 < recipe.feature_fraction <= 1:
+        raise ConfigError("lightgbm recipe values are out of range")
+    return recipe
+
+
+@dataclass(frozen=True)
 class CostTableConfig:
     """Method, support policy, splits and grid for one reference-table build."""
 
@@ -331,6 +377,7 @@ class CostTableConfig:
     split: SplitConfig
     grid: Grid
     snapshot: Mapping[str, Any] = field(default_factory=dict, repr=False)
+    lightgbm: LightGBMRecipe | None = None
 
     def with_policy(self, **changes: Any) -> "CostTableConfig":
         """A copy with changed build policy (tests and experiments; the snapshot records the change)."""
@@ -344,8 +391,9 @@ def load_cost_table_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> CostTableCo
     data = load_yaml(config_dir / "cost_table.yaml")
     if data["method"] not in METHODS:
         raise ConfigError(f"unknown method {data['method']!r}")
-    if data["method"] != "empirical_percentile":
-        raise ConfigError("only empirical_percentile is implemented; the LightGBM comparison is not run in this pass")
+    recipe = load_lightgbm_recipe(data.get("lightgbm"))
+    if data["method"] == "lightgbm_quantile" and recipe is None:
+        raise ConfigError("method lightgbm_quantile needs the lightgbm recipe block")
     if data["percentile_definition"] != "linear" or data["base_case_aggregation"] != "median":
         raise ConfigError("implemented percentile definition is linear over per-base-case medians")
     if data["conformal"] not in (None, "none", "cqr"):
@@ -371,4 +419,5 @@ def load_cost_table_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> CostTableCo
         target_band=tuple(dec(b, "target_coverage_band") for b in data["target_coverage_band"]),
         lightgbm_status=data.get("lightgbm_status", "not_run"),
         split=load_split_config(config_dir), grid=load_grid(config_dir), snapshot=snapshot(config_dir),
+        lightgbm=recipe,
     )

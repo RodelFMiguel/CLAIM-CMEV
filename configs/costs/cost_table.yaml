@@ -1,8 +1,27 @@
 # Reference-table build policy (M7 "Configuration and thresholds"). Proposed values.
-config_version: cost-table-config-2026.09.1
+config_version: cost-table-config-2026.10.2
 status: proposed
-method: empirical_percentile   # LightGBM comparison not run in this pass; see lightgbm_status
-lightgbm_status: not_run       # learned comparator missing; RQ4 conclusions limited to the empirical method
+method: lightgbm_quantile      # the method a default build publishes; see method_selection below
+lightgbm_status: compared      # not_run | compared. The learned comparator was run; see method_selection
+method_selection:
+  status: selected on validation (synthetic evidence only) and adopted as the default method on 2026-10-02
+  rule: >-
+    Among methods whose validation coverage is inside target_coverage_band, select the narrower
+    median served range. On a tie, or if no method qualifies, keep empirical_percentile.
+  rule_fixed_on: 2026-10-02, before any comparison result (docs/plans/m7-lightgbm-quantile-plan.md)
+  selected: lightgbm_quantile
+  selected_on: validation partition, generator gen-2026.09.1 seed 20260924, split split-2026.09.1
+  evidence: >-
+    Validation, support threshold 8, conformal selected per method on validation (cqr for both):
+    empirical_percentile coverage 0.9059 (799/882), median width 207.41;
+    lightgbm_quantile coverage 0.8866 (782/882), median width 189.33. Both inside 0.85-0.95.
+  report: artifacts/evaluation/m7-method-comparison/report.md
+  reproduce: python pipelines/costs/eval_cost_table.py compare --seed 20260924 --out artifacts/evaluation/m7-method-comparison
+  default_switched: >-
+    The user chose on 2026-10-02 to make the selected method the default. lightgbm is a core
+    dependency and the app image installs libgomp1, because a default build runs inside
+    cmev-cost-bootstrap and in every test environment. The contingency fallback stays
+    buildable with --method empirical_percentile.
 nominal_coverage: "0.90"
 quantiles: ["0.05", "0.95"]
 percentile_definition: linear  # type 7 linear interpolation over per-base-case values
@@ -31,3 +50,21 @@ conformal_decision: >-
 rounding: {places: 2, mode: ROUND_HALF_UP}   # applied once at publication
 zero_width_allowed: true
 target_coverage_band: ["0.85", "0.95"]
+
+# Recipe for method lightgbm_quantile (training specification 7.4.2). Every value is PROPOSED.
+# Two regressors with quantile loss at `quantiles`; features part_code, operation and
+# vehicle_class as categoricals; currency and basis are constant and recorded, not features.
+# Excluded and recorded in the manifest: model year, side, damage type, workshop, date.
+lightgbm:
+  target: log_amount            # ln(amount); the price structure and the conformal offset are multiplicative
+  row_unit: base_case_median    # one training row per independent base case, as in the empirical method
+  n_estimators: 400
+  learning_rate: "0.05"
+  num_leaves: 15
+  min_data_in_leaf: 20
+  lambda_l2: "1.0"
+  feature_fraction: "1.0"       # only three features
+  early_stopping_rounds: 50     # validation pinball loss
+  seed: 20260922                # with deterministic=True, force_row_wise=True and one thread
+  min_data_per_group: 100       # LightGBM default for categorical splits; not in the specification recipe
+  cat_smooth: "10.0"            # LightGBM default; not in the specification recipe

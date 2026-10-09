@@ -39,7 +39,7 @@ from .common import (
 COST_KEY_FIELDS: tuple[str, ...] = ("part_code", "operation", "vehicle_class", "currency")
 CostBasis = Literal["single_part_pre_tax_no_discount_v1"]
 CostCheckResult = Literal["within_range", "outside_range", "insufficient_support", "not_evaluated"]
-WithheldReason = Literal["insufficient_support", "no_records", "unsupported_combination"]
+WithheldReason = Literal["insufficient_support", "no_records", "unsupported_combination", "range_invalid"]
 
 
 def check_cost_key_fields(fields: Sequence[str]) -> None:

@@ -1,7 +1,8 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-10-08 (Asia/Singapore), real M2 and M3 workers added on `M2-Implementation` and the three decisions about the served damage model accepted ([ADR 0004](docs/adr/0004-hitl-damage-model-and-vocabulary.md)): the image branch can run on the trained models; the 2026-09-27 application verification remains historical.
-- **Implementation baseline:** branch `M2-Implementation` at `dfa5fb6`, which the user rebased onto `main` (`f036e05`, containing the merged `M1-Implementation` and `image-worker` work). The 2026-10-08 M2/M3 work was committed on top of it as `2ee1a8b`, and the review-screen label fix and Codex's filtering and photo-hash fixes in a second commit, both on 2026-10-08 at the user's request; use Git history for the identifiers. The local branch has diverged from `origin/M2-Implementation` because of the rebase; no push has been made.
+Last updated: 2026-10-09 (Asia/Singapore), `m7-lightgbm` rebased onto the latest fetched `origin/main`, with M7 fitting isolated from the image libraries and the combined Python suite passing. Earlier handoffs retain their historical status.
+- **Implementation baseline:** branch `m7-lightgbm`, rebased onto `origin/main` at `9bcdf4a` (which includes the M2 image-worker changes). The rewritten branch commits are `8ac371b` and `8e5d5bd`; the compatibility fixes are checked in with the final handoff below (use Git history for the commit identifier). No push was made. The local branch has diverged from `origin/m7-lightgbm` because of the rebase.
+- **Read first for M7/M8:** the [rebase and compatibility fixes](#m7-branch-rebase-and-vision-compatibility-fixes-2026-10-09), then the historical [LightGBM method handoff](#m7-lightgbm-quantile-method-2026-10-02). LightGBM remains the default offline cost method; empirical remains an explicit fallback.
 - **Read first for the image branch (M1, M2, M3):** the [real image branch handoff](#real-m2-and-m3-workers-the-image-branch-on-trained-models-2026-10-08) the [decisions that followed it](#damage-model-decisions-accepted-and-the-path-to-a-cardd-model-2026-10-08) the [review-screen label fix](#review-screen-labels-follow-record-provenance-2026-10-08) and the [filtering and photo-hash fixes](#preserve-discarded-damage-uncertainty-and-verify-m3-photo-bytes-2026-10-08), then the [notebook-to-serving handoff](#notebook-pipeline-joined-to-the-m1-serving-path-2026-10-08), the [served-checkpoint handoff](#m1-served-checkpoint-connected-and-run-in-the-compose-stack-2026-10-07) and the [worker start-up handoff](#m1-worker-start-up-model-loading-and-opt-in-switch-2026-10-07).
 - **Read first for training:** the [M2 CarDD notebook handoff](#m2-cardd-notebook-and-converter-2026-10-02), the [M2 recall/regularisation handoff](#m2-recallregularisation-presets-and-background-offset-2026-10-02), the [M2 failure-review handoff](#m2-failure-review-and-tiny-fitting-diagnostic-2026-10-02), then the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
 - **Application baseline:** the [2026-09-27 status correction](#status-correction-and-fix-verification-2026-09-27) and the [verification record](docs/verification/model-independent-2026-09-24.md).
@@ -22,7 +23,7 @@ CLAIM-CMEV compares the surveyor's repair scope, reconstructed from a marked wor
 
 | Area | Verified state at this handoff |
 | --- | --- |
-| Repository | The pipeline is in `f280209`. The defect remediation, specification notes and this file are in `6e59bc2`. Both are local commits, and no push has been verified |
+| Repository | `m7-lightgbm`, rebased onto `origin/main` (`9bcdf4a`), with compatibility fixes committed on top of `8e5d5bd`. No push in this task |
 | Specifications | The full target is broader than the implementation. Only three M9 checklist boxes are ticked, and all three are supported by code. The ticking understates progress, because several implemented items are still unticked |
 | Architecture | Persisted orchestration, outbox/dedup, retries/DLQ and real M8 consolidation run over **fixture producers** for all six evidence stages. The `full` profile has an orchestrator, one shared fixture-producers container and a consolidator; there are no per-module workers. Lean/full Docker last ran on 2026-09-24, before the `6e59bc2` consumer/worker changes. Two opt-in modes replace fixture image producers with real workers. `infra/compose/docker-compose.parts.yml` gives M1 to `cmev-worker-parts`. `infra/compose/docker-compose.image.yml` gives M1, M2 and M3 to `cmev-worker-image` (one process). The second ran in an isolated Compose project (lean, PostgreSQL, Redpanda, MinIO, no browser) on 2026-10-08. The document stages are still fixtures in every mode |
 | Application | Connected to the API/workbench: typed review actions, M6 decision replay, M3 reruns after human identity/coverage confirmations, pinned cost lookup, review-state overlays (dismissals and accepted scope), durable request retry, stage retry and frozen M9 reports. The evidence image overlays (`review/overlays.py`) are a library only; no endpoint or UI serves them |
@@ -2254,3 +2255,91 @@ Decisions/status and limitations:
 - Existing contributor changes and the concurrent check-in/handoff were preserved. Detailed generated artifacts are local and ignored.
 
 Next concrete step and agreed owner (or unassigned): unassigned—independently annotate part and damage masks, rerun assignment with only the part mask corrected to isolate M1's contribution, and score M2 separately. Use a separate vehicle-grouped validation cohort before calibration or a general model-quality conclusion.
+
+
+## M7 LightGBM quantile method (2026-10-02)
+
+Date/time and timezone: 2026-10-02, Asia/Singapore (time not recorded).
+Contributor / coding agent: Claude Code, at the user's request. The user accepted the [plan](docs/plans/m7-lightgbm-quantile-plan.md) with all six recommendations and asked to proceed.
+Task and relevant module: M7 reference cost ranges, item R13: the learned `lightgbm_quantile` method, the method comparison, RQ4 and experiment C.
+Branch / baseline commit / resulting commit or PR: `main` / written on `4edb356`, reapplied onto `b302d99` after `git pull` on 2026-10-03 / no commit or PR. Everything below is uncommitted. No push.
+
+Changed paths and completed behaviour:
+- New `src/claim_cmev/costs/reference/lightgbm_quantile.py`: two LightGBM regressors with quantile loss at 0.05 and 0.95; features part, operation, vehicle class; one training row per independent base case (median quote); target `ln(amount)`; early stopping on validation. It returns the same `KeyFit` objects as the empirical method, so the support sweep, conformal step, row assembly, validation, test metrics and publication are reused.
+- `build.py`: `fit_policy` (shared fit and policy selection), method switch, `--method` override, model files (`model.lower.txt`, `model.upper.txt`, `model.json`) hashed in the manifest. `config.py`: `LightGBMRecipe`, the `lightgbm` block, and the guard that refused every non-empirical method removed. `empirical.py`: `KeyFit.crossed`; a crossed fit is never served or calibrated.
+- New `src/claim_cmev/costs/reference/evaluation.py` and `pipelines/costs/eval_cost_table.py` (`compare`, `rq4`, `experiment-c`). They publish nothing and write `report.json` and `report.md` under `artifacts/evaluation/` (ignored by Git).
+- Tests: new `tests/unit/m7/test_m7_lightgbm.py` and `test_m7_evaluation.py`; `conftest.py` gains `needs_lightgbm` and `built_lightgbm`.
+- Configuration and packaging: `configs/costs/cost_table.yaml` (`config_version` 2026.10.2, `method: lightgbm_quantile`, `lightgbm` recipe, `method_selection`, `lightgbm_status: compared`); `pyproject.toml` core dependency `lightgbm>=4.5,<5`; `infra/Dockerfile.api` installs `libgomp1`.
+- Documentation: the plan, M7 specification, training specification 7.4.2, evaluation plan and `pipelines/README.md`. Three M7-related checkboxes ticked, each with its evidence.
+
+Decisions (accepted/proposed) and references:
+- Accepted by the user: base-case rows; log target; the selection rule (inside the 0.85 to 0.95 validation band, narrower median range wins; tie or none keeps empirical); full plan.
+- Shared-contract change (accepted decision 4): a learned key with enough support whose bounds cross is withheld with `withheld_reason = range_invalid`. `WithheldReason` in `contracts/costs.py`, M7 `WITHHELD_REASONS` and the lookup mapping gained that value. M8 already handles `range_invalid` under R11; no M8 or UI change. No crossed key occurred in these runs.
+- Decision 5, settled by the user later the same day ("Switch"): `method: lightgbm_quantile` is the default (`config_version` 2026.10.2). Because a default build runs in `cmev-cost-bootstrap` and in every test environment, `lightgbm` moved from an optional extra to a core dependency and `infra/Dockerfile.api` installs `libgomp1`. The empirical method stays buildable with `--method empirical_percentile`; the M7 `built` test fixture pins it so the empirical tests keep their meaning.
+- Deviations from the plan text: model files are flat, not a `model/` folder (the loader refuses nested paths). LightGBM's default categorical settings were kept and recorded, not tuned.
+- Every recipe value remains **proposed**.
+
+Checks actually run, results and artifact locations (macOS arm64, Python 3.14.5, LightGBM 4.7.0, seed 20260924, synthetic prices only):
+- Full Python suite after the default switch: 1331 passed, 3 skipped (2 need HITL data, 1 needs the OCR venv). This includes the integration, backend and M8 fixture suites running against the LightGBM default table. If LightGBM cannot be imported, a default build now fails with a message naming the missing runtime and the `--method empirical_percentile` fallback.
+- Method comparison, both methods at support threshold 8 with `cqr` selected on validation:
+
+| Partition | Method | Coverage | Median width | Keys with a range |
+| --- | --- | --- | --- | --- |
+| validation | empirical | 0.9059 (799 of 882) | 207.41 | 85 of 128 |
+| validation | LightGBM | 0.8866 (782 of 882) | 189.33 | 85 of 128 |
+| test | empirical | 0.9039 (1082 of 1197) | 207.41 | 85 of 128 |
+| test | LightGBM | 0.8855 (1060 of 1197) | 189.33 | 85 of 128 |
+
+  Selected on validation: `lightgbm_quantile` (narrower median range). Both meet the test target band. LightGBM's ranges are about 9 percent narrower and cover about 1.8 points less; its conformal offset is 0.0387 against 0.0800.
+- Experiment C, 384 injected records with 38 labelled (prevalence 0.099); 13 labelled records sit on keys with no served range and get no cost check. Empirical: precision 0.395, recall among checked 0.680 (17 of 25). LightGBM: precision 0.400, recall 0.720 (18 of 25). Low precision is expected: a 0.90 interval flags about 10 percent of ordinary prices. Recall on +25 percent anomalies is low for both (3 and 4 of 8).
+- RQ4, caps of 16, 12, 8, 5 and 3 train base cases per key. Served view: coverage stays between 0.886 and 0.907 for both methods down to a cap of 8; below the threshold of 8 every key is withheld. Model-only view (not served): LightGBM coverage 0.888 to 0.905 and empirical 0.881 to 0.895; at a cap of 3 LightGBM's median width grows to 275 against 214.
+- Table published locally and active: `ct-20260922-76c1a65a` (LightGBM, the default build) under the ignored `artifacts/cost_tables/`; earlier local builds from this session remain beside it. Reports: `artifacts/evaluation/m7-method-comparison/`, `experiment-c/`, `rq4-reduced-support/`. Regenerate with `python pipelines/costs/eval_cost_table.py <compare|experiment-c|rq4> --seed 20260924 --out artifacts/evaluation/<name>`.
+
+Uncommitted work, limitations and missing prerequisites:
+- Nothing is committed. Synthetic prices only: the generator is multiplicative with lognormal noise, so these results show that the method and its calibration work under the generator, not real repair-price accuracy.
+- The injected set is small (3 base cases per key), so anomaly figures are counts, not stable rates.
+- Reproducibility was checked on one machine (the same seed rebuilds the same table version). LightGBM floats can differ across platforms, which could change a bound by a cent and so the version hash. Not run: Docker images, a Linux build, the frontend, any browser check.
+- The default table changed from the empirical `ct-20260922-0c9a22f4` to the LightGBM `ct-20260922-76c1a65a`, so served ranges are about 9 percent narrower. Existing assessments keep the table version they pinned; a running stack needs its `cost-tables` volume rebuilt by `cmev-cost-bootstrap` to pick up the new default.
+- Known and unchanged: with this seed the key `front-bumper / replace / sedan_standard` is withheld for support under both methods.
+
+Docker check for the default switch: **not verified**. On 2026-10-02 an image build from `infra/Dockerfile.api` followed by the bootstrap command was stopped at its 30-minute limit without output. A separate `docker pull python:3.12-slim-bookworm` on the same machine also did not finish within 2 minutes, while the host reached Docker Hub, PyPI and the Debian mirror in under a second, so the stall is in this machine's Docker image pulls and never reached the changed Dockerfile lines. The `libgomp1` line and the LightGBM build inside the Linux image are therefore untested.
+
+Next concrete step and agreed owner (or unassigned): unassigned. On a machine whose Docker can pull images, build `infra/Dockerfile.api`, run `cmev-cost-bootstrap` and the lean Compose browser smoke, and record whether the Linux table version matches `ct-20260922-76c1a65a`; then review and commit this work, and have Lane 4 review the proposed recipe and the selection evidence.
+
+
+## M7 branch rebase and vision compatibility fixes (2026-10-09)
+
+Date/time and timezone: 2026-10-09, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request following the branch review.
+Task and relevant module: rebase `m7-lightgbm` onto current main and fix the reviewed M7/native-runtime and test-collection regressions; reconcile the incoming M8 status report. Relevant requirements: M7 FR-29/FR-30 (offline ranges and comparison), FR-48 (versioned provenance), and preservation of M8 evidence gates.
+Branch / baseline commit / resulting commit or PR: fetched `origin/main` at `9bcdf4a`; checked out remote `m7-lightgbm` at `741013f` and rebased its two commits as `8ac371b` and `8e5d5bd`. Fixes below are uncommitted. No push or PR change.
+
+Changed paths and completed behaviour:
+- Rebase conflicts resolved in `CONTEXT.md`, `pipelines/README.md` and `pyproject.toml`: preserved current image-worker documentation/dependencies and added the incoming LightGBM dependency and M7 handoff.
+- `src/claim_cmev/costs/reference/lightgbm_quantile.py` and new `_lightgbm_worker.py`: fit both quantile models in a fresh Python process, exchanging JSON records, decimal bounds and model text. This avoids loading LightGBM's OpenMP runtime into a caller using PyTorch. Native worker failures fail the build; there is no automatic method fallback. Calibration, validation and publication remain in the parent, and claim-time lookups remain table-only.
+- `evaluation.py` reads the LightGBM version through package metadata without loading the native library. No change to the fitting recipe, features, support policy or cost contracts.
+- `tests/unit/m7/{conftest.py,m7_support.py,test_m7_lightgbm.py}`: move the shared seed out of `conftest`, probe LightGBM in a separate process, and cover a fit with PyTorch loaded plus an aborted fit worker.
+- `docs/specs/module-07-reference-cost-ranges.md` and `pipelines/README.md`: document the offline process boundary. `docs/specs/module-08-consolidation-checks.md` and `docs/report/m7-m8-summary/M8-consolidation-checks-summary.md`: correct stale fixture-only image status, document the existing `m8-rules/0.2.1` uncertainty gate and photos-only finalization behaviour. M8 decision logic did not need a further change.
+
+Checks actually run, results and artifact locations:
+- On macOS, using a temporary Python 3.13 environment with PyTorch 2.14.1 and LightGBM 4.7.0: combined M7 and image/parts-worker tests passed (159 tests), without the review-only workaround.
+- Full Python suite after adding the regressions: `PYTHONPATH=src MPLCONFIGDIR=/private/tmp/cmev-mpl-review /private/tmp/cmev-fix-venv/bin/python -m pytest -q` — **1742 passed, 1 skipped**, one Starlette/httpx deprecation warning. The skip is the optional real-PaddleOCR smoke. Log: `/private/tmp/cmev-m7-fixed-full-suite.log` (temporary, not versioned).
+- Full suite includes deterministic same-seed cost builds, validation/error propagation, M8 rule cases, and image/backend integration. `git diff --check` passed; `origin/main` is an ancestor of the rebased branch.
+
+Uncommitted work, limitations and missing prerequisites:
+- Fixes and this handoff are uncommitted. The rebase rewrote branch history; no remote branch was updated. Both untracked presentation files were preserved.
+- No Docker image build, running-stack change, browser test, model retraining or new accuracy evaluation in this task. Cost evidence remains synthetic. Passing the Python suite does not verify the Linux image or real-price accuracy.
+- The historical M7 handoff above retains its original commit/publication status; it is not the status of this checkout or a newly published cost table.
+
+Next concrete step and agreed owner (or unassigned): unassigned—build the API image and run the cost bootstrap plus a Compose smoke check to verify the Linux/OpenMP packaging, then commit the reviewed fixes and coordinate publication of the rebased branch.
+
+## Check-in of M7 compatibility fixes (2026-10-09)
+
+Date/time and timezone: 2026-10-09, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request.
+Task and relevant module: commit the M7 compatibility fixes, regression tests and M7/M8 documentation described above.
+Branch / baseline commit / resulting commit or PR: `m7-lightgbm` / `8e5d5bd` / the commit containing this entry; use Git history for its identifier. No push.
+Changed paths and completed behaviour: the preceding handoff lists the implementation paths. This check-in updates only the handoff status; no additional runtime changes.
+Checks actually run, results and artifact locations: `git diff --check` passes. The unchanged code was already verified by the preceding full Python run (1742 passed, 1 skipped); tests were not repeated for this check-in.
+Uncommitted work, limitations and missing prerequisites: the two unrelated presentation files remain untracked and untouched. Earlier entries saying these fixes are uncommitted describe their status before this check-in. Docker and browser validation remain outstanding.
+Next concrete step and agreed owner (or unassigned): unassigned—verify the Linux image/cost bootstrap and coordinate publication of the rebased branch.

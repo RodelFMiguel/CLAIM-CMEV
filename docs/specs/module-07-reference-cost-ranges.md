@@ -1,6 +1,6 @@
 # M7 - Reference cost ranges
 
-Owner: Lane 4. Runtime: **offline only, never served**. No container consumes Kafka for M7. Code: `src/claim_cmev/costs/reference/`, pipeline `pipelines/costs/`. Published artifacts: `artifacts/cost_tables/<version>/`. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 8.3, 9.3, 9.4, 9.5, 10 (M7), 11.6, 11.8, 12.4, 13.1, 13.4 and 14 (R5). Status: specified for v2; no generator, no table and no measurements exist.
+Owner: Lane 4. Runtime: **offline only, never served**. No container consumes Kafka for M7. Code: `src/claim_cmev/costs/reference/`, pipeline `pipelines/costs/`. Published artifacts: `artifacts/cost_tables/<version>/`. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 8.3, 9.3, 9.4, 9.5, 10 (M7), 11.6, 11.8, 12.4, 13.1, 13.4 and 14 (R5). Status: implemented on synthetic records. The generator, the splits, the empirical method with its conformal step, the publication path and the learned `lightgbm_quantile` method exist and are tested; see the implementation tasks below for what is and is not done. Every measurement is on synthetic prices.
 
 ## Purpose and scope
 
@@ -86,11 +86,15 @@ Both methods publish the same lookup key, the same basis and the same row schema
 | Method | Definition | Role |
 | --- | --- | --- |
 | `empirical_percentile` | Per key, the 5th and 95th percentiles of the training amounts, computed with a documented percentile definition, one value per base case first so repeated quotes cannot dominate | Baseline and **contingency fallback** under proposal section 12.4 |
-| `lightgbm_quantile` | Two LightGBM regressors with `objective="quantile"`, `alpha=0.05` and `alpha=0.95`, features `part_code`, `operation`, `vehicle_class` as categoricals. Bounded search, small trees, early stopping on validation | The learned comparator for RQ4 |
+| `lightgbm_quantile` | Two LightGBM regressors with `objective="quantile"`, `alpha=0.05` and `alpha=0.95`, features `part_code`, `operation`, `vehicle_class` as categoricals. One training row per independent base case (the median of its quotes), target `ln(amount)`. Bounded recipe, small trees, early stopping on validation | The learned comparator for RQ4 |
+
+LightGBM fitting runs in a fresh offline Python subprocess, returning per-key decimal bounds and booster text to the builder. This keeps its OpenMP runtime separate from PyTorch in callers such as vision notebooks and integration tests. Worker failures propagate as build failures; no table is published from a failed fit. Calibration, validation and publication stay in the parent, and claim-time lookup loads no model.
 
 Optional conformal adjustment, Conformalized Quantile Regression, is fitted on the **separate calibration partition** only, never on training, validation or test. It is selected on validation and then frozen.
 
 If the LightGBM comparison cannot finish, publish the empirical table and report the missing learned comparator and the effect on the course evidence. Do not invent model results.
+
+**Method selection rule**, fixed on 2026-10-02 before any comparison result ([plan](../plans/m7-lightgbm-quantile-plan.md)): among methods whose validation coverage is inside the 0.85 to 0.95 band, select the narrower median served range; on a tie, or if no method qualifies, keep `empirical_percentile`. The comparison uses the frozen support threshold for both methods and selects the conformal option per method on validation. The rule selected `lightgbm_quantile`, and on 2026-10-02 the user made it the default build method. `lightgbm` is therefore a core dependency and the app image installs `libgomp1`. The empirical method stays buildable with `--method empirical_percentile` as the contingency fallback.
 
 ## Split discipline
 
@@ -120,7 +124,8 @@ Rules, all required:
 - A part and operation pair outside the frozen eligible list publishes `support_status = "withheld"` and `withheld_reason = "unsupported_combination"`.
 - A key that is not in the frozen grid at all has no row, and `lookup_range` returns `no_key`. That is different from a key that exists and withholds.
 - A withheld key is **never** published as a zero range, a zero-width range or a wide fallback range.
-- A computed interval with `lower > upper`, a non-finite bound or a negative bound fails validation. The build fails; a malformed interval is never published and never served.
+- A learned key whose lower prediction exceeds its upper prediction, while it has enough support, publishes **no range**: `support_status = "withheld"`, `withheld_reason = "range_invalid"`, with its actual support count. `lookup_range` returns `range_invalid`, which M8 already handles under R11. The count is recorded in the manifest as `interval_integrity.crossed_fits_withheld`. The training specification's `crossed_bounds` wording is not a separate code.
+- A published interval with `lower > upper`, a non-finite bound or a negative bound fails validation. The build fails; a malformed interval is never published and never served.
 - A zero-width interval, `lower == upper`, is valid and publishable, but M8 must not divide by its width.
 
 `min_independent_base_cases` is **proposed** at `8`, searched over `3, 5, 8, 12, 20` on validation and then frozen. It is not a measured value.
@@ -137,7 +142,7 @@ Rules, all required:
 | `metrics.json` | Coverage, width, withheld fraction and per-support-group results |
 | `members.csv` | Every `base_case_id` and `record_id` included, with its partition |
 | `exclusions.csv` | Every record excluded, with a reason code |
-| `model/` | LightGBM boosters and the conformal parameters, only when the learned method is published |
+| `model.lower.txt`, `model.upper.txt`, `model.json` | The two LightGBM boosters and the fit report (features, excluded features, recipe, trees used, pinball losses), only when the learned method is published. Flat file names, because the table loader refuses nested paths. The conformal parameters are in `calibration.json` |
 | `config.snapshot.yaml` | The exact taxonomy, eligible keys, base prices and build configuration used |
 
 `ranges.parquet` row schema:
@@ -319,14 +324,14 @@ Downstream. The claim's assessment pins `cost_table_version = "2026.09.1"`. M8 c
 - [ ] Deliver a price-generator interface on day 1 so that Lanes 2 and 5 are not blocked.
 - [ ] Implement grouped splits with a date cutoff; reserve the final-test membership and record its hash before any fitting.
 - [ ] Implement the empirical percentile method with per base-case aggregation first.
-- [ ] Implement the bounded LightGBM quantile method with early stopping on validation.
-- [ ] Select the method and `min_independent_base_cases` on validation only, then freeze both.
+- [x] Implement the bounded LightGBM quantile method with early stopping on validation. Done 2026-10-02: `lightgbm_quantile.py`, built with `--method lightgbm_quantile`; `tests/unit/m7/test_m7_lightgbm.py`.
+- [x] Select the method and `min_independent_base_cases` on validation only, then freeze both. Done 2026-10-02 on synthetic records: threshold 8 and `method: lightgbm_quantile`, with the evidence under `method_selection` in `configs/costs/cost_table.yaml`. Both values remain **proposed** pending team review.
 - [ ] Implement optional conformal adjustment on the calibration partition, or record that it was not selected.
 - [ ] Implement build validation: crossed bounds, non-finite bounds, negative bounds, basis and currency mixing, and support counted by quote instead of base case.
 - [ ] Implement atomic promotion, the version registry row and read-only mounting for `cmev-api` and `cmev-consolidator`.
 - [ ] Implement `load_table` and `lookup_range` with no extrapolation and no fallback.
 - [ ] Run the final-test evaluation once and publish `metrics.json` with counts and denominators.
-- [ ] Run the RQ4 reduced-support experiment and the ordinary versus injected-anomaly experiment separately.
+- [x] Run the RQ4 reduced-support experiment and the ordinary versus injected-anomaly experiment separately. Done 2026-10-02 on synthetic records: `pipelines/costs/eval_cost_table.py`, reports under `artifacts/evaluation/`.
 - [ ] Verify that a new table leaves an existing assessment unchanged.
 
 ## Open decisions

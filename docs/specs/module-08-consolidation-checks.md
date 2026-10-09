@@ -1,6 +1,6 @@
 # M8 - Consolidation and checks
 
-Owner: Lane 4. Runtime container: `cmev-consolidator`, Compose profiles `lean` and `full`. Code: `src/claim_cmev/comparison/`. No neural weights and no pipeline path. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 2.4, 8.1, 8.2, 8.3, 8.4, 9.2, 9.3, 9.4, 9.6, 10 (M8), 13.2 and 13.3. Status: specified for v2; no code and no measurements exist.
+Owner: Lane 4. Runtime container: `cmev-consolidator`, Compose profiles `lean` and `full`. Code: `src/claim_cmev/comparison/`. No neural weights and no pipeline path. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 2.4, 8.1, 8.2, 8.3, 8.4, 9.2, 9.3, 9.4, 9.6, 10 (M8), 13.2 and 13.3. Status (updated 2026-10-09): the deterministic rule engine is implemented. The opt-in image Compose mode supplies real M1/M2/M3 records; document stages remain fixtures. Experiment A covers the 42 required rule cases. Experiment B and experiment C through M8 remain uncompleted; runtime integration is not model-accuracy evidence.
 
 ## Purpose and scope
 
@@ -474,17 +474,17 @@ Assessment header: `assessment_revision = 4`, `input_revision = 3`, `cost_table_
 
 ## Implementation tasks
 
-- [ ] Freeze the reason-code list and the display text with Lane 5 and the [UI specification](ui_specification.md), and register it in [data contracts](data_contracts.md).
-- [ ] Implement `consolidate` as a pure function with the twelve ordered rules, with a fixed rule identifier on every outcome.
-- [ ] Implement `compare_amount` with `Decimal` only, including the zero-width guard and the no-deviation-on-incompatible rule.
-- [ ] Implement `propose_additions` with rules A1 to A8, including the side-exact suppression rule.
-- [ ] Implement per-check storage so a supported photo check can sit beside a withheld cost check.
-- [ ] Implement the `finding.content_hash` and the dismissal carry-forward rule.
-- [ ] Implement the Kafka consumer, job-key idempotency, the superseded-revision path that still writes a historical assessment, retry and DLQ.
-- [ ] Implement `reuse_lineage` handling so a price correction records no neural rerun.
-- [ ] Build the experiment A case set as executable tests, covering all 42 required cases above.
+- [ ] Freeze the reason-code list and the display text with Lane 5 and the [UI specification](ui_specification.md), and register it in [data contracts](data_contracts.md). Partly done: the catalogue is implemented in `comparison/reason_codes.py` and refuses uncatalogued codes; the team freeze is not recorded.
+- [x] Implement `consolidate` as a pure function with the twelve ordered rules, with a fixed rule identifier on every outcome. Done: `comparison/adapter.py`; rule ids in `ConsolidationResult.outcome_rules` and each check's `rule_id`.
+- [x] Implement `compare_amount` with `Decimal` only, including the zero-width guard and the no-deviation-on-incompatible rule. Done: `comparison/cost_check.py`; cases 25 to 36.
+- [x] Implement `propose_additions` with rules A1 to A8, including the side-exact suppression rule. Done: `comparison/additions.py`; cases 18 to 24. A5 uses the stricter reading (any pending or unlinked mark withholds all additions), pending the D7 decision.
+- [x] Implement per-check storage so a supported photo check can sit beside a withheld cost check. Done: four checks per `AssessmentFinding`; cases 17 and 34.
+- [x] Implement the `finding.content_hash` and the dismissal carry-forward rule. Done: `comparison/lineage.py`; case 39.
+- [x] Implement the Kafka consumer, job-key idempotency, the superseded-revision path that still writes a historical assessment, retry and DLQ. Done: `orchestration/consolidation.py` on the shared consumer runtime; cases 40 and 41 and `tests/integration/`.
+- [x] Implement `reuse_lineage` handling so a price correction records no neural rerun. Done: `ConsolidationRequest.reuse_lineage` and the M9 reassessment plan's `neural_rerun` flag; case 38.
+- [x] Build the experiment A case set as executable tests, covering all 42 required cases above. Done: `tests/unit/m8/test_m8_experiment_a.py`, with a meta-test mapping every case and safety invariant to a test.
 - [ ] Build the experiment B controlled claim cases with expected outcomes fixed before any model runs.
-- [ ] Run experiment C jointly with Lane 4's cost work, keeping ordinary exceedances and injected anomalies in separate tables.
+- [ ] Run experiment C jointly with Lane 4's cost work, keeping ordinary exceedances and injected anomalies in separate tables. Partly done (2026-10-02, `m7-lightgbm` branch): scored against the M7 tables directly by `pipelines/costs/eval_cost_table.py experiment-c`, not yet through `consolidate`.
 - [ ] Publish targets, denominators, error analysis and limitations to `artifacts/evaluation/`.
 - [ ] Compare the combined pipeline against single-branch information on the same controlled cases, withholding cross-modal decisions when a branch is absent.
 

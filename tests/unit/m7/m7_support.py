@@ -10,6 +10,7 @@ from pathlib import Path
 from claim_cmev.costs.reference.records import PriceRecord
 
 BASIS = "single_part_pre_tax_no_discount_v1"
+SEED = 20260924
 
 
 def read_json(path: Path):

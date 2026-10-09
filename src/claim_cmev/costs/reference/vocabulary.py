@@ -26,14 +26,14 @@ PARTITIONS = ("train", "validation", "calibration", "test")
 INSUFFICIENT_SUPPORT = "insufficient_support"
 NO_RECORDS = "no_records"
 UNSUPPORTED_COMBINATION = "unsupported_combination"
-WITHHELD_REASONS = (INSUFFICIENT_SUPPORT, NO_RECORDS, UNSUPPORTED_COMBINATION)
+RANGE_INVALID = "range_invalid"  # a learned lower bound above its upper bound: withheld, never published
+WITHHELD_REASONS = (INSUFFICIENT_SUPPORT, NO_RECORDS, UNSUPPORTED_COMBINATION, RANGE_INVALID)
 
 # Lookup reason codes (application platform section 10, M8 rules R10 and R11).
 NO_KEY = "no_key"
 UNKNOWN_VEHICLE_CLASS_REASON = "unknown_vehicle_class"
 CURRENCY_UNSUPPORTED = "currency_unsupported"
 BASIS_MISMATCH = "basis_mismatch"
-RANGE_INVALID = "range_invalid"
 LOOKUP_REASON_CODES = frozenset({
     NO_KEY, INSUFFICIENT_SUPPORT, UNSUPPORTED_COMBINATION, UNKNOWN_VEHICLE_CLASS_REASON,
     CURRENCY_UNSUPPORTED, BASIS_MISMATCH, RANGE_INVALID,
