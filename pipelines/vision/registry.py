@@ -35,7 +35,32 @@ from claim_cmev.vision.parts.config import PartsConfig, load_parts_config
 from claim_cmev.vision.registry import WEIGHT_FILES, sha256_file
 from claim_cmev.vision.registry import serving_preprocessing as frame_settings
 from pipelines.vision.train_segformer import base_checkpoint_licence, dependency_versions
-from pipelines.vision.training import load_run
+from pipelines.vision.training import load_run, _preprocessing_record
+
+
+def validate_serving_training_config(config: Any, *, parts_config: PartsConfig | None = None,
+                                     damage_config: DamageModelConfig | None = None) -> None:
+    """Fail before fitting if a notebook recipe cannot use the existing serving export path.
+
+    This does not load weights or change runtime configuration. Old saved runs keep their
+    recorded frame; only new notebook configurations opt into this check.
+    """
+    _require_serving_frame(config)
+    parts = parts_config or load_parts_config()
+    if config.task == "parts":
+        worker = parts
+    elif config.task in {"damage", "damage_cardd"}:
+        worker = damage_config or load_damage_model_config()
+        if (worker.input_size, worker.resize_policy) != (parts.input_size, parts.resize_policy):
+            raise ValueError("M1 and M2 must serve the same input size and resize policy for mask assignment")
+    else:
+        raise ValueError(f"unsupported serving task: {config.task}")
+    trained = _preprocessing_record(config)
+    expected = frame_settings(worker.input_size, worker.resize_policy)
+    mismatches = [key for key, value in expected.items() if trained.get(key) != value]
+    if mismatches:
+        raise ValueError(f"training preprocessing differs from the worker: {', '.join(mismatches)}; "
+                         f"use frame='serving', image_size={worker.input_size} and the worker's normalisation")
 
 
 def _entry_name(model_version: str, model_id: str) -> None:

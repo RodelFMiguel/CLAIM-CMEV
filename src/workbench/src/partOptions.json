@@ -1,0 +1,110 @@
+{
+  "taxonomy_version": "parts-1.0.0",
+  "parts": [
+    {
+      "code": "windshield",
+      "label": "Windshield",
+      "sided": false
+    },
+    {
+      "code": "back-windshield",
+      "label": "Back Windshield",
+      "sided": false
+    },
+    {
+      "code": "front-window",
+      "label": "Front Window",
+      "sided": true
+    },
+    {
+      "code": "back-window",
+      "label": "Back Window",
+      "sided": true
+    },
+    {
+      "code": "front-door",
+      "label": "Front Door",
+      "sided": true
+    },
+    {
+      "code": "back-door",
+      "label": "Back Door",
+      "sided": true
+    },
+    {
+      "code": "front-wheel",
+      "label": "Front Wheel",
+      "sided": true
+    },
+    {
+      "code": "back-wheel",
+      "label": "Back Wheel",
+      "sided": true
+    },
+    {
+      "code": "front-bumper",
+      "label": "Front Bumper",
+      "sided": false
+    },
+    {
+      "code": "back-bumper",
+      "label": "Back Bumper",
+      "sided": false
+    },
+    {
+      "code": "headlight",
+      "label": "Headlight",
+      "sided": true
+    },
+    {
+      "code": "tail-light",
+      "label": "Tail Light",
+      "sided": true
+    },
+    {
+      "code": "hood",
+      "label": "Hood",
+      "sided": false
+    },
+    {
+      "code": "trunk",
+      "label": "Trunk",
+      "sided": false
+    },
+    {
+      "code": "licence-plate",
+      "label": "Licence Plate",
+      "sided": false
+    },
+    {
+      "code": "mirror",
+      "label": "Mirror",
+      "sided": true
+    },
+    {
+      "code": "roof",
+      "label": "Roof",
+      "sided": false
+    },
+    {
+      "code": "grille",
+      "label": "Grille",
+      "sided": false
+    },
+    {
+      "code": "rocker-panel",
+      "label": "Rocker Panel",
+      "sided": true
+    },
+    {
+      "code": "quarter-panel",
+      "label": "Quarter Panel",
+      "sided": true
+    },
+    {
+      "code": "fender",
+      "label": "Fender",
+      "sided": true
+    }
+  ]
+}

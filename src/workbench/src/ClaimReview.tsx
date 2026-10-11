@@ -881,6 +881,7 @@ function ReviewOverview({ id }: { id: string }) {
                 )}
                 <IdentityControls
                   photoIds={assessment.review_photo_ids}
+                  files={assessment.files}
                   uploadedPhotos={imageFromModels}
                   submit={reviewAction}
                   locked={locked}
