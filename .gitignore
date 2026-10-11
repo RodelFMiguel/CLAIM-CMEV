@@ -64,6 +64,7 @@ Thumbs.db
 *.bin
 *.onnx
 /weights/
+/notebooks/layoutlmv3_finetuned_claims/
 
 
 # Local runtime state

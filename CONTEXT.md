@@ -2443,3 +2443,121 @@ Checks actually run, results and artifact locations:
 - The unchanged confirmation UI previously passed the production build and synthetic browser checks recorded above; not rerun for this check-in. The selected M1 and CarDD exports passed metadata/hash/labels/preprocessing verification in the preceding serving guidance turns. These checks do not establish accuracy on new claims.
 Uncommitted work, limitations and missing prerequisites: the two unrelated presentation files remain untracked and untouched. Model checkpoints/datasets stay in ignored local locations and are not included in Git. No container rebuild, live reassessment or push in this check-in. Earlier entries describing uncommitted changes or previous model choices are historical.
 Next concrete step and agreed owner (or unassigned): user—deploy the selected configurations with the existing image Compose overlay and assess fresh inputs to compare CarDD results; publish the commit when ready.
+### Local LayoutLMv3 M5 extraction script (2026-10-10)
+
+Contributor: Codex. User requested a Python script serving the checkpoint from
+`notebooks/Document_Worker.ipynb` against the M5 specification. The actual
+specification is `docs/specs/module-05-line-item-extraction.md`; the supplied
+`doc/specs/models-05-line-item-extraction.md` path does not exist.
+
+Changed paths:
+- `scripts/extract_line_items_layoutlmv3.py`: explicit local S1 command accepting
+  an M4 DocumentPage manifest and corrected word-OCR images, outputting shared M5
+  line items, completeness, source fields, diagnostics and raw predictions.
+- `src/claim_cmev/documents/line_items/layoutlmv3.py`: local-only checkpoint
+  loading, notebook-compatible 0–999 coordinates, first-subword/overflow
+  alignment, page-local part-slot grouping and existing M5 vocabulary/Decimal
+  validation. Handles Transformers 4.x overflow image batches returned as lists.
+- `pyproject.toml`: optional `document-model` extra; core dependency set unchanged.
+- `tests/unit/m5/test_m5_layoutlmv3.py`: contract safety cases for missing values,
+  uncertain amounts, stable IDs, repeated page slots, zero rows and bad alignment.
+- `docs/layoutlmv3_line_item_extraction.md`: input format, install/run commands,
+  boundaries and limitations.
+
+Decisions/status:
+- Model is selected explicitly by this command, with full-profile provenance;
+  the core rule parser and Kafka workers are unchanged. The checkpoint uses
+  `part_N_*` row-slot BIO labels, not canonical part identities. It requires
+  external OCR (`apply_ocr=false`). True word boxes are required; line/block boxes
+  are rejected instead of splitting evidence into invented word positions.
+- Currency, cost basis and layout numeric conventions are explicit inputs.
+  Corrected image hashes and dimensions must match M4 artifacts. Every expected
+  page must be supplied, including unreadable records.
+- Readable declarations stay partial with
+  `model_declaration_coverage_unvalidated`: no evaluated omission recall or table
+  termination evidence exists. All-unreadable records remain unreadable. No
+  zero/quantity defaults or model inference of confirmed empty scope.
+- Weight SHA-256, alignment, vocabulary and layout versions are retained. Actual
+  weights loaded: `39469b3d20be673479f9e7eb0eaf2d6153531d8fd32e2b8e48cb541f46f15447`.
+- Existing untracked notebook/checkpoint directories were preserved.
+
+Validation evidence:
+- Real local checkpoint/processor loaded and ran on CPU with 520 synthetic OCR
+  words, covering every distinct source word across overflow windows. This used
+  the inference classes extracted into an isolated Python 3.8 harness because
+  the repository requires Python 3.12+. It validates inference only, not the full
+  contract adapter or extraction accuracy. The blank synthetic page is ignored
+  at `runtime/layoutlmv3-smoke.png`.
+- AST syntax checks passed for all three new Python files; CLI `--help` passed;
+  a normal command under Python 3.8 correctly refused execution with a clear
+  Python 3.12 requirement. `git diff --check` passed.
+- Contract tests were added but not executed: only Python 3.8 is installed,
+  pytest is absent there, and Docker daemon is unavailable. No claim of a passed
+  unit suite, real-page accuracy, held-out F1 or production integration.
+
+Next concrete step: Run `python -m pytest tests/unit/m5` in the project's Python
+3.12+ environment, then run the documented CLI with permitted M4 word-OCR pages.
+Evaluate against the reserved paired parser test pages before production wiring
+or permitting complete model declarations. No TODO acceptance boxes were changed.
+
+### LayoutLMv3 command executed on synthetic input (2026-10-10)
+
+Contributor: Codex. User requested execution and selected a synthetic smoke example.
+
+Changed paths/status:
+- Created an isolated portable Python 3.12.10 runtime under ignored
+  `runtime/python312`, with user-approved downloads. Python 3.8 remains unchanged.
+  Installed Torch 2.5.1, Transformers 4.46.3 and supporting contract/test packages.
+  Installed versions are recorded in `runtime/layoutlmv3-run/requirements.txt`.
+- Ignored `runtime/prepare_layoutlmv3_smoke.py` creates a visible synthetic estimate
+  with 14 word boxes, fixture provenance and matching image hash. It uses manually
+  constructed boxes, not measured OCR. Inputs: `runtime/layoutlmv3-run/manifest.json`
+  and `synthetic-estimate.png`.
+- Corrected low-confidence model field reasons in
+  `src/claim_cmev/documents/line_items/layoutlmv3.py`: label uncertainty is now
+  `model_or_ocr_confidence_low`, rather than the builder's `overlapping_columns`.
+  Extended the existing amount-confidence regression case accordingly.
+
+Validation evidence:
+- `runtime/python312/python.exe -m pytest tests/unit/m5/test_m5_layoutlmv3.py -q`:
+  **7 passed**, including the regression case. This supersedes the earlier note
+  that the new adapter tests had not run; the broader M5 suite was not run here.
+- Executed `runtime/python312/python.exe scripts/extract_line_items_layoutlmv3.py
+  runtime/layoutlmv3-run/manifest.json --output runtime/layoutlmv3-run/line-items.json
+  --family-id family-a-ruled-grid --currency SGD
+  --cost-basis single_part_pre_tax_no_discount_v1`: exit 0, two row candidates,
+  14 word predictions, declaration partial. Repeated successfully after the fix.
+- Revalidated serialized output with shared LineItem/DeclarationCompleteness
+  models. No geometric overlap reason remains on confidence-affected fields.
+- The model mislabels this synthetic page: both candidates have unresolved part
+  identities and null printed amounts. Successful execution is not successful
+  extraction accuracy or an evaluated M5 milestone. Raw model output is retained.
+
+Next concrete step: Run on permitted notebook-family estimates with actual M4 word
+OCR, then evaluate field/row association against reserved ground truth. Inspect
+training label alignment if the same mislabelling persists on supported examples.
+
+### LayoutLMv3 source check-in (2026-10-11)
+
+Contributor: Codex. User requested a Git check-in of the latest changes.
+
+- Included the local extraction command, adapter, notebook, optional dependencies,
+  tests and documentation with the existing handoff entries.
+- Added `/notebooks/layoutlmv3_finetuned_claims/` to `.gitignore`; generated
+  checkpoints remain local and are excluded from source control.
+- Validation: re-ran `runtime/python312/python.exe -m pytest
+  tests/unit/m5/test_m5_layoutlmv3.py -q`: 7 passed. Notebook JSON parses;
+  checked common credential patterns with no matches. No new model evaluation.
+- Next concrete step: evaluate permitted held-out M4 word-OCR pages as described
+  above. This check-in is local; no remote push is requested or verified.
+
+### Document branch rebase onto origin/main (2026-10-11)
+
+Contributor: Codex. User requested rebasing document-worker onto origin/main.
+Preserved upstream and document handoff entries and both optional dependency
+extras when resolving conflicts. Vision requires Transformers 5; document-model
+requires Transformers 4. Install these extras in separate environments.
+Re-ran the seven LayoutLMv3 adapter tests after resolving conflicts: 7 passed.
+Git diff checks passed. Full M5 validation remains blocked locally by missing
+jsonschema. No remote push or model accuracy evaluation.
+Next step: run broader tests in an environment with the declared dependencies.
