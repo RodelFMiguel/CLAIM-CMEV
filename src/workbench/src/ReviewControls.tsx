@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from "react";
+// Frozen parts-1.0.0 vocabulary; browser regression checks against configs/taxonomy/parts.yaml.
+import partOptions from "./partOptions.json";
 export interface ReviewRow {
   entry_id: string;
   finding_id: string;
@@ -400,19 +402,21 @@ export function CompletenessControl({
     </details>
   );
 }
-export function IdentityControls({
-  photoIds,
-  uploadedPhotos = false,
+function IdentityForm({
+  coverage,
+  photos,
   submit,
   locked,
 }: {
-  photoIds: string[];
-  // True when the photo IDs are uploaded photographs the models analysed, not fixture IDs.
-  uploadedPhotos?: boolean;
+  coverage: boolean;
+  photos: { id: string; label: string }[];
   submit: SubmitAction;
   locked: boolean;
 }) {
-  function send(e: FormEvent<HTMLFormElement>, coverage: boolean) {
+  const [part, setPart] = useState("");
+  const [enough, setEnough] = useState("");
+  const selectedPart = partOptions.parts.find((p) => p.code === part);
+  function send(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     void submit({
@@ -420,65 +424,165 @@ export function IdentityControls({
       part_code: f.get("part"),
       side: f.get("side"),
       photo_ids: f.getAll("photos"),
+      note: String(f.get("note") || "").trim() || null,
       ...(coverage
         ? {
-            covers_enough: f.get("coverage") === "yes",
-            reason_code: String(f.get("reason") || "") || null,
+            covers_enough: enough === "yes",
+            reason_code: enough === "no" ? f.get("reason") : null,
           }
         : {}),
     });
   }
   return (
+    <form onSubmit={send}>
+      <fieldset disabled={locked}>
+        <legend>{coverage ? "Confirm coverage" : "Confirm identity"}</legend>
+        <label>
+          Part
+          <select
+            name="part"
+            required
+            value={part}
+            onChange={(e) => setPart(e.target.value)}
+          >
+            <option value="" disabled>
+              Choose a part...
+            </option>
+            {partOptions.parts.map((p) => (
+              <option key={p.code} value={p.code}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Select
+          key={part}
+          name="side"
+          values={
+            selectedPart
+              ? selectedPart.sided
+                ? ["left", "right"]
+                : ["not_applicable"]
+              : []
+          }
+          title="Physical side"
+          placeholder="Choose the physical side..."
+        />
+        <p className="muted">
+          Left and right are from the vehicle’s perspective. For an unsided part
+          such as the windshield, explicitly choose “not applicable”. If you
+          cannot identify the part or side, leave it unconfirmed.
+        </p>
+        <label>
+          Photographs (select one or more)
+          <select name="photos" multiple required>
+            {photos.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="muted">
+          Hold Command (Mac) or Ctrl (Windows) to select multiple photographs.
+        </p>
+        {coverage && (
+          <>
+            <label>
+              Do these views show enough of this part?
+              <select
+                name="coverage"
+                required
+                value={enough}
+                onChange={(e) => setEnough(e.target.value)}
+              >
+                <option value="" disabled>
+                  Choose...
+                </option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+            {enough === "no" && (
+              <label>
+                Why is coverage insufficient?
+                <select name="reason" required defaultValue="">
+                  <option value="" disabled>
+                    Choose a reason...
+                  </option>
+                  <option value="partially_visible">
+                    The part is only partially visible
+                  </option>
+                  <option value="part_obscured">The part is obscured</option>
+                  <option value="image_unclear">
+                    The photographs are too unclear
+                  </option>
+                  <option value="part_not_visible">
+                    The part is not visible in these photographs
+                  </option>
+                  <option value="other">
+                    Other visibility limitation
+                  </option>
+                </select>
+              </label>
+            )}
+          </>
+        )}
+        <label>
+          Explanation (optional)
+          <textarea
+            name="note"
+            maxLength={2000}
+            placeholder="Write your explanation in ordinary sentences."
+          />
+        </label>
+        <button className="button button-outline button-small">
+          {coverage ? "Save coverage" : "Save identity"}
+        </button>
+      </fieldset>
+    </form>
+  );
+}
+
+export function IdentityControls({
+  photoIds,
+  files = [],
+  uploadedPhotos = false,
+  submit,
+  locked,
+}: {
+  photoIds: string[];
+  files?: { file_id: string; original_name: string }[];
+  uploadedPhotos?: boolean;
+  submit: SubmitAction;
+  locked: boolean;
+}) {
+  const names = new Map(files.map((f) => [f.file_id, f.original_name]));
+  const photos = photoIds.map((id) => ({
+    id,
+    label: uploadedPhotos && names.has(id) ? `${names.get(id)} (${id})` : id,
+  }));
+  return (
     <details className="review-controls">
       <summary>Confirm physical identity or coverage</summary>
       <p>
         {uploadedPhotos
-          ? "The photo IDs are the uploaded photographs the models analysed."
+          ? "Select the uploaded photographs that show the same physical part."
           : "Fixture photo IDs refer to demonstration evidence. These confirmations do not establish anything about uploaded photographs."}
       </p>
+      <p>
+        Identity confirms which physical part the photographs show. Coverage
+        confirms whether enough of it is visible to assess damage. Choosing “No”
+        does not reject a damage prediction or move it to another part.
+      </p>
       {[false, true].map((coverage) => (
-        <form key={String(coverage)} onSubmit={(e) => send(e, coverage)}>
-          <fieldset disabled={locked}>
-            <legend>
-              {coverage ? "Confirm coverage" : "Confirm identity"}
-            </legend>
-            <label>
-              Part code
-              <input name="part" required />
-            </label>
-            <Select
-              name="side"
-              values={sides.filter((s) => s !== "unknown")}
-              title="Physical side"
-            />
-            <label>
-              Photographs (select one or more)
-              <select name="photos" multiple required>
-                {photoIds.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {coverage && (
-              <>
-                <Select
-                  name="coverage"
-                  values={["yes", "no"]}
-                  title="Do these views show enough of this part?"
-                />
-                <label>
-                  Reason code (required if no)
-                  <input name="reason" pattern="[a-z][a-z0-9_]*" />
-                </label>
-              </>
-            )}
-            <button className="button button-outline button-small">
-              {coverage ? "Save coverage" : "Save identity"}
-            </button>
-          </fieldset>
-        </form>
+        <IdentityForm
+          key={String(coverage)}
+          coverage={coverage}
+          photos={photos}
+          submit={submit}
+          locked={locked}
+        />
       ))}
     </details>
   );

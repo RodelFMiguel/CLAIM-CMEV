@@ -379,3 +379,43 @@ def test_export_damage_run_refuses_to_replace_a_registry_entry(tmp_path: Path, m
     with pytest.raises(FileExistsError):
         export_damage_run(record["run_dir"], CARDD_VERSION, registry_root=tmp_path / "registry",
                           damage_config=worker_frame)
+
+
+@pytest.mark.parametrize("notebook,task,classes,prefix,taxonomy", [
+    ("M1_HITL_parts_training.ipynb", "parts", PART_CLASSES, "parts", "parts-1.0.0"),
+    ("M2_HITL_damage_training.ipynb", "damage", HITL_NOTEBOOK_CLASSES, "damage-hitl", "damage-hitl-1.0.0"),
+    ("M2_CarDD_damage_training.ipynb", "damage_cardd", CARDD_CLASSES, "damage-cardd", "damage-cardd-1.0.0"),
+])
+def test_notebook_export_cell_produces_matching_selection_fields(tmp_path, monkeypatch, notebook, task,
+                                                                classes, prefix, taxonomy):
+    """Exercise each notebook's actual handover cell on tiny trained fixture weights."""
+    import yaml
+    from claim_cmev.vision.parts.config import load_parts_config
+    from claim_cmev.vision.damage.model_config import load_damage_model_config
+    record = _run(tmp_path, monkeypatch, manifest=_manifest(tmp_path, task=task, classes=classes), task=task)
+    configs = tmp_path / "configs/models"
+    configs.mkdir(parents=True)
+    (configs / "parts.yaml").write_text(yaml.safe_dump(PartsConfig(input_size=32).model_dump()))
+    (configs / "damage.yaml").write_text(yaml.safe_dump(_served("damage-hitl/old", "damage-hitl-1.0.0").model_dump()))
+    before = {p: p.read_bytes() for p in configs.iterdir()}
+    nb = json.loads((Path(__file__).resolve().parents[2] / "notebooks" / notebook).read_text())
+    code = next("".join(c["source"]) for c in nb["cells"]
+                if c["cell_type"] == "code" and "EXPORT_FOR_SERVING =" in "".join(c["source"]))
+    env = dict(ROOT=tmp_path, RUN_DIR=Path(record["run_dir"]), json=json,
+               load_parts_config=load_parts_config, load_damage_model_config=load_damage_model_config)
+    exec(code.replace("EXPORT_FOR_SERVING = False", "EXPORT_FOR_SERVING = True"), env)
+    selection = env["selection"]
+    assert selection["model_id"] == prefix and selection["taxonomy_version"] == taxonomy
+    assert selection["num_labels"] == len(classes) and selection["input_size"] == 32
+    assert selection["model_version"] == f"{prefix}/run-serving"
+    assert selection["config_version"] != "damage-cfg-test"
+    assert selection["architecture"] == record["config"]["checkpoint"]
+    assert all(p.read_bytes() == content for p, content in before.items())  # Export alone never selects a model.
+    assert (Path(record["run_dir"]) / "best.pt").is_file()
+    assert env["entry"] != Path(record["run_dir"])
+    if task != "parts":
+        configured = load_damage_model_config(configs / "damage.yaml").model_copy(update=selection)
+        damage_adapter.verify_damage_checkpoint(env["entry"], configured)
+    else:
+        configured = load_parts_config(configs / "parts.yaml").model_copy(update=selection)
+        parts_adapter.verify_checkpoint(env["entry"], configured)

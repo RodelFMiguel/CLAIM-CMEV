@@ -2772,3 +2772,67 @@ fieldset:disabled {
   gap: 8px;
   justify-items: center;
 }
+
+/* Damage predictions remain readable independently of confirmation/coverage. */
+.damage-summary-list > * + *,
+.damage-unresolved .damage-item + .damage-item {
+  margin-top: 12px;
+}
+.damage-item .damage-types {
+  color: #263f4d;
+  font-size: 14px;
+  margin: 0 0 12px;
+}
+.damage-item > p,
+.damage-unresolved > p {
+  color: #526570;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.damage-item small {
+  color: #526570;
+  font-size: 12px;
+}
+.damage-details,
+.damage-unresolved {
+  margin-top: 14px;
+}
+.damage-details > summary,
+.damage-unresolved > summary {
+  cursor: pointer;
+  padding: 10px 0;
+  font-weight: 600;
+}
+.damage-detail-note,
+.damage-observations {
+  font-size: 13px;
+  color: #526570;
+  line-height: 1.6;
+}
+.damage-observations {
+  padding-left: 22px;
+}
+.damage-observations > li + li {
+  margin-top: 16px;
+}
+.damage-observations p {
+  margin: 6px 0;
+}
+.damage-photo-link {
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  color: #285b70;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.damage-photo-link:focus-visible,
+.damage-summary-list summary:focus-visible {
+  outline: 2px solid #285b70;
+  outline-offset: 3px;
+}
+
+.damage-item .damage-types strong {
+  text-transform: none;
+}

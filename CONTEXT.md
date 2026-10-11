@@ -1,7 +1,7 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-10-09 (Asia/Singapore), `m7-lightgbm` rebased onto the latest fetched `origin/main`, with M7 fitting isolated from the image libraries and the combined Python suite passing. Earlier handoffs retain their historical status.
-- **Implementation baseline:** branch `m7-lightgbm`, rebased onto `origin/main` at `9bcdf4a` (which includes the M2 image-worker changes). The rewritten branch commits are `8ac371b` and `8e5d5bd`; the compatibility fixes are checked in with the final handoff below (use Git history for the commit identifier). No push was made. The local branch has diverged from `origin/m7-lightgbm` because of the rebase.
+Last updated: 2026-10-11 (Asia/Singapore), check-in of serving-compatible notebooks, selected M1 B2/CarDD M2 exports and identity/coverage form improvements. Notebook export tests accommodate the user’s enabled export switches. See the final check-in entry for validation and limitations. Earlier handoffs retain their historical status.
+- **Implementation baseline:** branch `image-worker`, with the display fixes committed on top of `687cc4c` (merge of `m7-lightgbm`). Use Git history for the display-fix commit identifier. No push in this check-in.
 - **Read first for M7/M8:** the [rebase and compatibility fixes](#m7-branch-rebase-and-vision-compatibility-fixes-2026-10-09), then the historical [LightGBM method handoff](#m7-lightgbm-quantile-method-2026-10-02). LightGBM remains the default offline cost method; empirical remains an explicit fallback.
 - **Read first for the image branch (M1, M2, M3):** the [real image branch handoff](#real-m2-and-m3-workers-the-image-branch-on-trained-models-2026-10-08) the [decisions that followed it](#damage-model-decisions-accepted-and-the-path-to-a-cardd-model-2026-10-08) the [review-screen label fix](#review-screen-labels-follow-record-provenance-2026-10-08) and the [filtering and photo-hash fixes](#preserve-discarded-damage-uncertainty-and-verify-m3-photo-bytes-2026-10-08), then the [notebook-to-serving handoff](#notebook-pipeline-joined-to-the-m1-serving-path-2026-10-08), the [served-checkpoint handoff](#m1-served-checkpoint-connected-and-run-in-the-compose-stack-2026-10-07) and the [worker start-up handoff](#m1-worker-start-up-model-loading-and-opt-in-switch-2026-10-07).
 - **Read first for training:** the [M2 CarDD notebook handoff](#m2-cardd-notebook-and-converter-2026-10-02), the [M2 recall/regularisation handoff](#m2-recallregularisation-presets-and-background-offset-2026-10-02), the [M2 failure-review handoff](#m2-failure-review-and-tiny-fitting-diagnostic-2026-10-02), then the [M2 adjustment handoff](#m2-damage-focused-notebook-adjustments-2026-10-01), the [2026-10-01 label/recipe handoff](#hitl-label-preparation-v2-and-recipe-presets-2026-10-01), the [2026-09-30 notebook handoff](#manual-hitl-training-notebook-handoff-2026-09-30) and [verification record](docs/verification/hitl-notebooks-2026-09-30.md).
@@ -2343,3 +2343,103 @@ Changed paths and completed behaviour: the preceding handoff lists the implement
 Checks actually run, results and artifact locations: `git diff --check` passes. The unchanged code was already verified by the preceding full Python run (1742 passed, 1 skipped); tests were not repeated for this check-in.
 Uncommitted work, limitations and missing prerequisites: the two unrelated presentation files remain untracked and untouched. Earlier entries saying these fixes are uncommitted describe their status before this check-in. Docker and browser validation remain outstanding.
 Next concrete step and agreed owner (or unassigned): unassigned—verify the Linux image/cost bootstrap and coordinate publication of the rebased branch.
+
+## Damage types and unresolved assignment display (2026-10-09)
+
+Date/time and timezone: 2026-10-09, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request to fix the displays before changing models.
+Task and relevant module: M9 damage summary and printed photo summary, FR-34/FR-45 and UI specification 6.4. Explain M3 identity/coverage separately from M2 damage predictions.
+Branch / baseline commit / resulting commit or PR: `m7-lightgbm` / `801bd38` / uncommitted, no push.
+
+Changed paths and completed behaviour:
+- New `src/workbench/src/DamageSummary.tsx`, used by `ClaimReview.tsx` for review and print: display the recorded damage codes, plain-language reasons, source provenance and photo counts. Unassigned observations are grouped separately in a keyboard-accessible disclosure (initially open). Show ranked candidate parts and their mask-overlap percentages, background overlap, model confidence and navigation to the exact uploaded photograph.
+- Joins use `part_summaries.member_observation_ids` and observation IDs from the existing API. No backend or shared payload changes. Missing masks retain unavailable overlap rather than measured zero. Old snapshots without details retain their explanations and explicitly unavailable damage details. Print expands all retained observations using the frozen assessment snapshot.
+- `src/workbench/src/styles.css`: readable damage labels/details and disclosure/link focus states. `docs/specs/ui_specification.md`: describe current HITL/CarDD labels and the display mapping.
+- M3's current rule is unchanged: an unknown side yields `identity_not_resolved`, including unsided categories until a human confirms the physical identity with `not_applicable` where appropriate. Adequate coverage also requires passing views and a coverage confirmation. The UI labels the former "Needs confirmation"; other unresolved coverage is "Not established". These are presentation labels, not changed inference or finding states.
+
+Checks actually run, results and artifact locations:
+- `npm run build` in `src/workbench`: TypeScript and Vite production build passed.
+- `CMEV_BROWSER_CHANNEL=chrome node tests/e2e/damage-summary.mjs` against a task-local Vite server on port 4175: passed. Synthetic route responses only; no API writes or model inference. Checks cover damage labels, membership isolation despite reordered observations, candidates, background/missing masks, photo selection, keyboard disclosure, 768px tablet overflow, print/PDF details, both vocabularies, fixture labels and old snapshots.
+- Inspected the rendered screenshot. Screenshot and synthetic PDF: `artifacts/evaluation/ui-damage-summary-20261009/` (ignored). `git diff --check` passed.
+
+Uncommitted work, limitations and missing prerequisites:
+- Source, browser regression and documentation are uncommitted. Both presentation files remain untouched.
+- No Docker deployment, real-claim replay, Python-suite rerun, retraining or model switch. Existing inference/coverage decisions and stored assessments were not mutated. Browser validation proves display behaviour with synthetic inputs, not model quality.
+
+Next concrete step and agreed owner (or unassigned): unassigned—rebuild/recreate `cmev-web` in the existing Compose deployment and refresh the review. Existing assessments already contain these fields, so they need no inference rerun for this display change. Notebook checkpoint compatibility remains separate work.
+
+
+## Check-in of damage-summary display fixes (2026-10-10)
+
+Date/time and timezone: 2026-10-10, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request.
+Task and relevant module: commit the M9 display fixes, browser regression and documentation from the preceding handoff.
+Branch / baseline commit / resulting commit or PR: current checkout `image-worker` / `687cc4c` / the commit containing this entry; use Git history for its identifier. No push.
+Changed paths and completed behaviour: the preceding entry lists the six implementation/test/documentation paths. This check-in only updates the handoff status; no additional runtime changes.
+Checks actually run, results and artifact locations: `git diff --check` passes. The TypeScript/Vite build and focused synthetic browser regression passed on the unchanged display code in the preceding task; they were not rerun for this check-in.
+Uncommitted work, limitations and missing prerequisites: both unrelated presentation files remain untracked and untouched. Earlier uncommitted/branch statements describe the previous session. No deployment or model change in this check-in.
+Next concrete step and agreed owner (or unassigned): unassigned—rebuild/recreate `cmev-web` and refresh the existing assessment to see the display changes.
+
+## Notebook training defaults aligned with serving export (2026-10-10)
+
+Date/time and timezone: 2026-10-10, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request to use the existing export path instead of adapting historical checkpoints.
+Task and relevant module: M1/M2 notebook preprocessing, registry export and configuration selection, supporting FR-07/FR-09/FR-10 and the model lifecycle/ADR 0004. This implements a training workflow, not a new measured model.
+Branch / baseline commit / resulting commit or PR: `image-worker` / `5a975df` / uncommitted, no push.
+
+Changed paths and completed behaviour:
+- `notebooks/M1_HITL_parts_training.ipynb`, `M2_HITL_damage_training.ipynb`, `M2_CarDD_damage_training.ipynb`: all default to SegFormer-B2, the worker's 512-pixel top-left/black-padded frame and normalisation. M1 retains its serving-frame `fixed_aug`; both M2 notebooks default to `serving_512` based on their damage-focus recipe. Training augmentation remains enabled and evaluation remains whole-image/deterministic.
+- `pipelines/vision/registry.py`: `validate_serving_training_config` rejects incompatible architecture, frame, input size or normalisation before fitting, and checks M1/M2 geometry alignment for damage recipes. The legacy training harness default remains centred so old runs reload unchanged.
+- Both M2 notebooks now use the configured 512-pixel evaluation size and zero background offset for the serving route. Optional offset tuning is disabled and explicitly offline-only; a previously tuned offset cannot leak into final evaluation. Final-test evaluation remains opt-in.
+- Added the missing HITL M2 export section; all three notebooks use the existing verified exporter, write to `<task>/<run_id>-serving` separately from the notebook checkpoint, and print exact model/taxonomy/config version, architecture, label-count and geometry fields for the serving YAML. Export does not change that YAML. Instructions cover selecting one M2 vocabulary and recreating configuration producers/consumers together.
+- Installation cells include the local application's vision extra. Cleared old output cells and execution counts so prior run metrics do not appear under changed settings; ignored run artifacts remain intact.
+- Updated `notebooks/README.md`, `pipelines/README.md` and a dated note in `docs/training-hitl-notebooks.md`. Existing historical results and split caveats remain documented.
+
+Checks actually run, results and artifact locations:
+- `PYTHONPATH=src MPLCONFIGDIR=/private/tmp/cmev-mpl-review /private/tmp/cmev-fix-venv/bin/python -m pytest -q tests/unit/test_notebook_serving_workflow.py tests/unit/test_vision_registry_export.py tests/unit/test_vision_training.py` — **86 passed**.
+- New tests execute the actual notebook configuration/evaluation-control cells without fitting; reject incompatible overrides; and execute all three export cells on tiny synthetic fixture models, verify the matching selection fields with worker checks, preserve source checkpoints and leave serving config files unchanged. The first export-cell test exposed a source/destination name collision, fixed with the `-serving` suffix before the passing run.
+- Every notebook code cell compiles. Old outputs/counts are cleared. `git diff --check` passed. `configs/models/parts.yaml` and `damage.yaml` are unchanged.
+
+Uncommitted work, limitations and missing prerequisites:
+- No full dataset training, real trained-checkpoint export, model selection, deployment or accuracy evaluation was performed. Tiny fixture fitting/export tests validate mechanics only. The active B3 checkpoints and all old notebook artifacts are preserved.
+- HITL v3 and CarDD data/split definitions are unchanged; the published HITL test set's prior selection use remains a limitation. New 512-pixel notebook recipes need their own validation, not the previous centred/640 scores.
+- Changes are uncommitted; unrelated presentation files remain untouched.
+
+Next concrete step and agreed owner (or unassigned): user—restart the notebook kernel, train a new default serving-frame run, inspect validation, enable its export cell, then copy the printed fields into the appropriate serving config and recreate the image stack together. Assess a new revision and verify the pinned model/taxonomy before comparing real assignment results.
+
+
+## Identity and coverage form usability (2026-10-10)
+
+Date/time and timezone: 2026-10-10, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request for a part dropdown and explanation of the coverage form validation error.
+Task and relevant module: M9 confirmation forms, FR-34 and UI-302/UI-303. Preserve existing review-action contracts and physical-identity/coverage semantics.
+Branch / baseline commit / resulting commit or PR: `image-worker` / `5a975df` / uncommitted; no push.
+
+Changed paths and completed behaviour:
+- `src/workbench/src/ReviewControls.tsx`, new `partOptions.json`: dropdowns display names and submit the frozen canonical part codes. Options mirror `configs/taxonomy/parts.yaml`; the browser check verifies codes and sidedness against it. Explicit side selection offers left/right for sided parts and not applicable for unsided parts, resets on part change, and never infers a side.
+- Coverage starts unselected; No requires a visibility-reason dropdown. Both forms accept optional ordinary-text explanations through the existing `note` field (2000-character limit). Switching to Yes omits a stale negative reason. Copy clarifies that coverage does not reject or reassign a damage prediction.
+- `src/workbench/src/ClaimReview.tsx` passes file names for the photo selector. Real photos show filenames plus IDs, while fixture IDs remain explicitly described as demonstration evidence.
+- `docs/specs/ui_specification.md` records current form behaviour. New `tests/e2e/identity-controls.mjs` checks the browser form and intercepted outgoing payloads.
+
+Checks actually run, results and artifact locations:
+- `npm run build` in `src/workbench`: TypeScript and Vite build passed.
+- `CMEV_BROWSER_CHANNEL=chrome node tests/e2e/identity-controls.mjs` with a local Vite server on 4175: passed. Synthetic GET responses and intercepted POSTs only, no backend writes. Checked taxonomy parity, explicit/reset side, required fields, file names, multi-photo identity, negative/positive coverage, free-text punctuation, expected revision fields and 768px layout.
+- Inspected `artifacts/evaluation/ui-identity-controls-20261010/controls.png` (ignored synthetic screenshot). `git diff --check` passed.
+
+Uncommitted work, limitations and missing prerequisites: no backend/schema/inference changes, real claim mutations or Docker deployment. Browser tests do not prove backend persistence/reassessment. Original model/config/notebook edits and both unrelated presentations remain untouched. Incorrect damage-class/part assignment correction remains a separate feature; coverage No records limited visibility, not a rejected prediction.
+Next concrete step and agreed owner (or unassigned): user—rebuild/recreate `cmev-web` in the existing Compose deployment and refresh. Do not confirm an unseen or unidentifiable physical part merely to clear a predicted row.
+
+
+## Check-in of notebook serving and confirmation form changes (2026-10-11)
+
+Date/time and timezone: 2026-10-11, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request to check in the latest changes.
+Task and relevant module: commit the existing M1/M2 notebook/export workflow, serving selections and M9 identity/coverage form changes.
+Branch / baseline commit / resulting commit or PR: `image-worker` / `5a975df` / the commit containing this entry; use Git history for its identifier. No push.
+Changed paths and completed behaviour: preceding notebook and confirmation-form entries describe the implementation. Include the user's saved training notebook results/export switches and model selections: M1 `parts/parts-segformer-20261009T165726Z-ab6d41d2-serving`; M2 `damage-cardd/damage_cardd-segformer-20261010T032804Z-b031eedc-serving`, taxonomy `damage-cardd-1.0.0`, seven labels. Updated both serving YAML headers to distinguish selected notebook exports from historical training-only fields. `tests/unit/test_notebook_serving_workflow.py` explicitly exercises the disabled-export path regardless of the user's saved switch; the separate fixture-export tests exercise the enabled path.
+Checks actually run, results and artifact locations:
+- Targeted notebook, registry and training suite initially reported 83 passed and three failures because users had enabled export in their saved notebooks. After the test-only adjustment, the three affected cases passed (`3 passed, 6 deselected` using `-k defaults`). All 86 selected cases therefore passed across the two runs; the 83 unaffected cases were not repeated.
+- All three training notebooks' code cells compile; `git diff --check` passes.
+- The unchanged confirmation UI previously passed the production build and synthetic browser checks recorded above; not rerun for this check-in. The selected M1 and CarDD exports passed metadata/hash/labels/preprocessing verification in the preceding serving guidance turns. These checks do not establish accuracy on new claims.
+Uncommitted work, limitations and missing prerequisites: the two unrelated presentation files remain untracked and untouched. Model checkpoints/datasets stay in ignored local locations and are not included in Git. No container rebuild, live reassessment or push in this check-in. Earlier entries describing uncommitted changes or previous model choices are historical.
+Next concrete step and agreed owner (or unassigned): user—deploy the selected configurations with the existing image Compose overlay and assess fresh inputs to compare CarDD results; publish the commit when ready.

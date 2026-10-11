@@ -1,19 +1,24 @@
 # Configuration for M1: Vehicle Part Segmentation. This is the file the M1 worker serves from.
 #
-# model_version names the registry folder the worker loads (artifacts/models/<model_version>) and is
-# pinned on every parts command. It is currently the SegFormer-B3 compound-loss checkpoint, so the
-# recipe below is that run's (the same as parts_v8_b3_compound.yaml). To serve another checkpoint,
-# copy its recipe file here and keep device "auto". The B0 baseline recipe is parts_v1_baseline.yaml.
+# model_version names the registry folder the worker loads (artifacts/models/<model_version>)
+# and is pinned on every parts command. The selected notebook export is SegFormer-B2.
+# The exported run manifest is authoritative for the training recipe. The historical training
+# fields below describe the earlier B3 run; they do not retrain or override exported weights.
 # Specifications: docs/specs/module-01-vehicle-part-segmentation.md
 #                 docs/specs/model_training_specification.md section 7.1
 
+# model_id: "parts"
+# model_version: "parts/0.8.0-b3-compound"
+# taxonomy_version: "parts-1.0.0"
+# config_version: "parts-cfg-0.8.0"
 model_id: "parts"
-model_version: "parts/0.8.0-b3-compound"
+model_version: "parts/parts-segformer-20261009T165726Z-ab6d41d2-serving"
 taxonomy_version: "parts-1.0.0"
-config_version: "parts-cfg-0.8.0"
+config_version: "parts-cfg-parts-segformer-20261009T165726Z-ab6d41d2-serving"
 
 # Architecture and Training Recipe
-architecture: "nvidia/mit-b3"
+# architecture: "nvidia/mit-b3"
+architecture: "nvidia/mit-b2"
 num_labels: 22
 input_size: 512
 resize_policy: "longest_edge_pad"

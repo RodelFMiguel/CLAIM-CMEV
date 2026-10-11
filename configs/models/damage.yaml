@@ -1,10 +1,10 @@
 # Configuration for M2: Damage Segmentation. This is the file the M2 worker serves from.
 #
-# model_version names the registry folder the worker loads (artifacts/models/<model_version>) and is
-# pinned on every damage command. It is the SegFormer-B3 trained on the HITL damage subset, so
-# taxonomy_version is the HITL contingency vocabulary (8 classes), not CarDD. The recipe below is
-# that run's (the same as damage_b3_compound.yaml, whose own model_version and taxonomy name are
-# the trainer's and are not served).
+# model_version names the registry folder the worker loads (artifacts/models/<model_version>)
+# and is pinned on every damage command. The selected notebook export is CarDD SegFormer-B2;
+# keep its taxonomy and label count together when switching back to a HITL checkpoint.
+# The exported run manifest is authoritative for the training recipe. The historical training
+# fields below describe the earlier B3 run; they do not retrain or override exported weights.
 #
 # The region and assignment thresholds are NOT here: configs/pipeline/m2_assignment.yaml is their
 # one versioned source. The run's own min_damage_pixels (32) and min_damage_confidence (0.40) were
@@ -12,14 +12,25 @@
 # Specifications: docs/specs/module-02-damage-segmentation.md
 #                 docs/specs/model_training_specification.md section 7.2
 
-model_id: "damage-hitl"
-model_version: "damage-hitl/0.1.0-b3-compound"
-taxonomy_version: "damage-hitl-1.0.0"
-config_version: "damage-cfg-0.1.1"
+# model_id: "damage-hitl"
+# model_version: "damage-hitl/0.1.0-b3-compound"
+# taxonomy_version: "damage-hitl-1.0.0"
+# config_version: "damage-cfg-0.1.1"
+# model_id: "damage-hitl"
+# model_version: "damage-hitl/damage-segformer-20261010T005752Z-e8a37ef9-serving"
+# taxonomy_version: "damage-hitl-1.0.0"
+# config_version: "damage-hitl-cfg-damage-segformer-20261010T005752Z-e8a37ef9-serving"
+model_id: "damage-cardd"
+model_version: "damage-cardd/damage_cardd-segformer-20261010T032804Z-b031eedc-serving"
+taxonomy_version: "damage-cardd-1.0.0"
+config_version: "damage-cardd-cfg-damage_cardd-segformer-20261010T032804Z-b031eedc-serving"
 
 # Architecture and Training Recipe
-architecture: "nvidia/mit-b3"
-num_labels: 9
+# architecture: "nvidia/mit-b3"
+# architecture: "nvidia/segformer-b2-finetuned-ade-512-512"
+architecture: "nvidia/segformer-b2-finetuned-ade-512-512"
+# num_labels: 9
+num_labels: 7
 input_size: 512
 resize_policy: "longest_edge_pad"
 

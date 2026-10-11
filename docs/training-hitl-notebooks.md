@@ -96,3 +96,10 @@ The notebook pipeline and the script pipeline (`train_segformer.py`, which train
 - **Do not edit the taxonomy files.** `prepare_hitl` and `prepare_cardd` record the SHA-256 of `configs/taxonomy/parts.yaml`, `damage_hitl.yaml` and `damage_cardd.yaml`. A changed file, even a changed comment, makes every prepared version refuse to reload. `tests/contracts/test_taxonomy.py` pins the three hashes.
 
 No run exists on v3 or in the serving frame yet, apart from a 16-image, one-epoch smoke run that was exported and served to check the path; that is not a model result. The existing centred-frame B2 `f9be9131` cannot be exported. Fed in the serving frame, its validation foreground mIoU is 0.7929 against 0.7989 in its own frame.
+
+
+## Serving notebook defaults (2026-10-10)
+
+At the user's request, all three training notebooks now follow the existing serving export path. This supersedes the historical statements above that HITL M2 remains centred and CarDD defaults to 640 pixels. M1 explicitly uses `frame="serving"` at 512; both M2 notebooks default to `serving_512`, and evaluation defaults to 512 with zero background offset. A preflight rejects incompatible architecture, geometry or normalisation before fitting. Existing runs and the harness's legacy defaults remain unchanged.
+
+Each notebook has an opt-in export to `<task>/<run_id>-serving` and prints the matching checkpoint, taxonomy and new configuration version to select in the serving YAML. No runtime config was switched, no new data were prepared and no dataset training was performed in this change. The 512-pixel recipes need new validation results; old notebook outputs were cleared rather than presented under changed settings. See the [notebook guide](../notebooks/README.md#train-export-and-select-a-serving-model-2026-10-10).

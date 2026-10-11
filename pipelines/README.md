@@ -34,12 +34,12 @@ The output folder of `train_segformer.py` is a registry entry the M1 worker can 
 
 ### Notebook runs (`training.py`)
 
-The notebooks under `notebooks/` train with `pipelines/vision/training.py`, which keeps each run as `best.pt` under `artifacts/models/<task>/<run_id>`. Three things connect that pipeline to the scripts above:
+The notebooks under `notebooks/` train with `pipelines/vision/training.py`, which keeps each run as `best.pt` under `artifacts/models/<task>/<run_id>`. These steps connect that pipeline to the scripts above:
 
 - **Same split.** `prepare_hitl(..., split_from="data/splits/parts/0.1.1")` gives every parts photograph its published partition; `data/processed/hitl/v3` is prepared that way. Earlier prepared versions drew their own split.
-- **Same frame.** `TrainingConfig(frame="serving")` builds the worker's model frame. The default, `"centred"`, is the frame of the runs saved before 2026-10-08.
+- **Same frame.** `TrainingConfig(frame="serving")` builds the worker's model frame. All three notebooks explicitly select this frame at 512 and run `validate_serving_training_config` before fitting. The harness default stays `"centred"` so saved runs reload unchanged.
 - **Export.** `pipelines.vision.registry.export_parts_run(run_dir, "parts/<name>")` writes a serving-frame parts run as a registry entry with status `candidate`. It refuses other runs and never replaces an entry.
-- **Damage export.** `export_damage_run(run_dir, "damage-cardd/<name>")` does the same for a damage run. The run's classes decide the vocabulary, so a HITL run is exported as `damage-hitl/<name>`. The run must be trained in the serving frame at the size in `configs/models/damage.yaml` (512); the CarDD notebook's `serving_512` recipe does that. To serve the entry, set `model_id`, `model_version` and `taxonomy_version` in `configs/models/damage.yaml`. No such CarDD run exists yet.
+- **Damage export.** `export_damage_run(run_dir, "damage-cardd/<name>")` does the same for a damage run. The run's classes decide the vocabulary, so a HITL run is exported as `damage-hitl/<name>`. The run must be trained in the serving frame at the size in `configs/models/damage.yaml` (512); both M2 notebooks now default to `serving_512`. Exports use `<run_id>-serving`, distinct from the notebook checkpoint folder, and print the exact selection fields (including a new config version) for `configs/models/damage.yaml`. No new CarDD serving run was trained by this workflow update. See the [notebook guide](../notebooks/README.md#train-export-and-select-a-serving-model-2026-10-10).
 
 A run saved under transformers 4 still reloads: `load_run` translates the tensor names with the library's own rename table. The notebook and script evaluators differ: the notebook masks use the `nested` overlap policy and leave padding out of the metrics, so their scores are not comparable with `eval_segmentation.py` scores.
 
