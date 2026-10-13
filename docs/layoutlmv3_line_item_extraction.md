@@ -69,4 +69,42 @@ are uncalibrated. This command does not detect pen marks, change surveyor amount
 publish events, or establish held-out extraction accuracy. Validate on the same
 reserved pages as the parser before production integration or relaxing coverage.
 
+## Note, 2026-10-12: the checkpoint declares its text unit
+
+The loader no longer assumes word boxes. A registry entry carries `preprocessing.json`
+with `"text_unit_granularity"` (`word`, `line` or `block`), and `LocalLayoutLMv3.predict`
+requires every text box of the page to have exactly that granularity. A mismatch is an
+error in both directions: a word checkpoint refuses line boxes and a line checkpoint
+refuses word boxes. Boxes are still never split or merged.
+
+- A checkpoint **without** `preprocessing.json`, or without that key, is a `word`
+  checkpoint. `artifacts/models/document-worker-layoutlmv3` therefore behaves as described
+  above and still rejects M4's current line boxes.
+- A candidate exported by `notebooks/M5_Document_Worker.ipynb` declares `line`: it was
+  trained on M4 line boxes, one box per unit, and is loaded with `--model-dir <entry>`.
+- `preprocessing.json` also records `max_length`, `stride`, `bbox_scale`,
+  `text_normalisation` and `label_rule`. If one of them differs from what the adapter
+  applies, the loader refuses the checkpoint: it was trained on other tensors.
+- Training and serving build their tensors with the same two functions of
+  `src/claim_cmev/documents/line_items/layoutlmv3.py`, `page_words` and `encode_page`.
+  For a checkpoint that declares `"text_normalisation": "collapse_whitespace"`, whitespace
+  inside a box's text is collapsed before tokenising, and a box with no visible text gets
+  no token: it is returned as `O` with confidence 0 and so stays in the unparsed evidence
+  instead of being dropped.
+- `--device mps` is accepted for Apple GPUs.
+
+Corrected on 2026-10-13. A checkpoint that declares nothing gets exactly the text handling
+it had before this note: every box is tokenised with its text as OCR wrote it, and a box
+that yields no token still stops the page with "Tokenization did not cover every OCR
+word". Whitespace collapsing and the `O`/0 placeholder apply only to a checkpoint that
+declares them. The loader also fails closed on a damaged registry entry: a
+`preprocessing.json` that names a text unit must declare `text_normalisation`,
+`max_length`, `stride`, `bbox_scale` and `label_rule` as well (nothing is defaulted), and
+when the folder has a `manifest.json` with `weights_sha256`, `model.safetensors` must have
+that hash. A folder without `manifest.json`, such as
+`artifacts/models/document-worker-layoutlmv3`, loads as before.
+
+These points are covered by `tests/unit/m5/test_m5_layoutlmv3.py`. They change which
+inputs the loader accepts; they are not evidence about extraction accuracy.
+
 Implementation reference: [Hugging Face LayoutLMv3 documentation](https://huggingface.co/docs/transformers/model_doc/layoutlmv3).

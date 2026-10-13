@@ -1,0 +1,10 @@
+# Paddle 2.x native extensions require NumPy 1.x.
+numpy==1.26.4
+paddlepaddle==2.6.2
+paddleocr==2.10.0
+opencv-python==4.10.0.84
+opencv-python-headless==4.10.0.84
+opencv-contrib-python==4.10.0.84
+
+# Paddle imports setuptools at runtime (Python 3.12 venv no longer includes it).
+setuptools==80.9.0

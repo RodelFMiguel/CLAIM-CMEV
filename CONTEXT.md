@@ -1,6 +1,6 @@
 # CLAIM-CMEV shared development context
 
-Last updated: 2026-10-11 (Asia/Singapore), check-in of serving-compatible notebooks, selected M1 B2/CarDD M2 exports and identity/coverage form improvements. Notebook export tests accommodate the user’s enabled export switches. See the final check-in entry for validation and limitations. Earlier handoffs retain their historical status.
+Last updated: 2026-10-13 (Asia/Singapore), M5 and M6 training notebooks on real M4 output, with a correction pass left unfinished. **Read first for the document branch:** the [M5/M6 notebook handoff](#m5-and-m6-training-notebooks-on-m4-output-built-reviewed-corrections-interrupted-2026-10-13), then [M4 worker integration](#m4-live-worker-and-pretrained-ocr-registry-2026-10-11). Earlier handoffs retain their historical status.
 - **Implementation baseline:** branch `image-worker`, with the display fixes committed on top of `687cc4c` (merge of `m7-lightgbm`). Use Git history for the display-fix commit identifier. No push in this check-in.
 - **Read first for M7/M8:** the [rebase and compatibility fixes](#m7-branch-rebase-and-vision-compatibility-fixes-2026-10-09), then the historical [LightGBM method handoff](#m7-lightgbm-quantile-method-2026-10-02). LightGBM remains the default offline cost method; empirical remains an explicit fallback.
 - **Read first for the image branch (M1, M2, M3):** the [real image branch handoff](#real-m2-and-m3-workers-the-image-branch-on-trained-models-2026-10-08) the [decisions that followed it](#damage-model-decisions-accepted-and-the-path-to-a-cardd-model-2026-10-08) the [review-screen label fix](#review-screen-labels-follow-record-provenance-2026-10-08) and the [filtering and photo-hash fixes](#preserve-discarded-damage-uncertainty-and-verify-m3-photo-bytes-2026-10-08), then the [notebook-to-serving handoff](#notebook-pipeline-joined-to-the-m1-serving-path-2026-10-08), the [served-checkpoint handoff](#m1-served-checkpoint-connected-and-run-in-the-compose-stack-2026-10-07) and the [worker start-up handoff](#m1-worker-start-up-model-loading-and-opt-in-switch-2026-10-07).
@@ -2561,3 +2561,198 @@ Re-ran the seven LayoutLMv3 adapter tests after resolving conflicts: 7 passed.
 Git diff checks passed. Full M5 validation remains blocked locally by missing
 jsonschema. No remote push or model accuracy evaluation.
 Next step: run broader tests in an environment with the declared dependencies.
+
+### Document lane implementation plan and diagrams (2026-10-11)
+
+Date/time and timezone: 2026-10-11, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request.
+Task and relevant module: plan the complete M4/M5/M6 document lane and illustrate connections.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `ec8bcba` / uncommitted; no push.
+Changed paths and completed behaviour: `docs/document-worker-implementation-plan.md` adds a detailed Mermaid artifact/runtime diagram, eight implementation steps with acceptance evidence, and a human repricing sequence. Preserves intended neural M5, current library-versus-serving distinctions, true word geometry prerequisite, M6 pending proposals and immutable revision semantics. Initial separate worker environments are proposed because current vision/document Transformers extras conflict; no new runtime decision is implemented.
+Checks actually run, results and artifact locations: source/specification inspection and `git diff --check` passed before this handoff append. Documentation only; no tests, inference or rendered-diagram validation.
+Uncommitted work, limitations and missing prerequisites: no worker code, training, dataset conversion or deployment. Existing damage YAML edit and presentation files preserved. Word OCR, evaluated neural row assembly and M6 detector remain prerequisites.
+Next concrete step and agreed owner (or unassigned): document lane, unassigned—select permitted supported-layout acceptance pages and validate true OCR word locations before wiring the neural M5 path.
+
+### Synthetic surveyor mark dataset (2026-10-11)
+
+Date/time and timezone: 2026-10-11, Asia/Singapore.
+Contributor / coding agent: Codex with user-requested source-audit, generator and independent-validator agents.
+Task and relevant module: prepare all existing synthetic estimate/assessment pages with surveyor annotations for M5/M6 development.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `ec8bcba` / uncommitted, no push.
+Changed paths and completed behaviour:
+- `scripts/prepare_marked_motor_claims.py`, `scripts/validate_marked_motor_claims.py`, `docs/synthetic-surveyor-annotations.md` provide deterministic Pillow generation, independent integrity checks and training guidance.
+- Ignored output `data/raw/synthetic_motor_claims_500_w_annotation/`: 500 JPEGs, inherited train/validation/test counts 350/76/74, source regions and claims preserved, separate surveyor regions/words/intended decisions, hashes/provenance/font/Pillow versions, split-specific COCO detection labels and README. Seed 20261011, generator `surveyor-ink-v1`.
+- 369 exclusions, 360 price changes, 488 acceptance ticks and 252 review notes. All 500 pages have added ink; 279 detector negatives include 250 assessment pages and 29 estimates. Original declared line totals (including quantity>1) remain separate from revised line totals; unchanged printed totals and null final approvals. SGD is an explicit synthetic assumption. Distractors are excluded from detector classes.
+Checks actually run, results and artifact locations:
+- Independent full validator passes with no errors: image membership/decode/dimensions/hashes, source preservation, claim split disjointness, mark/component/row geometry, intended decimal revisions, rendered words and two-class COCO consistency. Report: output `validation-report.json`.
+- Initial validation caught 22 remarks with descenders beyond row bounds; moved added remark baseline upward and regenerated before the passing validation. Nine pages spanning all splits replayed to identical JPEG SHA-256 and complete mark/row/word labels.
+- Inspected six-page `preview-contact-sheet.jpg`. Both scripts compile; `git diff --check` passes. No model training or accuracy evaluation.
+Uncommitted work, limitations and missing prerequisites: generated data remain ignored/local; source images untouched and unrelated working changes preserved. Font-simulated writing and a shared layout/font pool cannot establish real/unseen-writer performance. Original field boxes are not true OCR word boxes; M5 still requires OCR alignment. Remark-only rejection and strike-only exclusions extend current core M6 examples; runtime support remains separate. Prior intermediate generation retained under `/private/tmp/marked-motor-claims-initial-20261011`.
+Next concrete step and agreed owner (or unassigned): document lane, unassigned—align OCR words against original M5 fields with occlusion handling, and wire COCO/row-link labels into M6 training; preserve inherited claim groups and report synthetic versus real results separately.
+
+### M4 live worker and pretrained OCR registry (2026-10-11)
+
+Date/time and timezone: 2026-10-11, Asia/Singapore.
+Contributor / coding agent: Codex with user-requested implementation, model/packaging and independent-review agents.
+Task and relevant module: implement M4 pretrained page reading (FR-15/16 and quality/failure portion of FR-17), download reference weights, package opt-in serving, and verify persistence/delivery safety. No OCR training.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `ec8bcba` / uncommitted; no push.
+
+Changed paths and completed behaviour:
+- New `documents/text_layout/worker.py` handles the existing single-page command over committed original upload bytes, verifies membership/metadata/hash/size/target/version pins, calls the existing raster/geometry/OCR adapter, stores artifacts plus document-page/page-reading/text-box records and emits completion through the transactional outbox. Unreadable output fails closed; retries, duplicate delivery, job-row locking and DLQ reuse the shared consumer runtime. Obsolete requests stop before object reads/OCR.
+- `orchestration/services.py`, `plan.py`, `worker.py`, `api/main.py`: opt-in `CMEV_OCR_PRODUCER=real`, `ocr` role, page-stage ownership and API/orchestrator pin selection. Default fixture mode is preserved; M5/M6 remain fixtures. Registry/config/object-store readiness are required before serving; configured OCR retry count is honored.
+- Adapter corrections preserve aggregate partial quality, both deskew and perspective correction flags, actual config/weight/code artifact signatures and config hashes. `persistence/store.py` scopes storage identity to job for stable logical page IDs, avoiding historical-page overwrite/collision across revisions.
+- `configs/models/ocr.yaml`, `ocr-manifest.json`, lightweight `model_config.py`, `scripts/download_ocr_models.py`: selected PaddleOCR 2.10.0/PaddlePaddle 2.6.2 English detection `en_PP-OCRv3_det_infer`, recognition `en_PP-OCRv4_rec_infer`, angle `ch_ppocr_mobile_v2.0_cls_infer`. Official downloads and full SHA-256 verification for all nine inference files and three archives; local registry is ignored `artifacts/models/ocr/paddleocr-2.10.0-en-v1/` (32 MiB including archives). Repository uses plural `artifacts/models`, rather than a second singular path.
+- `infra/Dockerfile.ocr`, `requirements-ocr.txt`, `compose/docker-compose.ocr.yml`: separate CPU OCR image, verified weights mounted read-only, consistent OCR flags/config/manifest paths across API/coordinating containers, lean/full profiles and compatibility with image overlay. Core NumPy constraint relaxed to >=1.26,<3; OCR environment pins 1.26.4 and compatible OpenCV/setuptools. Existing vision environment retains NumPy 2.x.
+- Added M4 worker/selection/startup/registry tests; updated M4 specification status and only demonstrated implementation checkboxes, `docs/m4-ocr-worker.md`, and `infra/README.md`.
+
+Checks actually run, results and artifact locations:
+- Independent review found/fixed aggregate quality, historical record identity, version mismatch/config hashing and packaged-manifest path issues. Independent Compose checks cover lean/full with/without image overlay using fake credentials and no existing deployment mutation.
+- Final focused suite: `MPLBACKEND=Agg venv/bin/python -m pytest -q tests/unit/m4 tests/unit/m5/test_m5_m4_handoff.py tests/integration/test_ocr_worker.py` — **121 passed, 1 skipped** (optional native Paddle test in host vision venv). Log `/private/tmp/cmev-m4-focused-final.log`. Includes duplicate delivery, corrupt bytes, unreadable/no-text failure, PDF fan-out, superseded input, historical records, startup readiness/retry selection and all-nine-file corruption tests.
+- Existing image-worker regressions: **39 passed**, log `/private/tmp/cmev-m4-image-regression.log`. Installed declared LightGBM dependency into existing venv to run these fixtures; source cost method unchanged.
+- Full suite with headless Matplotlib: **1789 passed, 1 skipped, 1 failed**. Failure is existing `test_the_served_damage_configuration_names_the_hitl_model_and_its_taxonomy`, hardcoded to historical B3; confirmed it also fails against committed HEAD damage config (CarDD notebook export). The user's currently selected HITL notebook export/config was preserved. Logs `/private/tmp/cmev-m4-full-suite-agg.log` and `/private/tmp/cmev-m4-baseline-test.log`. Initial full run aborted in pre-existing macOS GUI Matplotlib backend; rerun used Agg.
+- Linux ARM64 OCR image final build passes (`claim-cmev-worker-ocr:m4-check`). Network-disabled real inference on original/marked synthetic estimates produces 56/60 located line regions; complete adapter records/geometry/quality/artifact refs serialized. Reports in ignored `artifacts/evaluation/m4-live-ocr-smoke/{results,adapter-results}.json`.
+- Final rebuilt image installed package passes isolated committed-upload→orchestrator→real OCR→SQLite records/local artifacts/outbox smoke: recognizes FRT BUMPER and 980.00, all three artifact hashes match, one DocumentPage/one reading/two text-box records, replay leaves one OCR call and one completion event. `runtime-results.json` and `runtime_smoke.py` beside the above reports; log `/private/tmp/cmev-m4-packaged-runtime.log`. No network/model download occurs during inference. This uses in-memory messaging, not live Kafka.
+- `python scripts/download_ocr_models.py --verify-only`, script compilation and `git diff --check` pass. Existing services untouched; temporary Docker runs exited and stalled native macOS smoke processes stopped.
+
+Uncommitted work, limitations and missing prerequisites:
+- No deployed Kafka/PostgreSQL/MinIO stack run, real-page accuracy/latency study, quality-bucket calibration or OCR word-alignment evaluation. Actual OCR returns line regions; neural M5 still cannot consume these as word boxes. M5/M6 fixture outputs are not faithful extraction/mark results from the new OCR pages and assessments remain explicitly fixture-derived where appropriate.
+- Native macOS Paddle loads but inference stalled; serving evidence is Linux Docker only. Missing/corrupt prerequisites fail closed; no automatic fallback engine or weight download.
+- Unreadable pages retain precise job/DLQ reasons, not committed failed page artifacts. Superseded queued jobs use existing non-replayable dead-letter/failure states rather than introducing the specification's proposed `superseded` state; no page-read completion event emitted. Source originals and successful historical pages remain immutable.
+- Confidence does not reliably identify obscured print; specification now records the synthetic high-confidence-error limitation. This does not claim full real-page FR-17 acceptance.
+- Model files stay ignored/local. Earlier dataset/document-plan changes remain uncommitted; unrelated damage YAML selection and presentation files are preserved.
+
+Next concrete step and agreed owner (or unassigned): document lane, unassigned—run the opt-in OCR overlay in an isolated full infrastructure acceptance stack, then evaluate permitted photographed estimates by fixed quality/obscuration buckets. Validate an actual word-localization route before wiring neural M5; wire M5/M6 separately rather than treating fixture downstream stages as completed.
+
+
+## M5 and M6 training notebooks on M4 output: built, reviewed, corrections interrupted (2026-10-13)
+
+Date/time and timezone: 2026-10-12 to 2026-10-13 21:30, Asia/Singapore.
+Contributor / coding agent: Claude Code as coordinator, with user-requested subagents (M4 cache builder, environment probe, one author and one independent reviewer per notebook, one correction agent per notebook). The correction agents were stopped mid-task at the user's request when the account ran out of usage. **This entry is a handoff for the agent that finishes the correction pass.**
+Task and relevant module: training notebooks for M5 (line items, FR-18 to FR-21) and M6 (pen marks, FR-22/FR-23) that consume real M4 output on `data/raw/synthetic_motor_claims_500_w_annotation` and export registry candidates; M5 stretch S1 route, M6 specification 7.3 stage 1.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `ec8bcba` / uncommitted; no push.
+
+### State in one paragraph
+
+Both notebooks exist, each ran once end to end with the full recipe on 2026-10-12, and each has an exported `candidate`. Two independent reviewers reproduced every reported number with their own code and found no leakage and no test-split use. They also found conclusions stated too strongly, the worst being the M6 linking section. A correction pass was started and stopped part-way: **helper modules, the M5 adapter, the M6 detector loader and their tests are already corrected (596 passed, 1 skipped on `tests/unit/m4 m5 m6`), but neither notebook has been rebuilt, re-executed or re-exported.** The tracked notebooks are therefore the uncorrected revisions, now sitting on changed helpers, and have not been re-run against them.
+
+### Changed paths
+
+- New, M4 cache: `pipelines/documents/__init__.py`, `pipelines/documents/m4_cache.py` (builder CLI, `load_m4_cache`, `source_to_corrected_boxes`, `corrected_boxes_to_norm`), `tests/unit/m4/test_m4_cache.py` (14 tests), receipt `data/manifests/synthetic_motor_claims_m4_cache_20261012.json` (holds the exact Docker build command).
+- New, M5: `notebooks/M5_Document_Worker.ipynb`; `pipelines/documents/lineitems_{data,training,eval}.py`; `tests/unit/m5/test_m5_lineitems_{data,eval,training}.py`.
+- Changed, M5: `src/claim_cmev/documents/line_items/layoutlmv3.py` (a checkpoint declares its text unit in `preprocessing.json`; absent means `word`, so the teammate's checkpoint behaves as before; `page_words`/`encode_page` are the single encoding path for training and serving), `scripts/extract_line_items_layoutlmv3.py` (`--device mps`), `docs/layoutlmv3_line_item_extraction.md` (dated note), `tests/unit/m5/test_m5_layoutlmv3.py`.
+- New, M6: `notebooks/M6_Document_Worker.ipynb`; `pipelines/documents/penmarks_{data,training,evaluation}.py`; `src/claim_cmev/documents/pen_marks/detector.py` (`PenMarkDetector`, `TorchFasterRCNNDetector`, `verify_penmark_entry`, `load_penmark_detector`; torch imported lazily; no Kafka consumer, overlay or fixture detector); `tests/unit/m6/test_m6_detector.py`, `test_m6_penmarks_{data,evaluation,training,notebook}.py`.
+- Changed, M6: `src/claim_cmev/documents/pen_marks/__init__.py` (exports). `configs/pipeline/m6_linking.yaml` and the linker are unchanged.
+- Ignored outputs:
+  - M4 cache `data/processed/synthetic_motor_claims_500_w_annotation/m4-v1/` (642 MB, schema `cmev-m4-cache/1`, manifest SHA-256 `634f91a5…`).
+  - M5 run `artifacts/models/lineitems/lineitems-layoutlmv3-20261012T143930Z-ec8bcba-s20260922/` and candidate `…-serving/`; reports and figures under `artifacts/evaluation/<same id>/`, including `rows_for_m6_validation.json` (schema `cmev-m5-rows-for-m6/1`, 38 pages, 192 rows, written by the coordinator through the serving adapter).
+  - M6 run `artifacts/models/penmarks/penmarks-fasterrcnn-20261012T145839Z-8529778e/` and candidate `…-serving/`; figures under `artifacts/evaluation/<same id>/`.
+  - Executed copies in `artifacts/evaluation/notebook-validation/`: `M5_Document_Worker-{run,reload}-20261012.*`, `M6_Document_Worker-run-20261012.*`.
+  - Pretrained weights cached under `artifacts/models/.cache/` (LayoutLMv3 base, two torchvision detectors).
+- Handoff material (ignored, copied out of the session scratchpad): `runtime/handoff-m5-m6-20261013/`. It holds the notebook builders, the briefs, the two correction lists and the reviewers' scripts. See "Next concrete step".
+
+### Decisions (all proposed unless marked) and references
+
+- Accepted by the user at the start: build two notebooks that consume M4 output on the annotated 500-page dataset, with multiple agents.
+- M4 input: both notebooks load a cache of the real M4 adapter's output (PaddleOCR in the Linux image `claim-cmev-worker-ocr:m4-check`; Paddle does not complete inference natively on this Mac).
+- M5 unit: one M4 line box is one unit to classify (the region-level representation that `docs/document-neural-workflow.md` says needs measured justification). Labels keep the `part_N_<field>` row-slot names of `notebooks/Document_Worker.ipynb`, plus `O`. Label policy `m5-box-label-alignment/0.1.0`: intersection over the smaller box, threshold 0.5; a box over print and handwriting is masked.
+- M6: Faster R-CNN ResNet-50 FPN, torchvision default anchors, 800/1333, stage 1 (synthetic) only. The anchor and resolution comparisons were too short to discriminate; the defaults are kept as the specification defaults.
+- M6 score thresholds selected on validation by rule: exclusion 0.90, price change 0.59. The exclusion value sits on a cliff (recall 53/54 at 0.90, 37/54 at 0.95; also 53/54 at the configured 0.50 with 49 false positives instead of 21). Not written to any configuration.
+- Not decided: which row box M5 supplies to M6 and whether the linker band then needs tuning; whether a cross plus its remark is one mark or two; whether the `document-model` extra's `transformers <5` pin is needed (no measurement showed it is; `pyproject.toml` not edited).
+
+### Checks actually run and results (synthetic validation only; the test split was never read)
+
+- Tests on the working tree as left: `MPLBACKEND=Agg venv/bin/python -m pytest -q tests/unit/m4 tests/unit/m5 tests/unit/m6` gives **596 passed, 1 skipped**. Full suite before the correction pass: 1945 passed, 1 skipped, 1 failed (the existing `test_m2_serving` damage-configuration test). The full suite was not re-run after the correction agents' edits.
+- M4 cache: 500 pages, 497 complete, 3 unreadable estimate pages (`SYN-00093_P2` train, `SYN-00201_P2` and `SYN-00213_P2` validation; nested OCR regions). 29,402 line-level boxes. Identity geometry on every page. OCR misses the quantity cell for about 85% of rows; only 46% of amounts under an amount-cross mark are read exactly, often with high confidence; handwriting under a printed remark is merged into one box in 194 cases.
+- Environment: both models train on MPS in `venv` (transformers 5.19) without fallback. LayoutLMv3 weights are key-compatible between transformers 4.46.3 and 5.19 in both directions; the export uses a processor file layout both versions load. A freshly built detector passes a strict load but differs unless frozen batch-norm `eps` is 0.0; the loader restores it from `preprocessing.json`.
+- M5 reference run (14 of 20 epochs, epoch 9 selected, 22 minutes), validation 76 pages, reproduced by the reviewer:
+  - 4,324 of 4,324 scored boxes labelled correctly (2,128 field boxes); 32 boxes masked; 301 ground-truth fields had no usable M4 box.
+  - The score is real but trivial: a nearest-neighbour lookup on box coordinates alone gets 4,285 of 4,324.
+  - Rows: 206 true rows; 192 completely labelled among delivered fields; 28 with all four fields (quantity reached M5 for 28 rows); 14 rows on unreadable pages.
+  - Position dependence: field type survives vertical shifts, row slot does not (716/716 at 10 px, 311/716 at 40 px, 19/716 at 79 px down). **Do not serve this candidate on pages not aligned with the training layout.**
+  - Through `LocalLayoutLMv3` and `adapt_predictions`: printed amount exact for 177 of 206 rows; a wrong well-formed amount accepted in 12 rows (all with ink over the amount); quantity right 21, wrong 3 (a printed 1 read as 7), null 168; part code mapped for 90 (vocabulary not edited); completeness `partial` for 38 of 38 claims.
+- M6 reference run (20 epochs, best epoch 17, 37 minutes), validation 100 marks on 76 pages, reproduced by the reviewer:
+  - Price change: 46 of 46 found, no false positive, AP@0.5 1.000.
+  - Exclusion: 53 of 54 found, 21 false positives, AP@0.5 0.849. 19 of the 21 are a part (cross, remark or strike alone) of a mark that was found; none is on a page without marks or on a tick or review note.
+  - Linking with the unchanged linker, per-row recall at the selected thresholds (precision was 100% in every case):
+
+    | Rows given to the linker | Exclusion | Price change |
+    | --- | ---: | ---: |
+    | Full table-row band (what the tracked notebook's text describes) | 16/54 | 46/46 |
+    | Union of the row's printed cells (specification step 4) | 49/54 | 46/46 |
+    | Rows from the M5 candidate (the real M4 to M5 to M6 chain) | 33/54 | 43/46 |
+
+  - The exported detector gives identical detections through `load_penmark_detector`, also on CPU.
+- Not run: any test-split evaluation; real pages; Docker, Kafka or the worker runtime; a second training run; the notebooks after the correction agents' helper edits.
+
+### Uncommitted work, limitations and known inconsistencies
+
+- Nothing is committed. The two presentation files and the user's `configs/models/damage.yaml` selection were left alone.
+- **`notebooks/M6_Document_Worker.ipynb` is wrong in one place and must not be relied on there:** its linking section says the linker, not the detector, limits exclusions and that the linker configuration needs a team decision. That came from stand-in rows built from the full table-row band, which the coordinator's brief specified in error. `penmarks_data.py` now builds rows as the union of printed cells, so a re-run prints different numbers from the notebook's text. The M6 candidate's manifest carries the old 16/54 figure under `row_level_with_oracle_rows`.
+- **`notebooks/M5_Document_Worker.ipynb` is uncorrected:** it does not report the three wrongly accepted quantities, one sentence in section 8.7 contradicts its output, the shift probe only moves pages down, and the M5 candidate's `known_limits` omits the position-dependence finding.
+- Both tracked notebooks are generated files (edit the builder, not the `.ipynb`). The builder parts under `runtime/handoff-m5-m6-20261013/m5/` and `m6/nb_parts/` may be partly patched by the stopped agents; originals are in `fix-m5/builder-before/` and `fix-m6/backup/`.
+- The M6 correction agent's own log is `runtime/handoff-m5-m6-20261013/fix-m6/PROGRESS.md`: step 1 (helpers, loader, tests) done, step 2 (notebook builder) in progress. The M5 correction agent left no log; it had edited `layoutlmv3.py`, `lineitems_eval.py`, `lineitems_training.py` and the M5 tests and was writing helper tests.
+- All evidence is synthetic: one page layout, three handwriting fonts, no photograph. No specification target is evaluated. Thresholds, the label policy and both recipes are proposed.
+- This Mac idle-sleeps after one minute. Wrap long jobs in `caffeinate -i -s`.
+- The synthetic dataset is not listed in `data/manifests/dataset_sources.json`.
+
+### Next concrete step and agreed owner (or unassigned)
+
+Unassigned; the next agent finishes the correction pass. No retraining is needed.
+
+1. Read `runtime/handoff-m5-m6-20261013/briefs/fix_m5.md` and `fix_m6.md`. They are the complete correction lists (reviewer findings plus the coordinator's). Paths inside them that start with `/private/tmp/…/scratchpad/` now live under `runtime/handoff-m5-m6-20261013/`. `brief_common.md`, `brief_m5.md`, `brief_m6.md` and `facts_phase1.md` there give the requirements and the measured environment and data facts.
+2. Check what the stopped agents already did: `git diff` on the changed files, `fix-m6/PROGRESS.md`, and the patch scripts in `fix-m5/` and `fix-m6/`. Run the tests above first.
+3. Finish the notebook builder edits, rebuild each notebook, and run each headlessly in quick mode (`m5/run_notebook.py`, `m6/run_notebook.py`).
+4. Re-execute each corrected notebook in reload mode against its saved run with export on, producing new candidates (`…-serving-r2`) and executed copies dated 2026-10-13; then delete the superseded `…-serving` entries and the 2026-10-12 executed copies. No configuration references them.
+5. Then update `notebooks/README.md` (no entry for M5 or M6 yet), add dated notes to the M5 and M6 specifications, and run the full test suite.
+
+
+## M5/M6 notebook correction pass completed with saved weights (2026-10-13)
+
+Date/time and timezone: 2026-10-13 21:42, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: finish the interrupted M5/M6 correction lists; no retraining.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `ec8bcba` / uncommitted; no push.
+
+### Changed paths and completed behaviour
+
+- Rebuilt `notebooks/M5_Document_Worker.ipynb` (49 Markdown / 44 code cells) and `M6_Document_Worker.ipynb` (57 Markdown / 51 code cells) from the ignored builders under `runtime/handoff-m5-m6-20261013/m5/` and `m6/nb_parts/`; no hand-edited notebook JSON. Builders/runners locate this checkout rather than a retired scratchpad.
+- M5: corrected quantities/amount caveats, merged-box explanation, expanded shift probes, coordinate-only baseline, guards and portable display; atomic actual-M5 row handoff. All 38 estimate pages and 192 row/amount boxes match the prior handoff exactly; lineage now names the M5 r2 entry.
+- M6: primary printed-cell-union rows, full-band contrast and actual M5 rows side by side; corrected report keys and conclusions; threshold plateaus/neighbours/alternatives and claim-half checks; independent torchvision serving reference and best-epoch history comparison; set-matched eps probe; readable figures with component proposals coloured by correct row. Scratch artifacts roots are respected in reload mode.
+- `pipelines/documents/m4_cache.py` now accepts an optional split selection before hashing or deserializing page artifacts, with a new fixture regression in `tests/unit/m4/test_m4_cache.py`. `lineitems_data.py` accepts optional annotation split and claim-ID filters. Both notebooks load train/validation page artifacts only; shared manifests/JSONL provide provenance and partition filtering.
+- Added notebook README entries and dated evidence notes to `docs/specs/module-05-line-item-extraction.md` and `module-06-pen-mark-recognition.md`. Inherited helper/loader fixes remain intact.
+
+### Decisions and scope
+
+The user clarified **saved weights only; skip optimization**. Consequently quick checks also reload saved runs on smaller validation subsets; the training loop and M6 optimization walkthrough were not exercised in this pass. This supersedes the correction briefs' disposable-training request. All evidence remains synthetic validation evidence; no specification target is established. Thresholds, recipes, geometry decisions and composite-mark labelling remain proposed. No protected configuration, vocabulary or teammate checkpoint was edited.
+
+### Checks actually run and artifacts
+
+- Initial requested M4/M5/M6 suite: **596 passed, 1 skipped** (55.42 s). The new split-filter fixture failed first for the missing keyword, then passed. Cache plus notebook checks: **20 passed**; final M6 notebook convention check: **5 passed**.
+- Full suite: `caffeinate -i -s env MPLBACKEND=Agg venv/bin/python -m pytest -q`: **1,984 passed, 1 skipped, 1 failed** (162.63 s). The sole failure is the existing `tests/unit/m2/test_m2_serving.py::test_the_served_damage_configuration_names_the_hitl_model_and_its_taxonomy`: it expects `damage-hitl/0.1.0-b3-compound`, while the user's config selects `damage-hitl/damage-segformer-20261010T005752Z-e8a37ef9-serving`. Neither that test nor the protected damage config was changed.
+- Final quick reloads with scratch export: M5 **44/44 code cells**, 32 s; M6 **51/51**, 76 s. Full saved-run reload/export: M5 **44/44**, 84 s; M6 **51/51**, 109 s. No cell errors. All long notebook jobs used `caffeinate -i -s`; no sleep interruption observed.
+- M6 final-evaluation branch exercised in scratch with validation only: **51/51 code cells**, 86 s, report `splits: ["validation"]`, 76 pages. Actual held-out test evaluation was not run. The smoke runner's scratch filename is `final_test_report.json`, but its contents are validation evidence.
+- Changed figures inspected; corrected the misleading zero-qualifying-candidate explanation and component-link colours. Tracked notebooks validate, have cleared outputs/null execution counts and kernel `claim-cmev`. Final IPYNB/HTML copies: `artifacts/evaluation/notebook-validation/M{5,6}_Document_Worker-reload-20261013.*`. `git diff --check` passes.
+- M5 r2 candidate: `artifacts/models/lineitems/lineitems-layoutlmv3-20261012T143930Z-ec8bcba-s20260922-serving-r2/`; weights SHA-256 `3310a2d4340480bcceca4f8573f1ac9255aa923e32f0ba1313e41d674a4bd237`. Serving labels identical on **4,356/4,356 boxes**. Export CPU sample check passed.
+- M6 r2 candidate: `artifacts/models/penmarks/penmarks-fasterrcnn-20261012T145839Z-8529778e-serving-r2/`; weights SHA-256 `b268d07f59b0bb6b32bf56d528a0bae52d8fc8134d5a062c68fe5133fffe9b1e`. Independent export check: **214 detections / 76 pages**, zero differences on MPS; saved best-epoch 17 validation metrics equal live training history. Both hashes equal the original saved checkpoints.
+- After verifying replacements and zero exact old-version references in `configs src infra docs notebooks`, deleted both original `…-serving` directories and the six superseded 2026-10-12 executed IPYNB/HTML files. Original training runs remain. M6 final report/figures live in `artifacts/evaluation/penmarks-fasterrcnn-20261012T145839Z-8529778e/reload-20261013T133555Z/`.
+- Full numbered correction disposition, counts, commands and limitations: `runtime/handoff-m5-m6-20261013/CORRECTION_REPORT.md`; machine-readable checks: `completion_checks.json`; pytest and notebook logs alongside them. Builders remain ignored local handoff material, not committed reproducibility tooling.
+
+### Reproduced synthetic validation findings
+
+| Row source | Oracle exclusion | Detector exclusion | Oracle price change | Detector price change |
+| --- | ---: | ---: | ---: | ---: |
+| Full table band (contrast) | 12/54 | 16/54 | 46/46 | 46/46 |
+| Printed-cell union (primary) | 49/54 | 49/54 | 46/46 | 46/46 |
+| Actual M5 candidate | 30/54 | 33/54 | 43/46 | 43/46 |
+
+Every row precision is 100%. Actual M5 has 192/206 rows, with 14 unavailable on two unreadable pages. Cell-union band sensitivity is flat over upward extensions 0.0–0.6; the old broad-band result does not justify blaming the linker or tuning its config.
+
+M6 detection remains 53/54 exclusions with 21 false positives (19 components of found marks, 2 poorly localised), and 46/46 price changes without false positives. At exclusion thresholds 0.50 / 0.88 / 0.90 / 0.92, found counts are 53 / 53 / 53 / 49 of 54 and false positives 49 / 25 / 21 / 16. The 0.90 plateau is one grid point. Current claim-half checks (seeds 20260922/20260923, both directions) give exclusion recall 31/31, 20/23, 29/29, 21/25; these use different halves from the earlier reviewer probe. Eps comparison: 4 pages change, 4 boxes vanish, 3 appear, max matched-score shift 0.0482945.
+
+M5 remains 4,324/4,324 scored labels vs 4,285/4,324 for coordinates alone; 192/206 rows, 177/206 exact amounts, 12 accepted wrong amounts; quantities 21 correct / 3 accepted wrong / 168 null / 14 no line item. All 38 claims stay partial. Expanded shifts confirm position dependence; r2 known limits explicitly prohibit serving on pages not aligned with the training layout.
+
+### Uncommitted work, limitations and next step
+
+Nothing committed or pushed; other contributors' work is preserved. No model retraining, executed optimization walkthrough, held-out test evaluation, real-page evaluation, new CPU-wide M6 check, cross-transformers-version recheck, Docker/Kafka runtime check or deployment. The full suite still has the unrelated M2 expectation failure. No test-split sample was evaluated or inspected; shared metadata/JSONL streaming for partition filtering is distinct from evaluating held-out samples.
+
+Next concrete step (unassigned): team review of M5 layout tolerance/row geometry, composite-mark labels and the threshold trade-off; separately reconcile the stale M2 configuration expectation with the user's selected model. Any training or final test evaluation is future work requiring its own explicit task. The interrupted correction pass itself is complete under the user's no-optimization constraint.

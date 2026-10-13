@@ -11,6 +11,8 @@ Roles (same image, same handlers, same topics):
 - ``damage`` and ``summary``: the opt-in M2 model worker and M3 worker. They run only when
   ``CMEV_DAMAGE_PRODUCER=real`` (which needs real parts);
 - ``image``: ``parts``, ``damage`` and ``summary`` in one process (``cmev-worker-image``).
+- ``ocr``: pinned pretrained M4 page reading; enabled by ``CMEV_OCR_PRODUCER=real``.
+  It has a separate image for its Paddle/NumPy dependencies and never downloads weights.
 
 Every role runs the outbox relay; a PostgreSQL advisory lock lets only one publish at a
 time. Start-up refuses (exit 1) when the database is not at the expected Alembic head, for
@@ -35,7 +37,7 @@ from .messaging.outbox import relay_once
 from .messaging.transport import TransportUnavailable
 from .orchestration.consolidation import Consolidator
 from .orchestration.plan import VersionBundle, real_stage_versions
-from .orchestration.services import IMAGE_ROLES, ROLES, RuntimeSettings, build_runtimes, local_pipeline
+from .orchestration.services import IMAGE_ROLES, STAGE_ROLES, ROLES, RuntimeSettings, build_runtimes, local_pipeline
 from .persistence.migrations import check_head
 from .runtime import Database, setting, utcnow
 
@@ -53,6 +55,11 @@ def startup_checks(database: Database, settings: RuntimeSettings, role: str,
     one of its stages, because the two would share one consumer group.
     """
     info: dict[str, Any] = {"role": role, "profile": settings.profile, "schema_head": check_head(database.engine)}
+    if role == "ocr":
+        if settings.ocr_producer != "real":
+            raise RuntimeError("CMEV_OCR_PRODUCER=real is required on every service before starting the OCR worker; "
+                               "add infra/compose/docker-compose.ocr.yml to switch ownership together")
+        return info
     if role in IMAGE_ROLES:
         stages = IMAGE_ROLES[role]
         if "parts" in stages and settings.parts_producer != "real":
@@ -65,7 +72,7 @@ def startup_checks(database: Database, settings: RuntimeSettings, role: str,
                                "(in Compose, add infra/compose/docker-compose.image.yml)")
         return info
     if not settings.fixture_mode:
-        raise RuntimeError("CMEV_FIXTURE_MODE=false: only fixture stage producers exist; real inference is unavailable")
+        raise RuntimeError("CMEV_FIXTURE_MODE=false: remaining stages still need fixture producers")
     if consolidator is None:
         raise RuntimeError("M8 rule configuration missing")
     info["rules_config_version"] = consolidator.config.rules_config_version  # the orchestrator signs jobs with it
@@ -122,7 +129,26 @@ def load_summary_worker() -> tuple[Any, dict[str, Any]]:
     return make_summary_handler(Storage(), versions, load_summary_config()), {"summary_versions": versions}
 
 
-_STAGE_LOADERS = {"parts": load_parts_worker, "damage": load_damage_worker, "summary": load_summary_worker}
+def load_page_read_worker() -> tuple[Any, dict[str, Any]]:
+    """Verify the pinned registry and load pretrained OCR once, with no downloads at startup."""
+    from .storage import Storage
+    from .documents.text_layout.config import load_page_reading_config
+    from .documents.text_layout.model_config import load_ocr_model_config, verify_ocr_registry
+    from .documents.text_layout.paddle import PaddleOcrEngine
+    from .documents.text_layout.worker import make_page_read_handler
+
+    model, page_config = load_ocr_model_config(), load_page_reading_config()
+    verify_ocr_registry(model)
+    engine = PaddleOcrEngine.from_config(model.model_dir(), page_config)
+    storage = Storage()
+    storage.ready()
+    versions = real_stage_versions("page_read")
+    return make_page_read_handler(engine, storage, versions, page_config), {
+        "ocr_versions": versions, "ocr_model_dir": str(model.model_dir()), "ocr_granularity": engine.info.granularity}
+
+
+_STAGE_LOADERS = {"parts": load_parts_worker, "damage": load_damage_worker, "summary": load_summary_worker,
+                  "page_read": load_page_read_worker}
 
 
 def run(role: str = "combined", local: bool = False) -> None:
@@ -131,15 +157,16 @@ def run(role: str = "combined", local: bool = False) -> None:
     consolidator = versions = None
     handlers: dict[str, Any] = {}
     try:
-        if role not in IMAGE_ROLES:
+        if role not in STAGE_ROLES:
             consolidator = Consolidator(cost_table_root=settings.cost_table_root)
         info = startup_checks(database, settings, role, consolidator)
-        if role in IMAGE_ROLES:
-            for stage in IMAGE_ROLES[role]:
+        if role in STAGE_ROLES:
+            for stage in STAGE_ROLES[role]:
                 handlers[f"{stage}_handler"], loaded = _STAGE_LOADERS[stage]()
                 info.update(loaded)
         else:
-            versions = VersionBundle.for_runtime(settings.parts_producer, settings.damage_producer)
+            versions = VersionBundle.for_runtime(settings.parts_producer, settings.damage_producer,
+                                                  getattr(settings, "ocr_producer", "fixture"))
     except Exception as exc:  # noqa: BLE001 - refuse to start, never run degraded
         log.error("refusing to start %s: %s", role, exc)
         READY_MARKER.unlink(missing_ok=True)
@@ -149,6 +176,7 @@ def run(role: str = "combined", local: bool = False) -> None:
         log.warning("Explicit local development transport selected; Kafka is not exercised")
         pipeline = local_pipeline(database, settings=settings, role=role, versions=versions, consolidator=consolidator,
                                   parts_producer=settings.parts_producer, damage_producer=settings.damage_producer,
+                                  ocr_producer=settings.ocr_producer,
                                   **handlers)
         READY_MARKER.write_text(str(info))
         while True:
@@ -170,7 +198,8 @@ def run(role: str = "combined", local: bool = False) -> None:
             runtimes = build_runtimes(database.session, role, versions=versions, consolidator=consolidator,
                                       profile=settings.profile, source_kind=settings.source_kind,
                                       parts_producer=settings.parts_producer,
-                                      damage_producer=settings.damage_producer, **handlers)
+                                      damage_producer=settings.damage_producer,
+                                      ocr_producer=getattr(settings, "ocr_producer", "fixture"), **handlers)
             for rt in runtimes:
                 consumers.append((rt, KafkaConsumerTransport(servers, rt.group, rt.topics, client)))
             READY_MARKER.write_text(str(info))

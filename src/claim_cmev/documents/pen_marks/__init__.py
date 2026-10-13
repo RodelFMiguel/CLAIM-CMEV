@@ -3,10 +3,13 @@
 See docs/specs/module-06-pen-mark-recognition.md. ``link_marks`` turns detector boxes
 into ``pending`` marks linked to M5 rows only when unambiguous; ``apply_mark_action``
 applies surveyor decisions for ``cmev-api``; the row helpers give M8 and M9 each row's
-derived mark state. The Faster R-CNN detector, the Kafka consumer and overlay rendering
-are not implemented here, and no detection or linking accuracy has been measured.
+derived mark state. ``load_penmark_detector`` loads a trained Faster R-CNN from a verified
+registry entry; it imports torch only when called, so this package imports without it.
+The Kafka consumer and overlay rendering are not implemented here, and no detection or
+linking accuracy on real marked pages has been measured.
 """
 from .config import LinkingConfig, load_linking_config
+from .detector import DetectorSettings, PenMarkDetector, TorchFasterRCNNDetector, load_penmark_detector
 from .linking import (
     Detection,
     LinkingResult,
@@ -41,9 +44,10 @@ from .state import (
 )
 
 __all__ = [
-    "ACTION_ERROR_CODES", "MARK_ACTION_TYPES", "WITHHOLDING_STATES", "Detection", "LinkingConfig", "LinkingResult",
-    "MarkAction", "MarkCandidate", "MarkTransition", "MergedDetection", "RowBox", "RowMarkState", "RowScore",
-    "apply_mark_action", "apply_review_event", "conflicting_entry_ids", "decide_link", "link_detections",
-    "link_marks", "load_linking_config", "mark_action_from_review_event", "marks_for_entry", "row_box_of",
-    "row_mark_state", "row_mark_states", "score_row", "transition_mark", "unresolved_marks",
+    "ACTION_ERROR_CODES", "MARK_ACTION_TYPES", "WITHHOLDING_STATES", "Detection", "DetectorSettings", "LinkingConfig",
+    "LinkingResult", "MarkAction", "MarkCandidate", "MarkTransition", "MergedDetection", "PenMarkDetector", "RowBox",
+    "RowMarkState", "RowScore", "TorchFasterRCNNDetector", "apply_mark_action", "apply_review_event",
+    "conflicting_entry_ids", "decide_link", "link_detections", "link_marks", "load_linking_config",
+    "load_penmark_detector", "mark_action_from_review_event", "marks_for_entry", "row_box_of", "row_mark_state",
+    "row_mark_states", "score_row", "transition_mark", "unresolved_marks",
 ]

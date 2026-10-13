@@ -325,3 +325,22 @@ Result handed to M8: `e-003` is excluded and not checked; `e-005` has a resolved
 - Whether `cmev-worker-penmarks` should also subscribe to `cmev.evt.page-read.v1` to start detection before rows exist. That would cut latency and add cross-topic state, so it is currently rejected in favour of the orchestrator join.
 - All score thresholds, band fractions, weights and margins. They are placeholders until validation data exists.
 - Whether the right-margin tolerance needs to be set per layout family.
+
+
+## Notebook correction evidence, 2026-10-13
+
+The corrected [M6 notebook](../../notebooks/M6_Document_Worker.ipynb) reloads the stage-1 run `penmarks-fasterrcnn-20261012T145839Z-8529778e`; no model was retrained in this correction pass. Reduced-data checks and full validation use saved weights; the optimization walkthrough is skipped during reload. Builders are retained under `runtime/handoff-m5-m6-20261013/m6/`.
+
+Step 4's row definition is now explicit in both reports and registry metrics. With identical detections and the unchanged linker, synthetic validation produces:
+
+| Row source | Exclusion rows flagged | Price-change rows flagged |
+| --- | ---: | ---: |
+| Full table-row band (contrast) | 16/54 | 46/46 |
+| Union of printed cells (primary oracle) | 49/54 | 46/46 |
+| Actual M5 candidate rows | 33/54 | 43/46 |
+
+Precision is 100% in each case. With oracle detections, exclusion recalls are respectively 12/54, 49/54 and 30/54. Actual M5 supplies 192/206 rows: 14 are unavailable on two unreadable pages, and some delivered boxes extend beyond the ideal printed-cell union. The former conclusion that the linker alone limits exclusions arose from inappropriate stand-in table bands. Establish M5's supplied row geometry before deciding whether its linking band needs tuning.
+
+Detection at the rule-selected thresholds (exclusion 0.90, price change 0.59) finds 53/54 exclusions with 21 false positives, and 46/46 price changes with none. Nineteen false positives are components of already-found composite marks; two are poorly localised. The exclusion near-best-F1 interval is only 0.90–0.90. The configured 0.50 alternative preserves 53/54 recall with 49 false positives. Both alternatives, neighbouring threshold counts and claim-half checks are reported as proposed. Validation selected the epoch, thresholds and reported operating point, so those figures are optimistic. Short anchor and resolution comparisons remain inconclusive; defaults are retained as specification defaults.
+
+The replacement candidate is `penmarks/penmarks-fasterrcnn-20261012T145839Z-8529778e-serving-r2`. Serving verification compares actual detections with an independent torchvision construction and checks metrics against live training history at the saved best epoch. Hash checks detect accidental edits; they do not authenticate a manual approval or prevent coordinated edits to records and hashes. No linking configuration was changed. All results are synthetic validation evidence: no specification target, real-page result, worker runtime or Kafka integration is established. The next decisions concern row geometry, composite-mark labelling and the threshold trade-off.

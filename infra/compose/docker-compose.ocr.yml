@@ -1,0 +1,53 @@
+# Add independently to either fixture or real-image Compose mode.
+x-ocr-real: &ocr-real
+  CMEV_OCR_PRODUCER: real
+  CMEV_OCR_MODEL_CONFIG: /srv/configs/models/ocr.yaml
+  CMEV_OCR_MANIFEST: /srv/configs/models/ocr-manifest.json
+  CMEV_M4_CONFIG: /srv/configs/pipeline/m4_page_reading.yaml
+
+services:
+  cmev-api:
+    environment: *ocr-real
+  cmev-worker-combined:
+    environment: *ocr-real
+  cmev-orchestrator:
+    environment: *ocr-real
+  cmev-worker-producers:
+    environment: *ocr-real
+  cmev-consolidator:
+    environment: *ocr-real
+  cmev-worker-ocr:
+    profiles: [lean, full]
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile.ocr
+    image: claim-cmev-worker-ocr:pipeline
+    depends_on:
+      cmev-api:
+        condition: service_healthy
+      cmev-kafka:
+        condition: service_healthy
+    command: [python, -m, claim_cmev.worker, run, --role, ocr]
+    environment:
+      <<: *ocr-real
+      CMEV_WORKER_ROLE: ocr
+      CMEV_PROFILE: ${CMEV_PROFILE:-lean}
+      CMEV_FIXTURE_MODE: "true"
+      CMEV_DATABASE_URL: postgresql+psycopg://cmev:${CMEV_DB_PASSWORD:?Set CMEV_DB_PASSWORD}@cmev-db:5432/cmev
+      CMEV_KAFKA_BOOTSTRAP: cmev-kafka:9092
+      STORAGE_BACKEND: s3
+      CMEV_OBJECT_STORE_ENDPOINT: http://cmev-objectstore:9000
+      CMEV_OBJECT_STORE_ACCESS_KEY: ${CMEV_OBJECT_STORE_ACCESS_KEY:?Set object-store access key}
+      CMEV_OBJECT_STORE_SECRET_KEY: ${CMEV_OBJECT_STORE_SECRET_KEY:?Set object-store secret key}
+      CMEV_OBJECT_STORE_BUCKET: cmev-evidence
+      CMEV_MODEL_REGISTRY_PATH: /srv/artifacts/models
+    volumes:
+      - ${CMEV_MODEL_REGISTRY_HOST_PATH:-../../artifacts/models}:/srv/artifacts/models:ro
+    healthcheck:
+      test: [CMD, python, -m, claim_cmev.worker, healthcheck]
+      interval: 15s
+      timeout: 5s
+      start_period: 90s
+      retries: 4
+    networks: [backend]
+    restart: unless-stopped

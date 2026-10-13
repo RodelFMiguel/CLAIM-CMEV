@@ -19,7 +19,7 @@ def main() -> int:
     parser.add_argument("--family-id", required=True, help="Explicit configured family for numeric conventions")
     parser.add_argument("--currency", required=True, help="Explicit claim/document ISO currency")
     parser.add_argument("--cost-basis", required=True)
-    parser.add_argument("--device", default="cpu", choices=("cpu", "cuda"))
+    parser.add_argument("--device", default="cpu", choices=("cpu", "cuda", "mps"))
     parser.add_argument("--min-confidence", type=float, default=0.5)
     parser.add_argument("--layout-config", type=Path)
     parser.add_argument("--vocabulary", type=Path)

@@ -40,14 +40,28 @@ Named volumes `postgres-data`, `kafka-data`, `objectstore-data` and `cost-tables
 | `cmev-db` | PostgreSQL application state | `pg_isready` |
 | `cmev-objectstore` | Private S3-compatible evidence storage | `/minio/health/ready` |
 
-Only nginx publishes a host port. Database, broker, object store and API communicate on an internal network. Evidence goes through the authenticated API. The offline cost-bootstrap job publishes a deterministic synthetic table into the cost-tables volume without network access. API and workers mount that volume read-only and pin a table per assessment. No trained model registry is consumed unless the parts worker's Compose file is added (see below).
+Only nginx publishes a host port. Database, broker, object store and API communicate on an internal network. Evidence goes through the authenticated API. The offline cost-bootstrap job publishes a deterministic synthetic table into the cost-tables volume without network access. API and workers mount that volume read-only and pin a table per assessment. Optional parts, image and OCR overlays mount their selected model registries read-only (see below).
 
 API startup applies Alembic migrations, seeds demonstration claims and initializes the evidence bucket. Readiness checks the expected schema head. Workers start after API and broker health and cost-bootstrap completion. Topics are explicitly created by worker startup; broker topic auto-creation is disabled. Outbox requests can remain pending during a broker outage.
 
-Use --profile full instead of --profile lean to run the split fixture services. Stop cmev-worker-combined before switching an existing project to full; stop the split services before switching back. Full still groups all fixture producers in one container. The only per-model container is the opt-in M1 parts worker described below; the other model containers, GPU parity and dedicated migration-job packaging remain future work.
+Use --profile full instead of --profile lean to run the split fixture services. Stop cmev-worker-combined before switching an existing project to full; stop the split services before switching back. Full still groups the remaining fixture producers in one container. Opt-in containers implement the image branch and M4 OCR; M5/M6 model workers, GPU parity and dedicated migration-job packaging remain future work.
 
 
-`CMEV_FIXTURE_MODE=true` is explicit in Compose. Setting it false does not enable real inference: the backend refuses unsupported live processing. The one exception is the parts stage, which is switched by adding `docker-compose.parts.yml`. The demo uses one local account and HTTP cookies; deployment authentication, TLS, scoped service credentials and production hardening are outside this baseline.
+`CMEV_FIXTURE_MODE=true` is explicit in Compose. Keep it enabled for the remaining fixture stages. Parts, image and OCR overlays switch only the stages owned by their live workers. The demo uses one local account and HTTP cookies; deployment authentication, TLS, scoped service credentials and production hardening are outside this baseline.
+
+## Optional pretrained OCR: M4
+
+Provision the pinned English OCR release with `python scripts/download_ocr_models.py`,
+then add `infra/compose/docker-compose.ocr.yml` to the base Compose files. It sets
+`CMEV_OCR_PRODUCER=real` across the coordinating services and starts `cmev-worker-ocr`
+with its separately pinned Paddle/NumPy environment. The overlay can also be combined
+with the image overlay. It reads uploaded PDF/image bytes, stores corrected pages and
+located OCR evidence, and emits the existing page-read completion event. M5 and M6
+remain fixtures; the full document lane is not thereby model-integrated.
+
+See [M4 setup, weights and validation](../docs/m4-ocr-worker.md) for exact commands
+and limitations. Missing/corrupt weights or incompatible config prevent startup;
+there are no automatic runtime downloads or alternative-engine fallbacks.
 
 ## Optional real image branch: M1, M2 and M3
 

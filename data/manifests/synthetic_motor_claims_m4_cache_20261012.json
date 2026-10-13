@@ -1,0 +1,164 @@
+{
+ "schema": "cmev-m4-cache/1",
+ "receipt_for": "data/processed/synthetic_motor_claims_500_w_annotation/m4-v1 (ignored by Git)",
+ "builder": "pipelines/documents/m4_cache.py",
+ "created_at": "2026-10-12T01:22:25+00:00",
+ "cache_manifest_sha256": "634f91a57cb5de20a75cca780999a6b7f7dfa23eff1029bef9d5c5e9caeb610a",
+ "cache_complete": true,
+ "cache_bytes": 669336673,
+ "dataset": {
+  "annotations_sha256": "48f145c227c661ed2314a3f914e22c0d4861fc12d2f30c0735c86b7ab7141413",
+  "manifest_sha256": "f5e0aa4ed0202c58328d690811faf54fbde508a7db0dd6a85132359b3bfaa3b3",
+  "name": "synthetic_motor_claims_500_w_annotation",
+  "page_count": 500,
+  "provenance_sha256": "0cecae329f238a387e19e415feee80cb248a2a0a5ec6e0bb8bb74cb0a1e8cce1",
+  "local_path": "data/raw/synthetic_motor_claims_500_w_annotation (ignored by Git)",
+  "provenance": "fully synthetic pages with font-rendered surveyor ink; see the dataset's provenance.json",
+  "split_policy": "inherited unchanged from the dataset manifest: grouped by claim, both pages of a claim in one partition"
+ },
+ "claim_id_derivation": "crockford_base32(sha256('<dataset name>:<dataset claim id>')[:16 bytes]), 26 characters",
+ "m4": {
+  "versions": {
+   "code": "0.2.0",
+   "m4_code": "m4-text-layout/0.1.0",
+   "ocr": "paddleocr/2.10.0",
+   "ocr_engine": "paddleocr",
+   "ocr_lang": "en",
+   "ocr_manifest_sha256": "48c6210a13a469ff6e4bd24398b09a842c36f1da45bd51cfe1a1cf0f8e7c1e45",
+   "ocr_model_config": "ocr-model-config/1.0.0",
+   "ocr_version": "2.10.0",
+   "ocr_weights": "ocr/paddleocr-2.10.0-en-v1",
+   "ocr_weights_angle": "ch_ppocr_mobile_v2.0_cls_infer@sha256:d1efda1b80e174b4",
+   "ocr_weights_detection": "en_PP-OCRv3_det_infer@sha256:83676ec730627ab4",
+   "ocr_weights_recognition": "en_PP-OCRv4_rec_infer@sha256:75f64a1ffb70c56b",
+   "page_config": "m4-page-reading/0.1.0",
+   "page_config_sha256": "aedd887d8cf00f5fec1dfd83d98e8f484a06c981aa9bdf7ff086ffa97a174ad0",
+   "preprocess_config": "m4-page-reading/0.1.0"
+  },
+  "page_config_version": "m4-page-reading/0.1.0",
+  "page_config_sha256": "aedd887d8cf00f5fec1dfd83d98e8f484a06c981aa9bdf7ff086ffa97a174ad0",
+  "m4_code_version": "m4-text-layout/0.1.0",
+  "m4_source_sha256": "a9b2fbed6b7d5bb50e2cf0eaa484ee064eb5fa094cc49ac89f251ca5ee193623",
+  "ocr_model_version": "ocr/paddleocr-2.10.0-en-v1",
+  "source_kind": "synthetic",
+  "producer_service": "m4-cache-builder",
+  "runtime_profile": "lean",
+  "container_image": "claim-cmev-worker-ocr:m4-check",
+  "container_image_id": "sha256:959467e70e20aa8c91f686fbe91a880ce435463a49934ea78b7615b8c4aca4ec",
+  "git_commit": "ec8bcba72d9361f8d576ad4d7de6029cc64aaff0",
+  "git_dirty": true,
+  "environment": {
+   "numpy": "1.26.4",
+   "opencv-python": "4.10.0.84",
+   "opencv-python-headless": "4.10.0.84",
+   "paddleocr": "2.10.0",
+   "paddlepaddle": "2.6.2",
+   "pillow": "12.3.0",
+   "platform": "Linux-6.12.76-linuxkit-aarch64-with-glibc2.36",
+   "pydantic": "2.14.0",
+   "python": "3.12.15"
+  }
+ },
+ "counts": {
+  "by_geometry_correction": {
+   "none": 500
+  },
+  "by_page_status": {
+   "complete": 497,
+   "unreadable": 3
+  },
+  "by_page_type": {
+   "repair_estimate": 250,
+   "survey_assessment": 250
+  },
+  "by_processing_status": {
+   "failed": 3,
+   "succeeded": 497
+  },
+  "by_split": {
+   "test": 74,
+   "train": 350,
+   "validation": 76
+  },
+  "pages": 500,
+  "text_boxes": 29402,
+  "by_split_and_page_type": {
+   "test/repair_estimate": 37,
+   "test/survey_assessment": 37,
+   "train/repair_estimate": 175,
+   "train/survey_assessment": 175,
+   "validation/repair_estimate": 38,
+   "validation/survey_assessment": 38
+  },
+  "text_granularity": {
+   "line": 497,
+   "mixed": 3
+  },
+  "corrected_sizes": {
+   "1240x1754": 500
+  },
+  "render_same_as_rectified": 500
+ },
+ "pages_not_complete": [
+  {
+   "image_id": "SYN-00093_P2",
+   "split": "train",
+   "page_type": "repair_estimate",
+   "processing_status": "failed",
+   "page_status": "unreadable",
+   "reasons": [
+    "granularity_mismatch",
+    "nested_text_boxes"
+   ]
+  },
+  {
+   "image_id": "SYN-00201_P2",
+   "split": "validation",
+   "page_type": "repair_estimate",
+   "processing_status": "failed",
+   "page_status": "unreadable",
+   "reasons": [
+    "granularity_mismatch",
+    "nested_text_boxes"
+   ]
+  },
+  {
+   "image_id": "SYN-00213_P2",
+   "split": "validation",
+   "page_type": "repair_estimate",
+   "processing_status": "failed",
+   "page_status": "unreadable",
+   "reasons": [
+    "granularity_mismatch",
+    "nested_text_boxes"
+   ]
+  }
+ ],
+ "timing": {
+  "ocr_ms_median": 3815.1,
+  "ocr_ms_mean": 3931.1,
+  "ocr_ms_min": 2892.4,
+  "ocr_ms_max": 24369.6,
+  "ocr_seconds_total": 1965.6,
+  "final_run": {
+   "pages_read": 492,
+   "pages_reused": 8,
+   "wall_seconds": 2016.8,
+   "workers": 1
+  }
+ },
+ "build_command": "docker run -d --rm --network none --name cmev-m4-cache-build -v /Users/rodel/Projects/nus/CLAIM-CMEV:/repo:ro -v /Users/rodel/Projects/nus/CLAIM-CMEV/artifacts/models/ocr/paddleocr-2.10.0-en-v1:/srv/artifacts/models/ocr/paddleocr-2.10.0-en-v1:ro -v /Users/rodel/Projects/nus/CLAIM-CMEV/data/processed/synthetic_motor_claims_500_w_annotation/m4-v1:/cache -e PYTHONPATH=/repo/src:/repo -e CMEV_M4_CONFIG=/repo/configs/pipeline/m4_page_reading.yaml -e CMEV_OCR_MODEL_CONFIG=/repo/configs/models/ocr.yaml -e CMEV_OCR_MANIFEST=/repo/configs/models/ocr-manifest.json -w /repo claim-cmev-worker-ocr:m4-check python -m pipelines.documents.m4_cache build --dataset /repo/data/raw/synthetic_motor_claims_500_w_annotation --cache /cache --container-image claim-cmev-worker-ocr:m4-check --container-image-id sha256:959467e70e20aa8c91f686fbe91a880ce435463a49934ea78b7615b8c4aca4ec --git-commit ec8bcba72d9361f8d576ad4d7de6029cc64aaff0 --git-dirty true --workers 1",
+ "build_runs": [
+  "6-page trial in the foreground: the build command without -d, with --limit 6 --workers 1; 6 pages read in 28.5 s",
+  "first full attempt with --workers 2 stopped after 2 pages: a worker process was killed (one OCR process measured about 3.5 GiB; Docker had 7.65 GiB shared with a running application stack). No manifest was written; the 2 pages it had written verified and were kept",
+  "final run: the build command above with --workers 1; 8 pages reused after verification, 492 read in 2016.8 s"
+ ],
+ "verification": "load_m4_cache(cache, dataset, verify='hashes') in the repository venv (Python 3.12, numpy 2, no Paddle): 500 pages; every cached file, the dataset manifest.csv and every source image match their recorded SHA-256",
+ "limitations": [
+  "Synthetic pages only: this cache says nothing about OCR accuracy on real photographed estimates",
+  "OCR regions are text lines, not words",
+  "Three estimate pages are unreadable under M4's own nested-region rule and carry no text boxes; they are recorded as failed, not as empty pages",
+  "The working tree was dirty at build time; m4_source_sha256 identifies the M4 source that ran, the commit alone does not",
+  "PNG bytes depend on the OpenCV build, so a rebuild in another environment can give other rectified.png hashes for the same pixels"
+ ]
+}

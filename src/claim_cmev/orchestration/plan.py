@@ -65,7 +65,8 @@ class VersionBundle:
         return cls(stages=stages)
 
     @classmethod
-    def for_runtime(cls, parts_producer: str = "fixture", damage_producer: str = "fixture") -> VersionBundle:
+    def for_runtime(cls, parts_producer: str = "fixture", damage_producer: str = "fixture",
+                    ocr_producer: str = "fixture") -> VersionBundle:
         """The bundle the orchestrator pins: the fixture tags, replaced for each stage a real worker owns.
 
         ``parts_producer="real"`` pins the configured M1 checkpoint. ``damage_producer="real"``
@@ -75,20 +76,24 @@ class VersionBundle:
         bundle = cls.fixture()
         if damage_producer == "real" and parts_producer != "real":
             raise ValueError("a real damage stage needs a real parts stage: M2 reads the M1 mask")
-        if parts_producer != "real":
-            return bundle
-        stages = ("parts", "damage", "summary") if damage_producer == "real" else ("parts",)
+        stages = list(("parts", "damage", "summary") if damage_producer == "real"
+                      else ("parts",) if parts_producer == "real" else ())
+        if ocr_producer == "real":
+            stages.append("page_read")
         return cls(stages={**bundle.stages, **{stage: real_stage_versions(stage) for stage in stages}},
                    intake=bundle.intake)
 
 
 def real_stage_versions(stage: str) -> dict[str, str]:
-    """The versions of one real image stage: the configured checkpoint, or the M2/M3 rules.
+    """The versions of a real stage: its configured checkpoint, OCR release or rules.
 
     The orchestrator pins them and the stage's worker serves only commands pinned to them, so
     both read them from here. Only the configuration that stage uses is loaded, and no model
     library is imported.
     """
+    if stage == "page_read":
+        from ..documents.text_layout.model_config import load_ocr_model_config
+        return load_ocr_model_config().stage_versions(CODE_VERSION)
     from ..vision.parts.config import load_parts_config
 
     parts = load_parts_config()

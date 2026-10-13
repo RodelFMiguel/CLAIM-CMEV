@@ -155,7 +155,7 @@ def create_app(database_url=None, storage_path=None):
     storage = Storage(storage_path)
     settings = RuntimeSettings.from_env()
     # what the orchestrator pins on new work
-    versions = VersionBundle.for_runtime(settings.parts_producer, settings.damage_producer)
+    versions = VersionBundle.for_runtime(settings.parts_producer, settings.damage_producer, settings.ocr_producer)
     allowed = [s.strip() for s in setting("ALLOWED_ORIGINS", "http://localhost:8080,http://localhost:5173,"
                                           "http://127.0.0.1:5173").split(",")]
     failures = LoginFailures(max_keys=int(setting("LOGIN_FAILURE_MAX_KEYS", "10000")))
