@@ -55,6 +55,12 @@ def startup_checks(database: Database, settings: RuntimeSettings, role: str,
     one of its stages, because the two would share one consumer group.
     """
     info: dict[str, Any] = {"role": role, "profile": settings.profile, "schema_head": check_head(database.engine)}
+    if role in ("lineitems", "penmarks", "document"):
+        if settings.lineitems_producer != "real" or settings.ocr_producer != "real":
+            raise RuntimeError("real document workers require real M4 and M5 ownership on every service")
+        if role in ("penmarks", "document") and settings.penmarks_producer != "real":
+            raise RuntimeError("real M6 ownership is required on every service")
+        return info
     if role == "ocr":
         if settings.ocr_producer != "real":
             raise RuntimeError("CMEV_OCR_PRODUCER=real is required on every service before starting the OCR worker; "
@@ -71,7 +77,8 @@ def startup_checks(database: Database, settings: RuntimeSettings, role: str,
                                "summary commands. Set CMEV_DAMAGE_PRODUCER=real on every service first "
                                "(in Compose, add infra/compose/docker-compose.image.yml)")
         return info
-    if not settings.fixture_mode:
+    if not settings.fixture_mode and not all(p == "real" for p in (settings.parts_producer, settings.damage_producer,
+            settings.ocr_producer, settings.lineitems_producer, settings.penmarks_producer)):
         raise RuntimeError("CMEV_FIXTURE_MODE=false: remaining stages still need fixture producers")
     if consolidator is None:
         raise RuntimeError("M8 rule configuration missing")
@@ -147,8 +154,46 @@ def load_page_read_worker() -> tuple[Any, dict[str, Any]]:
         "ocr_versions": versions, "ocr_model_dir": str(model.model_dir()), "ocr_granularity": engine.info.granularity}
 
 
+def load_line_items_worker():
+    from .storage import Storage
+    from .documents.model_config import load_document_model_config
+    from .documents.line_items.config import load_layout_families
+    from .documents.line_items.vocabulary import load_estimate_vocabulary
+    from .documents.line_items.layoutlmv3 import LocalLayoutLMv3
+    from .documents.line_items.worker import make_line_items_handler
+
+    selection = load_document_model_config("lineitems")
+    selection.verify()
+    model = LocalLayoutLMv3(selection.model_dir(), selection.device)
+    if model.text_unit != selection.text_unit:
+        raise ValueError("selected M5 text unit differs from checkpoint")
+    storage = Storage()
+    storage.ready()
+    versions = real_stage_versions("line_items")
+    return make_line_items_handler(model, storage, versions, selection, load_layout_families(),
+                                   load_estimate_vocabulary()), {"lineitems_versions": versions}
+
+
+def load_pen_marks_worker():
+    from .storage import Storage
+    from .documents.model_config import load_document_model_config
+    from .documents.pen_marks.config import load_linking_config
+    from .documents.pen_marks.detector import load_penmark_detector
+    from .documents.pen_marks.worker import make_pen_marks_handler
+
+    selection = load_document_model_config("penmarks")
+    selection.verify()
+    detector = load_penmark_detector(selection.model_dir(), device=selection.device,
+                                     allow_candidate=selection.allow_candidate)
+    storage = Storage()
+    storage.ready()
+    versions = real_stage_versions("pen_marks")
+    return make_pen_marks_handler(detector, storage, versions, selection, load_linking_config()), {
+        "penmarks_versions": versions}
+
+
 _STAGE_LOADERS = {"parts": load_parts_worker, "damage": load_damage_worker, "summary": load_summary_worker,
-                  "page_read": load_page_read_worker}
+                  "page_read": load_page_read_worker, "line_items": load_line_items_worker, "pen_marks": load_pen_marks_worker}
 
 
 def run(role: str = "combined", local: bool = False) -> None:
@@ -166,7 +211,8 @@ def run(role: str = "combined", local: bool = False) -> None:
                 info.update(loaded)
         else:
             versions = VersionBundle.for_runtime(settings.parts_producer, settings.damage_producer,
-                                                  getattr(settings, "ocr_producer", "fixture"))
+                                                  getattr(settings, "ocr_producer", "fixture"),
+                                                  settings.lineitems_producer, settings.penmarks_producer)
     except Exception as exc:  # noqa: BLE001 - refuse to start, never run degraded
         log.error("refusing to start %s: %s", role, exc)
         READY_MARKER.unlink(missing_ok=True)
@@ -176,7 +222,8 @@ def run(role: str = "combined", local: bool = False) -> None:
         log.warning("Explicit local development transport selected; Kafka is not exercised")
         pipeline = local_pipeline(database, settings=settings, role=role, versions=versions, consolidator=consolidator,
                                   parts_producer=settings.parts_producer, damage_producer=settings.damage_producer,
-                                  ocr_producer=settings.ocr_producer,
+                                  ocr_producer=settings.ocr_producer, lineitems_producer=settings.lineitems_producer,
+                                  penmarks_producer=settings.penmarks_producer,
                                   **handlers)
         READY_MARKER.write_text(str(info))
         while True:
@@ -199,7 +246,9 @@ def run(role: str = "combined", local: bool = False) -> None:
                                       profile=settings.profile, source_kind=settings.source_kind,
                                       parts_producer=settings.parts_producer,
                                       damage_producer=settings.damage_producer,
-                                      ocr_producer=getattr(settings, "ocr_producer", "fixture"), **handlers)
+                                      ocr_producer=getattr(settings, "ocr_producer", "fixture"),
+                                      lineitems_producer=settings.lineitems_producer,
+                                      penmarks_producer=settings.penmarks_producer, **handlers)
             for rt in runtimes:
                 consumers.append((rt, KafkaConsumerTransport(servers, rt.group, rt.topics, client)))
             READY_MARKER.write_text(str(info))

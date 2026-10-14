@@ -66,13 +66,16 @@ class VersionBundle:
 
     @classmethod
     def for_runtime(cls, parts_producer: str = "fixture", damage_producer: str = "fixture",
-                    ocr_producer: str = "fixture") -> VersionBundle:
+                    ocr_producer: str = "fixture", lineitems_producer: str = "fixture",
+                    penmarks_producer: str = "fixture") -> VersionBundle:
         """The bundle the orchestrator pins: the fixture tags, replaced for each stage a real worker owns.
 
         ``parts_producer="real"`` pins the configured M1 checkpoint. ``damage_producer="real"``
         also pins the configured M2 checkpoint and the real M3 rules, and needs real parts,
         because M2 reads the M1 mask. The workers verify these versions against what they load.
         """
+        from .services import validate_document_producers
+        validate_document_producers(ocr_producer, lineitems_producer, penmarks_producer)
         bundle = cls.fixture()
         if damage_producer == "real" and parts_producer != "real":
             raise ValueError("a real damage stage needs a real parts stage: M2 reads the M1 mask")
@@ -80,6 +83,10 @@ class VersionBundle:
                       else ("parts",) if parts_producer == "real" else ())
         if ocr_producer == "real":
             stages.append("page_read")
+        if lineitems_producer == "real":
+            stages.append("line_items")
+        if penmarks_producer == "real":
+            stages.append("pen_marks")
         return cls(stages={**bundle.stages, **{stage: real_stage_versions(stage) for stage in stages}},
                    intake=bundle.intake)
 
@@ -91,6 +98,10 @@ def real_stage_versions(stage: str) -> dict[str, str]:
     both read them from here. Only the configuration that stage uses is loaded, and no model
     library is imported.
     """
+    if stage in ("line_items", "pen_marks"):
+        from ..documents.model_config import load_document_model_config
+        task = "lineitems" if stage == "line_items" else "penmarks"
+        return load_document_model_config(task).stage_versions(CODE_VERSION)
     if stage == "page_read":
         from ..documents.text_layout.model_config import load_ocr_model_config
         return load_ocr_model_config().stage_versions(CODE_VERSION)

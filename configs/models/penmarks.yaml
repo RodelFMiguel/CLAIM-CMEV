@@ -1,0 +1,11 @@
+# Explicit candidate selection for live inference; synthetic validation only.
+model_id: penmarks
+model_version: penmarks/penmarks-fasterrcnn-20261013T142838Z-78d92779-serving
+config_version: penmarks-serving/20261014
+device: cpu
+allow_candidate: true
+files:
+  manifest.json: 6d07db293acb7a8378a67ef59bc1622f93cbf0f11bee2a5134cf029e1957499e
+  model.safetensors: b4bcd791939dcb20d835a793b70d46f877704330dd8d85f11b0fcb0ba29192b0
+  preprocessing.json: b3a9882bb7eeba2d9ce7e76cbfa9b1a89c8461d8a999e1569ff507c2393626d7
+  label_schema.json: f51b46cb51142c5d22c7f7a5ea1b0484d13c6fa83ecf32efed4b5aa9f76bbe6a

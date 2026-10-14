@@ -1006,8 +1006,8 @@ function NewClaim() {
           <div className="inline-info">
             <Info size={16} />
             <span>
-              Processing in this workspace produces labelled demo results.
-              Uploaded evidence is not analysed by a trained model.
+              Results identify whether each branch used models or demonstration fixtures.
+              Review extracted amounts and proposed pen marks before finalizing.
             </span>
           </div>
         </section>

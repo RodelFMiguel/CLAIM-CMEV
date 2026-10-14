@@ -46,7 +46,9 @@ _OBSERVATION_ORIGIN = {"real": "Model observation from the uploaded photographs.
 _IMAGE_REAL_TEXT = "The trained part and damage models analysed the uploaded photographs."
 _DOCUMENT_TEXT = {"fixture": "Estimate rows and pen marks are hand-authored demonstration fixtures; the uploaded "
                              "pages were not read.",
-                  "none": "No estimate page was processed.", "real": ""}
+                  "none": "No estimate page was processed.",
+                  "real": "OCR and the document models analysed the uploaded estimate pages. The models have synthetic validation evidence only.",
+                  "synthetic": "Document results are synthetic evidence."}
 _RULES_TEXT = "The M8 rules ran with a synthetic cost table. Not repair-price validation or a final claim approval."
 
 
@@ -271,6 +273,8 @@ def _row_legacy(finding: Mapping[str, Any], item: Mapping[str, Any], marks: list
 def _mark_legacy(mark: Mapping[str, Any]) -> dict[str, Any]:
     text = _UNLINKED_TEXT if mark["entry_id"] is None and mark["state"] == "pending" else \
         _MARK_TEXT[(mark["mark_type"], mark["state"])]
+    if mark.get("provenance", {}).get("source_kind") != "fixture":
+        text = text.replace(" (fixture detector stand-in)", "")
     return {"mark_id": mark["mark_id"], "entry_id": mark["entry_id"], "type": mark["mark_type"],
             "state": mark["state"], "candidate_entry_ids": list(mark["candidate_entry_ids"]),
             "link_reason": mark["link_reason"], "confirmed_amount": mark["confirmed_amount"],
@@ -290,7 +294,8 @@ def evidence_sources(inputs: Mapping[str, Any]) -> dict[str, str]:
     """
     return {"image": _source([*inputs.get("part_summaries", []), *inputs.get("coverage", []),
                               *inputs.get("observations", [])]),
-            "document": _source([*inputs.get("line_items", []), *inputs.get("pen_marks", [])])}
+            "document": _source([*inputs.get("line_items", []), *inputs.get("pen_marks", []),
+                                  *([inputs["declaration"]] if inputs.get("declaration") else [])])}
 
 
 def results_notice(sources: Mapping[str, str]) -> str:
@@ -298,8 +303,10 @@ def results_notice(sources: Mapping[str, str]) -> str:
 
     Real image records are never called fixtures; the document stages and the cost table still are.
     """
-    if sources["image"] != "real":
+    if sources["image"] != "real" and sources["document"] not in ("real", "synthetic"):
         return FIXTURE_NOTICE
+    if sources["image"] != "real":
+        return " ".join((_DOCUMENT_TEXT[sources["document"]], "Photographic evidence is absent or uses fixtures.", _RULES_TEXT))
     return " ".join(filter(None, (_IMAGE_REAL_TEXT, _DOCUMENT_TEXT[sources["document"]], _RULES_TEXT)))
 
 
@@ -386,7 +393,10 @@ def assessment_view(db: Session, claim: Mapping[str, Any], row: Mapping[str, Any
             "line_items": line_items, "marks": [_mark_legacy(m) for m in marks],
             "damage_summary": _damage_summary(inputs), "part_summaries": inputs.get("part_summaries", []),
             "coverage": inputs.get("coverage", []), "observations": inputs.get("observations", []),
-            "pages": inputs.get("pages", []),
+            "pages": [{**p, "corrected_url":
+                f"/api/v1/claims/{cid}/assessments/{row['assessment_revision']}/pages/{p['page_id']}/corrected"
+                if p.get("corrected_render_ref") and p.get("provenance", {}).get("source_kind") != "fixture" else None}
+                for p in inputs.get("pages", [])],
             "declaration_completeness": declaration["state"] if declaration else "not_supplied",
             "declaration": declaration,
             "files": [f for f in files if not f.get("fixture_placeholder")],

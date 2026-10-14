@@ -2756,3 +2756,89 @@ M5 remains 4,324/4,324 scored labels vs 4,285/4,324 for coordinates alone; 192/2
 Nothing committed or pushed; other contributors' work is preserved. No model retraining, executed optimization walkthrough, held-out test evaluation, real-page evaluation, new CPU-wide M6 check, cross-transformers-version recheck, Docker/Kafka runtime check or deployment. The full suite still has the unrelated M2 expectation failure. No test-split sample was evaluated or inspected; shared metadata/JSONL streaming for partition filtering is distinct from evaluating held-out samples.
 
 Next concrete step (unassigned): team review of M5 layout tolerance/row geometry, composite-mark labels and the threshold trade-off; separately reconcile the stale M2 configuration expectation with the user's selected model. Any training or final test evaluation is future work requiring its own explicit task. The interrupted correction pass itself is complete under the user's no-optimization constraint.
+
+## Live M4/M5/M6 document branch wired and exercised (2026-10-14)
+
+Date/time and timezone: 2026-10-14, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: implement the complete live document worker using the user's latest enabled M5/M6 exports, without training.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `484c1a7` (user's trained-notebook commit) / uncommitted; no push.
+
+### Changed paths and implemented behaviour
+
+- `configs/models/lineitems.yaml`, `penmarks.yaml`: explicit selections of `lineitems/lineitems-layoutlmv3-20261013T141341Z-ec8bcba-s20260922-serving` and `penmarks/penmarks-fasterrcnn-20261013T142838Z-78d92779-serving`. Weights SHA-256 respectively `85e599db22a0205bc3e149e5f841b808142baa083a6cede8d87de481da97cb30` and `b4bcd791939dcb20d835a793b70d46f877704330dd8d85f11b0fcb0ba29192b0`. Manifests and all inference-critical serving files are also pinned. Both entries remain candidates; no registry bytes changed.
+- `documents/model_config.py`, `worker_common.py`, `line_items/worker.py`, `pen_marks/worker.py`: local-only load-once model serving, explicit M5 family/numeric conventions and cost basis, verified upstream page sets/geometry/hash/lineage, exact M5 row geometry for M6, persisted records/diagnostic artifacts/overlays, source-coordinate detection quads, transactional completion events. M5 retains partial scope; M6 creates pending proposals only. Stale revisions fail before pixel reads; transient storage faults retry; replayed jobs do not rerun inference.
+- `orchestration/{services,plan,orchestrator}.py`, `worker.py`, `api/main.py`: explicit real M5/M6 producer switches and roles; real upstream dependency checks; fixture consumer exclusion; neural extraction command fields and version pins. Added `lineitems`, `penmarks`, and optional combined `document` roles. When all stages are real, runtime provenance and API readiness/version metadata report actual execution rather than fixture mode. Existing unrelated photo-model selection was preserved.
+- `infra/Dockerfile.document`, `infra/requirements-document.txt`, `infra/compose/docker-compose.document.yml`, `pyproject.toml`: separate neural worker image with tested Torch 2.14.1 / Torchvision 0.29.1 / Transformers 5.19.0 / Safetensors 0.8.0; OCR remains isolated with NumPy 1.x. Document overlay includes M4 and separate M5/M6 services, switches API/orchestration together, and disables new fixture seed claims. No new model libraries are required in API/orchestration.
+- `orchestration/consolidation.py`, `api/{main,views}.py`, `src/workbench/src/{ClaimReview,App}.tsx`: new assessment snapshots retain corrected-render references/transforms; authenticated assessment-scoped corrected-page endpoint verifies ownership/membership/hash; corrected-page selector and row/mark overlays with original-file access; actual model results no longer display fixture-only/no-result notices. Existing snapshots without references retain original navigation. Existing review/reassessment APIs are reused. No database migration or Kafka schema change.
+- Added `tests/integration/test_document_workers.py`, `tests/unit/m6/test_document_runtime_selection.py`; updated the worker-cleanup test's settings fixture. Updated M5/M6/platform specs, notebook/infra README, M4 guide and new `docs/document-worker-live.md`.
+
+### Decisions and scope
+
+The user explicitly requested live integration of these enabled exports. M5 uses the configured `family-a-ruled-grid`, fixed `single_part_pre_tax_no_discount_v1` basis, claim currency, and model-confidence threshold 0.5. M6 uses the latest export's proposed validation operating point (exclusion 0.89, price change 0.59) in a **separate** `configs/pipeline/m6_linking_serving.yaml`, selected by the document overlay. The original `m6_linking.yaml`, damage configuration, estimate vocabulary and teammate LayoutLMv3 checkpoint were not edited. This is candidate deployment, not target acceptance. The user's executed notebooks and their outputs/export settings are preserved.
+
+### Checks actually run
+
+- Focused final worker/API/ownership/cleanup tests: **20 passed**, 5.45 s. Includes single-image/two-page PDF fixture integration through M4→M5→M6→M8, pending repricing, exact geometry, duplicate delivery, stale revisions, wrong model, corrupt images, foreign page references, storage retry, authenticated corrected-page reads and integrity failure. These inference doubles are explicit fixtures, not model accuracy evidence.
+- Initial M4/M5/M6 plus new chain checks: **597 passed, 1 skipped, 2 failed**, 66.95 s. Failures are the user's executed M6 notebook retaining outputs and an enabled export setting.
+- Final full pytest suite: **2,000 passed, 1 skipped, 3 failed**, 162.17 s. Known failures: M2 serving expectation still names `damage-hitl/0.1.0-b3-compound` while the user's config selects their serving run; M6 notebook output-clearing convention; M6 opt-in switches-off convention. Preserved those user files. A cleanup-test settings fixture failure from the first full run was corrected and verified. The final extra all-real provenance test was added after full-suite collection and is included in the 20 focused passes. Pytest reports the existing Starlette/httpx deprecation warning.
+- TypeScript check and production workbench build pass. `git diff --check` passes. API, OCR, neural and web Docker images built successfully; Compose successfully started the live document branch beside the existing real image branch. All ten running application/infrastructure containers were healthy at final inspection.
+- **Actual live CPU inference** through HTTP upload → Kafka → M4 → M5 → M6 → PostgreSQL/MinIO → M8: two explicitly synthetic **training** pages, `SYN-00001_P1` and `SYN-00001_P2`. Live smoke claim `01M4V2AB92QEAA9KYYWQBEVRED` (`DOC-LIVE-SYNTHETIC-1791909768`). Persisted **2 pages, 109 OCR boxes, 3 line items, 2 pending marks**, declaration **partial**. This execution smoke is not an accuracy evaluation.
+- Confirmed the linked synthetic price-change proposal with a test value of SGD 850.00. New input revision 2 / assessment 2 reused M4, M5 and M6; original assessment marks stayed unchanged. The original printed 715.00 and human effective 850.00 remain separate. Eight jobs succeeded across the initial and review flows.
+- Redelivered all **4 document commands** through actual Kafka. PostgreSQL record/job/assessment counts and stored result refs stayed unchanged; no duplicate inference rows or assessments. The two assessments and reuse lineage persisted across API/orchestration/web recreation.
+- Browser check with installed Chrome in a temporary profile: both corrected pages load, **5 SVG row/mark rectangles** on the selected estimate page, **0 browser errors**, desktop 1440×1000 and mobile 390×844. Screenshots inspected; fixed a stale banner found visually and repeated the browser check. Original-file navigation is retained, and pending exclusion still blocks finalization.
+- Long builds and pytest/live smoke jobs used `caffeinate -i -s`. No retraining, optimizer step, held-out document test access, or model-artifact mutation.
+
+### Runtime state and evidence
+
+The existing local Compose stack is now running with base + image + document overlays, lean orchestration and separate real OCR/M5/M6 workers. Database and evidence volumes were preserved; the clearly named synthetic smoke claim remains for inspection. See `docs/document-worker-live.md` for the exact reproducible command and switches. No commit or push was performed.
+
+Ignored evidence/scripts under `runtime/document-live-20261014/`: `verify_live.py`, `live-smoke.log`, `claim.json`, `assessment-{1,2}.json`, corrected page PNGs, `summary.json`, `audit_runtime.py`, `replay-audit.json`, `verify_ui.mjs`, `ui-report.json`, desktop/mobile screenshots, `full-suite.log`, `focused-tests.log`, `ui-build.log`, `final-build.log`. Live inference artifacts/overlays are in MinIO with references in their producing PostgreSQL job results.
+
+### Limitations and next step
+
+No model/specification accuracy target is established. These candidates remain limited by synthetic training, M5's position dependence and uncertain/misread amounts/quantities. No real-estimate generalization evaluation, document held-out test evaluation, GPU-container deployment, throughput/load study, worker kill during in-flight inference, or separate full-profile orchestration rollout was performed. The actual deployment checked here uses lean orchestration with full neural document workers. Three full-suite failures remain as described above; no unrelated model/config or executed notebook was changed to hide them.
+
+Next concrete step (unassigned): user/team review of live results and candidate limitations; evaluate supported real-page/layout variation under a separately defined task, and reconcile the existing M2 expectation/notebook archival conventions. Live document wiring requested in this task is implemented and running.
+
+
+## Live test sets for manual upload (2026-10-14)
+
+Date/time and timezone: 2026-10-14, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request.
+Task and relevant module: four upload-ready claims (photographs plus marked estimate pages) for manual testing of the running system; intake, M1 to M4 live stages.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `ec8bcba` / uncommitted; no push.
+Changed paths and completed behaviour:
+- New `scripts/prepare_live_test_sets.py`: copies fixed, hand-picked validation-split items into `data/synthetic/live-test-sets/` (git-ignored, 15 MB) and refuses to overwrite an existing output.
+- Each set has `photos/` (3 to 5 HITL photographs, byte copies), `documents/` (`estimate-page.jpg`, `survey-assessment-page.jpg`, and an optional two-page A4 PDF), and `expected.json` (suggested intake values, file hashes and sources, estimate rows, pen marks, and M4's recorded reading of the estimate JPEG). A generated `README.md` explains use and limits.
+- Sets: `set-01` SYN-00182 (3 rows, 1 exclusion, 1 price change); `set-02` SYN-00212 (4 rows, ticks only); `set-03` SYN-00185 (8 rows, 2 exclusions, 3 price changes, 5 photographs); `set-04` SYN-00201 (the estimate JPEG is unreadable for the real M4 worker: nested text regions).
+Decisions (accepted/proposed) and references: only validation-split items, so the frozen test splits stay untouched and no served model trained on them. Photographs and documents come from different sources and show different cars; the sets exercise the pipeline and are not accuracy evidence.
+Checks actually run, results and artifact locations: the script ran once; file extensions match the image formats; the four PDFs have 2 A4 pages; source page hashes match the dataset manifest; a contact sheet of all sets was inspected. **Not run: any upload to the live system.** The PDF variant's M4 reading is not recorded.
+Uncommitted work, limitations and missing prerequisites: M5 and M6 are fixtures in every runtime mode, so rows and marks on the review screen do not come from the uploaded page yet. The script needs `data/processed/hitl/v3`, the raw HITL export and the annotated synthetic claims on disk.
+Next concrete step and agreed owner (or unassigned): the user uploads the sets and reports what the live stack shows.
+
+
+## Mixed fixture/live deployment repaired; two failed claims recovered (2026-10-14)
+
+Date/time and timezone: 2026-10-14, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: diagnose live-document `page read` dead letters with `model_version_unsupported`; M4 dispatch, deployment and revision recovery.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `484c1a7` / uncommitted; no push.
+
+Changed paths and completed behaviour:
+- New `scripts/live-stack.sh`: one portable shell wrapper for base + image + document overlays, lean orchestration, and Compose commands (`up`, `ps`, `logs`, `down`); uses `caffeinate -i -s` when installed. README now starts this live stack; `scripts/README.md`, `infra/README.md` and `docs/document-worker-live.md` document consistent operations and recovery from wrong version pins.
+- Restored the existing local deployment with `sh scripts/live-stack.sh up --no-build -d`, using existing images and preserving database/object-store/model volumes. No application logic, model configuration or weights changed.
+- Recovered only claims `CLM-99999` (`01M4VXTHRPEWQ4QPME79M2H6ZP`) and `CLM-999999` (`01M4VXXEGMZT8X3AQWT8ARY09T`) using authenticated HTTP input-revision creation with their existing file IDs and stable idempotency keys. Each now has input revision 2 / assessment revision 1. Original input revision 1 and its failed job states were checked unchanged. No human mark or amount decisions were made.
+
+Decisions and current evidence:
+- At diagnosis API/orchestration selected fixtures for every model stage while old real OCR/M5/M6 containers were still running; the image worker was absent. The affected M4 jobs pinned `fixture-ocr/0.0.0`; real PaddleOCR correctly rejected them. The base-only README command allowed this mixed deployment because omitted Compose services remain running. Keep strict worker version validation and immutable job pins; recover using new revisions, not a rewritten/retried old command.
+- The preceding manual-test-set entry's statement that M5/M6 are fixtures in every mode is outdated. With the document overlay they are real workers. Both recovered assessments record image and document evidence sources as `real`; this describes execution, not accuracy acceptance.
+
+Checks actually run and results:
+- Shell syntax/help, Compose `config --quiet`, live `up --no-build -d`, final `ps`, and `git diff --check` passed; all **10** running containers healthy.
+- Focused ownership/version tests: `caffeinate -i -s venv/bin/python -m pytest -q tests/unit/m4/test_m4_runtime_selection.py tests/unit/m6/test_document_runtime_selection.py`: **12 passed**, 19.92 s.
+- Actual HTTP → Kafka → real M1/M2/M3 and M4/M5/M6 → M8 assessment on both existing uploads: **26 succeeded jobs** (13 per claim), **6 photographs**, **4 pages**, **216 OCR boxes**, **6 extracted rows**, **4 pending pen marks**, **2 assessments**. One claim uses a two-page PDF, the other two JPEG pages. No recovered job pins fixture versions. Both declarations remain `partial`; corrected-page HTTP retrieval succeeds for all four pages. Prior successful fixture photo results were rerun under real versions rather than reused.
+- Ignored evidence: `runtime/document-recovery-20261014/` contains `recover.py`, `recovery.log`, before/commit/processing/assessment JSON, selected versions, `summary.json` and final service health. Local HTTP requires sandbox escalation; the first sandboxed attempt stopped before authentication/mutation, and the authorized local-API run succeeded.
+
+Limitations and next concrete step:
+No full pytest rerun or new browser automation in this repair (application/UI code unchanged). No retraining or held-out test evaluation; no accuracy target established. The two test claims' photographs/documents are unrelated manual-test inputs, so completed combined inference is execution evidence only. Earlier accuracy, load and known full-suite limitations remain. User can refresh either claim's review page; use the live-stack wrapper for future restarts, and explicitly stop it before a fixture-only deployment.

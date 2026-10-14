@@ -175,7 +175,10 @@ class Consolidator:
                   "declaration": (records["declaration_completeness"][0].model_dump(mode="json")
                                   if records.get("declaration_completeness") else None),
                   "pages": [{"page_id": p.page_id, "file_id": p.file_id, "page_number": p.page_number,
-                             "quality": p.quality.model_dump(mode="json")} for p in records.get("document_page", [])],
+                             "quality": p.quality.model_dump(mode="json"),
+                             "transform": p.transform.model_dump(mode="json"),
+                             "corrected_render_ref": p.corrected_render_ref.model_dump(mode="json"),
+                             "provenance": p.provenance.model_dump(mode="json")} for p in records.get("document_page", [])],
                   "fixture_photo_ids": photos}
         return records, lineage, inputs
 

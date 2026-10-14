@@ -1,0 +1,31 @@
+# Candidate operating point from the selected export; not an acceptance result.
+link_config_version: m6-linking-serving/20261014
+detection:
+  score_threshold:
+    exclusion: 0.89
+    price_change: 0.59
+  dedupe_iou: 0.6
+band:
+  extend_above_row_heights: 0.6
+  extend_below_row_heights: 0.25
+link:
+  weights:
+    v: 0.45
+    c: 0.25
+    rc: 0.15
+    col: 0.15
+  min_score: 0.5
+  margin_to_second: 0.2
+  candidate_min_score: 0.2
+price_change:
+  margin_to_second: 0.35
+  amount_overlap_min: 0.3
+  amount_overlap_second_max: 0.1
+column:
+  exclusion_columns: all
+  price_change_columns:
+  - amount
+  right_margin_tolerance_px: 40
+  default_page_width_px: 2480
+row:
+  max_marks_per_row: 2

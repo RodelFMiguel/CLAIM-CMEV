@@ -33,6 +33,8 @@ dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
 # transformers 5 renamed SegFormer's decode-head layers, so a checkpoint saved by 5.x does not
 # load under 4.x (the worker refuses it). The served checkpoint was saved by 5.17.
 vision = ["torch>=2.0", "torchvision>=0.15", "transformers>=5.17,<6"]
+# Live M5/M6 exports use the tested Transformers 5 loader; the legacy CLI extra stays separate.
+document-worker = ["torch>=2.5,<3", "torchvision>=0.20,<1", "transformers>=5.17,<6", "safetensors>=0.4,<1"]
 document-model = ["torch>=2.5,<3", "transformers>=4.45,<5", "safetensors>=0.4,<1"]
 
 [tool.setuptools.packages.find]

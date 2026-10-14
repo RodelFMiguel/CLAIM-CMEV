@@ -1,0 +1,166 @@
+# Complete real document branch. Includes OCR; do not also add the OCR-only overlay.
+services:
+  cmev-api:
+    environment: &id001
+      CMEV_OCR_PRODUCER: real
+      CMEV_OCR_MODEL_CONFIG: /srv/configs/models/ocr.yaml
+      CMEV_OCR_MANIFEST: /srv/configs/models/ocr-manifest.json
+      CMEV_M4_CONFIG: /srv/configs/pipeline/m4_page_reading.yaml
+      CMEV_SEED: "false"
+      CMEV_LINEITEMS_PRODUCER: real
+      CMEV_PENMARKS_PRODUCER: real
+      CMEV_LINEITEMS_CONFIG: /srv/configs/models/lineitems.yaml
+      CMEV_PENMARKS_CONFIG: /srv/configs/models/penmarks.yaml
+      CMEV_M5_LAYOUT_FAMILIES: /srv/configs/pipeline/m5_layout_families.yaml
+      CMEV_M5_VOCABULARY: /srv/configs/pipeline/m5_estimate_vocabulary.yaml
+      CMEV_M6_LINKING_CONFIG: /srv/configs/pipeline/m6_linking_serving.yaml
+  cmev-worker-combined:
+    environment: *id001
+  cmev-orchestrator:
+    environment: *id001
+  cmev-worker-producers:
+    environment: *id001
+  cmev-consolidator:
+    environment: *id001
+  cmev-worker-ocr:
+    profiles: &id002
+    - lean
+    - full
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile.ocr
+    image: claim-cmev-worker-ocr:pipeline
+    depends_on: &id003
+      cmev-api:
+        condition: service_healthy
+      cmev-kafka:
+        condition: service_healthy
+    command:
+    - python
+    - -m
+    - claim_cmev.worker
+    - run
+    - --role
+    - ocr
+    environment:
+      CMEV_OCR_PRODUCER: real
+      CMEV_OCR_MODEL_CONFIG: /srv/configs/models/ocr.yaml
+      CMEV_OCR_MANIFEST: /srv/configs/models/ocr-manifest.json
+      CMEV_M4_CONFIG: /srv/configs/pipeline/m4_page_reading.yaml
+      CMEV_WORKER_ROLE: ocr
+      CMEV_PROFILE: ${CMEV_PROFILE:-lean}
+      CMEV_FIXTURE_MODE: 'true'
+      CMEV_DATABASE_URL: postgresql+psycopg://cmev:${CMEV_DB_PASSWORD:?Set CMEV_DB_PASSWORD}@cmev-db:5432/cmev
+      CMEV_KAFKA_BOOTSTRAP: cmev-kafka:9092
+      STORAGE_BACKEND: s3
+      CMEV_OBJECT_STORE_ENDPOINT: http://cmev-objectstore:9000
+      CMEV_OBJECT_STORE_ACCESS_KEY: ${CMEV_OBJECT_STORE_ACCESS_KEY:?Set object-store
+        access key}
+      CMEV_OBJECT_STORE_SECRET_KEY: ${CMEV_OBJECT_STORE_SECRET_KEY:?Set object-store
+        secret key}
+      CMEV_OBJECT_STORE_BUCKET: cmev-evidence
+      CMEV_MODEL_REGISTRY_PATH: /srv/artifacts/models
+    volumes: &id004
+    - ${CMEV_MODEL_REGISTRY_HOST_PATH:-../../artifacts/models}:/srv/artifacts/models:ro
+    healthcheck: &id005
+      test:
+      - CMD
+      - python
+      - -m
+      - claim_cmev.worker
+      - healthcheck
+      interval: 15s
+      timeout: 5s
+      start_period: 90s
+      retries: 4
+    networks: &id006
+    - backend
+    restart: unless-stopped
+  cmev-worker-lineitems:
+    profiles: *id002
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile.document
+    image: claim-cmev-worker-document:pipeline
+    depends_on: *id003
+    command:
+    - python
+    - -m
+    - claim_cmev.worker
+    - run
+    - --role
+    - lineitems
+    environment:
+      CMEV_OCR_PRODUCER: real
+      CMEV_OCR_MODEL_CONFIG: /srv/configs/models/ocr.yaml
+      CMEV_OCR_MANIFEST: /srv/configs/models/ocr-manifest.json
+      CMEV_M4_CONFIG: /srv/configs/pipeline/m4_page_reading.yaml
+      CMEV_WORKER_ROLE: lineitems
+      CMEV_PROFILE: full
+      CMEV_FIXTURE_MODE: 'true'
+      CMEV_DATABASE_URL: postgresql+psycopg://cmev:${CMEV_DB_PASSWORD:?Set CMEV_DB_PASSWORD}@cmev-db:5432/cmev
+      CMEV_KAFKA_BOOTSTRAP: cmev-kafka:9092
+      STORAGE_BACKEND: s3
+      CMEV_OBJECT_STORE_ENDPOINT: http://cmev-objectstore:9000
+      CMEV_OBJECT_STORE_ACCESS_KEY: ${CMEV_OBJECT_STORE_ACCESS_KEY:?Set object-store
+        access key}
+      CMEV_OBJECT_STORE_SECRET_KEY: ${CMEV_OBJECT_STORE_SECRET_KEY:?Set object-store
+        secret key}
+      CMEV_OBJECT_STORE_BUCKET: cmev-evidence
+      CMEV_MODEL_REGISTRY_PATH: /srv/artifacts/models
+      CMEV_LINEITEMS_PRODUCER: real
+      CMEV_PENMARKS_PRODUCER: real
+      CMEV_LINEITEMS_CONFIG: /srv/configs/models/lineitems.yaml
+      CMEV_PENMARKS_CONFIG: /srv/configs/models/penmarks.yaml
+      CMEV_M5_LAYOUT_FAMILIES: /srv/configs/pipeline/m5_layout_families.yaml
+      CMEV_M5_VOCABULARY: /srv/configs/pipeline/m5_estimate_vocabulary.yaml
+      CMEV_M6_LINKING_CONFIG: /srv/configs/pipeline/m6_linking_serving.yaml
+      CMEV_TAXONOMY_DIR: /srv/configs/taxonomy
+    volumes: *id004
+    healthcheck: *id005
+    networks: *id006
+    restart: unless-stopped
+  cmev-worker-penmarks:
+    profiles: *id002
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile.document
+    image: claim-cmev-worker-document:pipeline
+    depends_on: *id003
+    command:
+    - python
+    - -m
+    - claim_cmev.worker
+    - run
+    - --role
+    - penmarks
+    environment:
+      CMEV_OCR_PRODUCER: real
+      CMEV_OCR_MODEL_CONFIG: /srv/configs/models/ocr.yaml
+      CMEV_OCR_MANIFEST: /srv/configs/models/ocr-manifest.json
+      CMEV_M4_CONFIG: /srv/configs/pipeline/m4_page_reading.yaml
+      CMEV_WORKER_ROLE: penmarks
+      CMEV_PROFILE: full
+      CMEV_FIXTURE_MODE: 'true'
+      CMEV_DATABASE_URL: postgresql+psycopg://cmev:${CMEV_DB_PASSWORD:?Set CMEV_DB_PASSWORD}@cmev-db:5432/cmev
+      CMEV_KAFKA_BOOTSTRAP: cmev-kafka:9092
+      STORAGE_BACKEND: s3
+      CMEV_OBJECT_STORE_ENDPOINT: http://cmev-objectstore:9000
+      CMEV_OBJECT_STORE_ACCESS_KEY: ${CMEV_OBJECT_STORE_ACCESS_KEY:?Set object-store
+        access key}
+      CMEV_OBJECT_STORE_SECRET_KEY: ${CMEV_OBJECT_STORE_SECRET_KEY:?Set object-store
+        secret key}
+      CMEV_OBJECT_STORE_BUCKET: cmev-evidence
+      CMEV_MODEL_REGISTRY_PATH: /srv/artifacts/models
+      CMEV_LINEITEMS_PRODUCER: real
+      CMEV_PENMARKS_PRODUCER: real
+      CMEV_LINEITEMS_CONFIG: /srv/configs/models/lineitems.yaml
+      CMEV_PENMARKS_CONFIG: /srv/configs/models/penmarks.yaml
+      CMEV_M5_LAYOUT_FAMILIES: /srv/configs/pipeline/m5_layout_families.yaml
+      CMEV_M5_VOCABULARY: /srv/configs/pipeline/m5_estimate_vocabulary.yaml
+      CMEV_M6_LINKING_CONFIG: /srv/configs/pipeline/m6_linking_serving.yaml
+      CMEV_TAXONOMY_DIR: /srv/configs/taxonomy
+    volumes: *id004
+    healthcheck: *id005
+    networks: *id006
+    restart: unless-stopped

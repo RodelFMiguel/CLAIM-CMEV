@@ -3,8 +3,7 @@
 M4 uses pretrained English PaddleOCR **2.10.0** with PaddlePaddle **2.6.2** on CPU.
 There is no CLAIM-CMEV OCR training step. The selected models are English PP-OCRv3
 text detection, English PP-OCRv4 recognition and mobile v2 angle classification.
-The served output remains **line regions**. It cannot yet supply the true word
-geometry required by the optional neural M5 adapter.
+The served output remains **line regions**. The M5_Document_Worker notebook export declares line-box preprocessing and accepts these regions. The older word-only checkpoint still requires true word geometry.
 
 ## Provision the reference release
 
@@ -40,8 +39,7 @@ docker compose --env-file infra/compose/.env \
 
 The OCR overlay switches page reading ownership together across API/orchestration/
 fixture/consolidation services and starts `cmev-worker-ocr`. It can be combined with
-`docker-compose.image.yml`. M5 and M6 remain fixtures until their separate worker
-implementation; a live OCR stage alone does not make the full assessment real.
+`docker-compose.image.yml`. In this OCR-only overlay M5 and M6 remain fixtures; use the complete document overlay below to run their models. A live OCR stage alone does not make the full assessment real.
 
 `infra/Dockerfile.ocr` installs the OCR stack separately from vision and LayoutLMv3.
 Paddle2.x needs NumPy1.x: `infra/requirements-ocr.txt` pins NumPy1.26.4 and compatible
@@ -94,3 +92,7 @@ The worker's configured retry limit is honored and obsolete queued input revisio
 are stopped before any read. Existing job/DLQ failure states record unusable pages;
 no successful empty result is emitted. Failure artifacts are not committed as
 DocumentPage records. Historical successful page records remain readable.
+
+## Complete document branch, 2026-10-14
+
+The [document overlay](document-worker-live.md) now adds live M5/M6 handlers after this worker. The OCR-only overlay still leaves M5/M6 as fixtures. The earlier verification section records historical checks; current live integration evidence is in the 2026-10-14 CONTEXT handoff.
