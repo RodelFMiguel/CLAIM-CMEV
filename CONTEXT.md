@@ -1,5 +1,7 @@
 # CLAIM-CMEV shared development context
 
+Latest M2/deployment correction (2026-10-15): [damage test fixtures repaired and display changes deployed](#damage-test-fixtures-repaired-and-display-changes-deployed-2026-10-15). The selected CarDD checkpoint is consistent; the reported mismatches came from HITL-only tests. Earlier entries retain their historical status.
+
 Last updated: 2026-10-13 (Asia/Singapore), M5 and M6 training notebooks on real M4 output, with a correction pass left unfinished. **Read first for the document branch:** the [M5/M6 notebook handoff](#m5-and-m6-training-notebooks-on-m4-output-built-reviewed-corrections-interrupted-2026-10-13), then [M4 worker integration](#m4-live-worker-and-pretrained-ocr-registry-2026-10-11). Earlier handoffs retain their historical status.
 - **Implementation baseline:** branch `image-worker`, with the display fixes committed on top of `687cc4c` (merge of `m7-lightgbm`). Use Git history for the display-fix commit identifier. No push in this check-in.
 - **Read first for M7/M8:** the [rebase and compatibility fixes](#m7-branch-rebase-and-vision-compatibility-fixes-2026-10-09), then the historical [LightGBM method handoff](#m7-lightgbm-quantile-method-2026-10-02). LightGBM remains the default offline cost method; empirical remains an explicit fallback.
@@ -2875,3 +2877,31 @@ Decisions (accepted/proposed): the printed report keeps the label because the pr
 Checks actually run, results and artifact locations: `npx tsc -b` passes; `damage-summary.mjs` and `evidence-popup.mjs` pass against the Vite dev server (synthetic API responses). `pytest tests/backend tests/integration`: 119 passed, **8 failed and 9 errors, all in `tests/integration/test_image_branch.py`** (`label_map_mismatch` / `taxonomy_version_mismatch` for the damage model). Set aside my two backend edits and one of those tests still failed, so they predate this change. They follow the damage model selection in `configs/models/damage.yaml` (last changed in `674c88e`). Not investigated further and `damage.yaml` was not touched.
 Uncommitted work, limitations and missing prerequisites: the running Docker stack needs the API and web images rebuilt to show either change. The real-backend e2e scripts were not run.
 Next concrete step and agreed owner (or unassigned): the owner of `configs/models/damage.yaml` fixes the damage selection or the registry entry so `test_image_branch.py` passes again; then commit and push these two changes.
+
+
+## Damage test fixtures repaired and display changes deployed (2026-10-15)
+
+Date/time and timezone: 2026-10-15, Asia/Singapore.
+Contributor / coding agent: Codex.
+Task and relevant module: repair the reported image-branch failures (M2 integration), confirm the served checkpoint, rebuild API/web for the existing M9 display changes.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `6b890ff` / uncommitted; no push.
+
+Changed paths and completed behaviour:
+- `tests/integration/test_image_branch.py`: model-dependent tests now run with explicit HITL and CarDD configurations and matching synthetic checkpoints/class maps. Assertions follow the configured taxonomy. Controlled uncertain logits retain probability 0.48 with either seven or nine labels, preserving the 0.50 filtering regression. All 44 image-branch cases pass.
+- `tests/unit/m2/test_m2_serving.py`: replace the obsolete exact HITL B3 selection assertion with a consistency check across the repository-selected model ID, registry path, taxonomy, declared label count and serving frame.
+- Rebuilt API/web using `sh scripts/live-stack.sh build cmev-api cmev-web`, applied them with `up -d --no-deps --wait cmev-api cmev-web`, and explicitly recreated web with `up -d --no-deps --force-recreate --wait cmev-web`. All commands use the live wrapper's image and document overlays. Existing claims, frozen revisions and storage volumes were preserved.
+
+Decisions and current evidence:
+- Retain the already selected `damage-cardd/damage_cardd-segformer-20261010T032804Z-b031eedc-serving`, taxonomy `damage-cardd-1.0.0`, seven labels. This is the user's selection recorded in the earlier notebook/check-in handoff; no new model switch is needed. `configs/models/damage.yaml`, weights, production validation and inference logic are unchanged.
+- The failing integration fixture loaded the current CarDD configuration but fabricated a nine-label HITL checkpoint; other assertions and controlled logits also assumed HITL. The registry correctly rejected the mismatch. A wider check found the unit test still required the historical HITL B3 model by name.
+- The actual local CarDD entry passes `verify_damage_checkpoint` (weights hash, taxonomy, labels and preprocessing), and the running image worker's readiness marker records the same CarDD model/config/taxonomy. The registry status remains `candidate`; this is serving compatibility evidence, not accuracy acceptance.
+
+Checks actually run, results and artifact locations:
+- Reproduced the original taxonomy assertion failure before editing using `venv/bin/python -m pytest -q tests/integration/test_image_branch.py --maxfail=1`.
+- Final `venv/bin/python -m pytest -q tests/backend tests/integration tests/unit/m2`: **228 passed**, one existing Starlette/httpx deprecation warning, 66.05 s. Includes 44 image-branch tests and checkpoint mismatch rejection tests.
+- Docker builds succeeded with cached layers. API readiness returns HTTP 200 and deployed `DEMO_USER` reports `Acery AI` / `AA`. All ten services were healthy after API deployment; explicitly recreated web also passed its health check and HTTP retrieval.
+- `CMEV_BROWSER_CHANNEL=chrome CMEV_E2E_URL=http://127.0.0.1:8080 node tests/e2e/damage-summary.mjs` and the corresponding `evidence-popup.mjs` command both passed against the recreated Docker web app. These tests use synthetic intercepted API responses; they verify hidden unknown-side labels, preserved known-side/print labels, and popups without writing claim data. Screenshots remain under ignored `artifacts/evaluation/ui-damage-summary-20261009/` and the popup script's artifact directory. Bundled Playwright Chromium was absent; installed Chrome required execution outside the sandbox.
+- `git diff --check` passed.
+
+Uncommitted work, limitations and missing prerequisites: only the two test files and this handoff changed. No full repository suite, real-claim browser workflow, new inference or model accuracy evaluation was run. Existing stored surveyor names remain historical; rebuilds do not rewrite database rows.
+Next concrete step and agreed owner (or unassigned): refresh the workbench at `http://localhost:8080` to use the deployed display changes; review/commit the test correction through the normal version-control workflow (unassigned).
