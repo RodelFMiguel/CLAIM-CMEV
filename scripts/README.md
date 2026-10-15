@@ -29,6 +29,10 @@ python3 scripts/download_datasets.py
 python3 -m unittest discover -s tests/unit -p test_download_datasets.py -v
 ```
 
+## Live application stack
+
+`sh scripts/live-stack.sh up --build -d` starts lean orchestration with the real image and document branches. The wrapper fixes the Compose overlay selection for `up`, `ps`, `logs` and `down`, and keeps macOS awake while Compose runs. Provision the selected models and `infra/compose/.env` first. See [live document operations](../docs/document-worker-live.md).
+
 ## Future utilities
 
-Add reproducible environment, dataset-manifest, schema-export, fixture and demonstration commands as their implementations become available. Keep learning/comparison logic in src/claim_cmev and offline workflows in pipelines. No application startup, training or deployment command exists yet.
+Add reproducible environment, dataset-manifest, schema-export, fixture and demonstration commands as their implementations become available. Keep learning/comparison logic in src/claim_cmev and offline workflows in pipelines.

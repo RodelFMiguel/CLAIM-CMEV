@@ -138,7 +138,7 @@ def run_page_reading(request: PageReadRequest, engine: OcrEngine, config: PageRe
     reasons = tuple(Reason(code="page_unreadable", message=f"page {r['page_number']} ({r['page_id']}) is unreadable: "
                            + ", ".join(x["code"] for x in r["reasons"])) for r in failed)
     status: ProcessingStatus = ("failed" if not statuses or all(s == "unreadable" for s in statuses)
-                                else "partial" if failed else "succeeded")
+                                else "partial" if any(s != "complete" for s in statuses) else "succeeded")
     retryable = any(x["code"] in RETRYABLE_REASONS for r in failed for x in r["reasons"])
     return PageReadResult(status, reasons, tuple(pages), tuple(readings), tuple(artifacts),
                           {"total_ms": _ms(clock() - started), "pages": page_metrics}, retryable)
@@ -150,8 +150,10 @@ def _ms(seconds: float) -> float:
 
 def _merged_versions(requested: Mapping[str, str], engine: OcrEngine, config: PageReadingConfig) -> dict[str, str]:
     """Request versions verbatim plus the engine, weights, config and code actually used."""
-    actual = engine.info.version_entries() | {"page_config": config.config_version, "m4_code": M4_CODE_VERSION}
-    aliases = {"preprocess_config_version": "page_config"}
+    actual = engine.info.version_entries() | {"page_config": config.config_version,
+                                             "page_config_sha256": config.sha256,
+                                             "m4_code": M4_CODE_VERSION}
+    aliases = {"preprocess_config_version": "page_config", "preprocess_config": "page_config"}
     for key, value in requested.items():
         pinned = actual.get(aliases.get(key, key))
         if pinned is not None and value != pinned:
@@ -198,7 +200,7 @@ class _Job:
 
     def _artifact(self, page_id: str, name: str, media_type: str, data: bytes) -> PageArtifact:
         r = self.request
-        key = f"claims/{r.claim_id}/{r.input_revision}/pages/{page_id}/{version_signature(r.versions)}/{name}"
+        key = f"claims/{r.claim_id}/{r.input_revision}/pages/{page_id}/{version_signature(self.versions)}/{name}"
         return PageArtifact(deterministic_id("art", r.job_key, page_id, name), key, f"{r.object_uri_prefix}{key}",
                             media_type, hashlib.sha256(data).hexdigest(), len(data), data)
 
@@ -406,5 +408,5 @@ def page_read_event_payload(page: DocumentPage) -> dict[str, Any]:
         "mean_text_confidence": page.mean_text_confidence,
         "mean_text_confidence_reason": page.mean_text_confidence_reason,
         "page_quality": {"state": page.quality.state, "reasons": list(page.quality.reasons)},
-        "correction_applied": page.transform.perspective_applied,
+        "correction_applied": page.transform.geometry_correction != "none",
     }

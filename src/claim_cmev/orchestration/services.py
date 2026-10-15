@@ -12,11 +12,15 @@ worker, which then reads real rows and real masks. The orchestrator pins the con
 versions for the stages real workers own, and the fixture producers drop those stages, so a
 fixture producer and a real worker never share a consumer group. Roles ``parts``, ``damage``
 and ``summary`` are one stage each; ``image`` is the three in one process.
+
+``CMEV_OCR_PRODUCER=real`` independently gives page reading to role ``ocr`` and
+removes the M4 fixture handler. CMEV_LINEITEMS_PRODUCER and CMEV_PENMARKS_PRODUCER
+select real M5/M6 handlers; each requires its real upstream stages. The OCR role uses its own compatible dependency environment.
 """
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 import os
 from pathlib import Path
@@ -33,9 +37,11 @@ from .consolidation import Consolidator
 from .orchestrator import GROUP as ORCHESTRATOR_GROUP, Orchestrator
 from .plan import COMMAND_TOPIC, SERVICE, VersionBundle
 
-ROLES = ("combined", "orchestrator", "producers", "consolidator", "parts", "damage", "summary", "image")
+ROLES = ("combined", "orchestrator", "producers", "consolidator", "parts", "damage", "summary", "image", "ocr", "lineitems", "penmarks", "document")
 IMAGE_ROLES = {"parts": ("parts",), "damage": ("damage",), "summary": ("summary",),
                "image": ("parts", "damage", "summary")}
+STAGE_ROLES = {**IMAGE_ROLES, "ocr": ("page_read",), "lineitems": ("line_items",),
+               "penmarks": ("pen_marks",), "document": ("line_items", "pen_marks")}
 """The image stages each model-worker role runs."""
 PARTS_PRODUCERS = ("fixture", "real")
 REPO_COST_TABLES = Path(__file__).resolve().parents[3] / "artifacts" / "cost_tables"
@@ -51,6 +57,11 @@ class RuntimeSettings:
     """Who consumes ``cmev.cmd.parts-segment.v1``: the fixture producer, or the real M1 worker."""
     damage_producer: str = "fixture"
     """Who consumes the damage and summary commands: the fixture producers, or the real M2 and M3 workers."""
+    ocr_producer: str = "fixture"
+    """Who reads uploaded estimate pages: fixture producers or the real M4 worker."""
+
+    lineitems_producer: str = "fixture"
+    penmarks_producer: str = "fixture"
 
     @classmethod
     def from_env(cls) -> RuntimeSettings:
@@ -66,14 +77,23 @@ class RuntimeSettings:
         if damage_producer == "real" and parts_producer != "real":
             raise RuntimeError("CMEV_DAMAGE_PRODUCER=real needs CMEV_PARTS_PRODUCER=real: the damage worker reads "
                                "the M1 mask of each photograph")
+        ocr_producer = os.getenv("CMEV_OCR_PRODUCER", "fixture")
+        if ocr_producer not in PARTS_PRODUCERS:
+            raise RuntimeError(f"CMEV_OCR_PRODUCER must be fixture or real, not {ocr_producer!r}")
+        lineitems_producer = os.getenv("CMEV_LINEITEMS_PRODUCER", "fixture")
+        penmarks_producer = os.getenv("CMEV_PENMARKS_PRODUCER", "fixture")
+        validate_document_producers(ocr_producer, lineitems_producer, penmarks_producer)
         root = os.getenv("CMEV_COST_TABLE_PATH") or str(REPO_COST_TABLES)
         return cls(profile=profile, fixture_mode=os.getenv("CMEV_FIXTURE_MODE", "true").lower() == "true",
                    cost_table_root=Path(root), configured_table_version=os.getenv("CMEV_ACTIVE_COST_TABLE_VERSION") or None,
-                   parts_producer=parts_producer, damage_producer=damage_producer)
+                   parts_producer=parts_producer, damage_producer=damage_producer, ocr_producer=ocr_producer,
+                   lineitems_producer=lineitems_producer, penmarks_producer=penmarks_producer)
 
     @property
     def source_kind(self) -> str:
-        return "fixture" if self.fixture_mode else "real"
+        all_real = all(p == "real" for p in (self.parts_producer, self.damage_producer, self.ocr_producer,
+                                             self.lineitems_producer, self.penmarks_producer))
+        return "real" if all_real or not self.fixture_mode else "fixture"
 
     def active_cost_table(self) -> str:
         """The version new assessments pin; raises ``CostTableError`` when none resolves."""
@@ -83,13 +103,26 @@ class RuntimeSettings:
         return version
 
 
+def validate_document_producers(ocr, lineitems, penmarks):
+    for name, value in (("OCR", ocr), ("LINEITEMS", lineitems), ("PENMARKS", penmarks)):
+        if value not in PARTS_PRODUCERS:
+            raise ValueError(f"CMEV_{name}_PRODUCER must be fixture or real")
+    if lineitems == "real" and ocr != "real":
+        raise ValueError("real M5 requires real M4")
+    if penmarks == "real" and lineitems != "real":
+        raise ValueError("real M6 requires real M5 and M4")
+
+
 def build_runtimes(session_factory: Any, role: str, *, versions: VersionBundle | None = None,
                    consolidator: Consolidator | None = None, profile: str, source_kind: str = "fixture",
                    clock: Callable[[], datetime] = utcnow, sleep: Callable[[float], None] = time.sleep,
                    retry: RetryPolicy | None = None, parts_producer: str = "fixture",
                    damage_producer: str = "fixture", parts_handler: Handler | None = None,
                    damage_handler: Handler | None = None,
-                   summary_handler: Handler | None = None) -> list[ConsumerRuntime]:
+                   summary_handler: Handler | None = None, ocr_producer: str = "fixture",
+                   page_read_handler: Handler | None = None,
+                   lineitems_producer: str = "fixture", penmarks_producer: str = "fixture",
+                   line_items_handler: Handler | None = None, pen_marks_handler: Handler | None = None) -> list[ConsumerRuntime]:
     """One ``ConsumerRuntime`` per consumer group the role runs.
 
     The fixture and orchestration roles need ``versions`` and ``consolidator``. A model-worker
@@ -98,9 +131,16 @@ def build_runtimes(session_factory: Any, role: str, *, versions: VersionBundle |
     """
     if role not in ROLES:
         raise ValueError(f"unknown role {role!r}; choose from {ROLES}")
+    validate_document_producers(ocr_producer, lineitems_producer, penmarks_producer)
     real_stages = {"parts"} if parts_producer == "real" else set()
     if damage_producer == "real":
         real_stages |= {"parts", "damage", "summary"}
+    if ocr_producer == "real":
+        real_stages.add("page_read")
+    if lineitems_producer == "real":
+        real_stages.add("line_items")
+    if penmarks_producer == "real":
+        real_stages.add("pen_marks")
     from ..fixtures import FixtureProducers
 
     common = {"profile": profile, "source_kind": source_kind, "clock": clock, "sleep": sleep, "retry": retry,
@@ -112,19 +152,24 @@ def build_runtimes(session_factory: Any, role: str, *, versions: VersionBundle |
                                         service=ORCHESTRATOR_GROUP, on_dead_letter=orchestrator.on_dead_letter,
                                         **common))
     if role in ("combined", "producers"):
-        if source_kind != "fixture":
-            raise RuntimeError("only fixture producers exist; real module workers are not implemented")
+        if source_kind != "fixture" and len(real_stages) != 6:
+            raise RuntimeError("remaining stage producers are fixtures; keep fixture mode enabled for those stages")
         for group, handlers in FixtureProducers(versions).groups().items():
             if group in {SERVICE[stage] for stage in real_stages}:
                 continue  # a real worker owns this consumer group
             runtimes.append(ConsumerRuntime(session_factory, group, handlers, service=group, **common))
-    stage_handlers = {"parts": parts_handler, "damage": damage_handler, "summary": summary_handler}
-    for stage in IMAGE_ROLES.get(role, ()):
+    stage_handlers = {"parts": parts_handler, "damage": damage_handler, "summary": summary_handler,
+                      "page_read": page_read_handler, "line_items": line_items_handler, "pen_marks": pen_marks_handler}
+    for stage in STAGE_ROLES.get(role, ()):
         if stage_handlers[stage] is None:
             raise ValueError(f"the {role} role needs {stage}_handler, a handler over loaded and verified inputs")
         # A real worker's rows are measurements of the uploaded photographs, whatever mode the fixture stages run in.
+        stage_common = {**common, "source_kind": "real"}
+        if stage == "page_read" and retry is None:
+            from ..documents.text_layout.config import load_page_reading_config
+            stage_common["retry"] = replace(RetryPolicy(), max_attempts=load_page_reading_config().ocr.max_attempts)
         runtimes.append(ConsumerRuntime(session_factory, SERVICE[stage], {COMMAND_TOPIC[stage]: stage_handlers[stage]},
-                                        service=SERVICE[stage], **{**common, "source_kind": "real"}))
+                                        service=SERVICE[stage], **stage_common))
     if role in ("combined", "consolidator"):
         runtimes.append(ConsumerRuntime(session_factory, "cmev-consolidator", consolidator.handlers(),
                                         service="cmev-consolidator", **common))
@@ -170,22 +215,28 @@ def local_pipeline(database: Any, *, settings: RuntimeSettings | None = None, ro
                    retry: RetryPolicy | None = None, broker: InMemoryBroker | None = None,
                    parts_producer: str = "fixture", damage_producer: str = "fixture",
                    parts_handler: Handler | None = None, damage_handler: Handler | None = None,
-                   summary_handler: Handler | None = None) -> LocalPipeline:
+                   summary_handler: Handler | None = None, ocr_producer: str = "fixture",
+                   page_read_handler: Handler | None = None,
+                   lineitems_producer: str = "fixture", penmarks_producer: str = "fixture",
+                   line_items_handler: Handler | None = None, pen_marks_handler: Handler | None = None) -> LocalPipeline:
     """The role's runtimes over one in-memory broker.
 
     The producers default to ``fixture`` whatever the environment says: the seed claims and
     the tests are fixture demonstrations and always run the complete fixture pipeline.
     """
     settings = settings or RuntimeSettings.from_env()
-    if role not in IMAGE_ROLES:
+    if role not in STAGE_ROLES:
         consolidator = consolidator or Consolidator(cost_table_root=settings.cost_table_root)
-        versions = versions or VersionBundle.for_runtime(parts_producer, damage_producer)
+        versions = versions or VersionBundle.for_runtime(parts_producer, damage_producer, ocr_producer, lineitems_producer, penmarks_producer)
     runtimes = build_runtimes(database.session, role, versions=versions, consolidator=consolidator,
                               profile=settings.profile, source_kind=settings.source_kind, clock=clock, sleep=sleep,
                               retry=retry, parts_producer=parts_producer, damage_producer=damage_producer,
                               parts_handler=parts_handler, damage_handler=damage_handler,
-                              summary_handler=summary_handler)
+                              summary_handler=summary_handler, ocr_producer=ocr_producer,
+                              page_read_handler=page_read_handler, lineitems_producer=lineitems_producer,
+                              penmarks_producer=penmarks_producer, line_items_handler=line_items_handler,
+                              pen_marks_handler=pen_marks_handler)
     return LocalPipeline(database.session, runtimes, broker=broker, clock=clock)
 
 
-__all__ = ["IMAGE_ROLES", "LocalPipeline", "ROLES", "RuntimeSettings", "build_runtimes", "local_pipeline"]
+__all__ = ["IMAGE_ROLES", "STAGE_ROLES", "LocalPipeline", "ROLES", "RuntimeSettings", "build_runtimes", "local_pipeline"]

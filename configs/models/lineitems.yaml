@@ -1,0 +1,20 @@
+# Explicit candidate selection for live inference; synthetic validation only.
+model_id: lineitems
+model_version: lineitems/lineitems-layoutlmv3-20261013T141341Z-ec8bcba-s20260922-serving
+config_version: lineitems-serving/20261014
+device: cpu
+allow_candidate: true
+files:
+  manifest.json: 9ea86dbe7431603a3087b95d635df472e80dd34ba4923f7b7e13b7d8d6e2e775
+  model.safetensors: 85e599db22a0205bc3e149e5f841b808142baa083a6cede8d87de481da97cb30
+  preprocessing.json: 935afe845490f81a2cef307e7a41c5b2bba5a0c595acdebef767a3dada36a881
+  label_schema.json: 57bed297b4d842680492aba125156010e859c23125c0f5a47c73d0ee09e23ab2
+  config.json: 9988dd17c5120d10ad72b5b52f891c5308ffbc363b8380adc772b82b42949314
+  tokenizer.json: 5b82511c2e613d8061bf177b2e7d169e69820e11b448588e909954dcf32b2d2f
+  tokenizer_config.json: d1d4afdc4b5793b9b06400d4090ccae8d089a5ddad32c479427aa3618daf81a5
+  preprocessor_config.json: 79e34183372f6236be32a9cc92242f7c79cd10963de95db08417075b610b6a04
+method: layoutlmv3
+family_id: family-a-ruled-grid
+cost_basis: single_part_pre_tax_no_discount_v1
+min_confidence: 0.5
+text_unit: line

@@ -18,7 +18,7 @@ dependencies = [
     "pypdf>=5,<7",
     "boto3>=1.36,<2",
     "kafka-python>=2.2,<3",
-    "numpy>=2.0,<3",
+    "numpy>=1.26,<3",
     "alembic>=1.14,<2",
     "pypdfium2>=4.30,<5",
     "opencv-python-headless>=4.10,<5",
@@ -33,6 +33,9 @@ dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
 # transformers 5 renamed SegFormer's decode-head layers, so a checkpoint saved by 5.x does not
 # load under 4.x (the worker refuses it). The served checkpoint was saved by 5.17.
 vision = ["torch>=2.0", "torchvision>=0.15", "transformers>=5.17,<6"]
+# Live M5/M6 exports use the tested Transformers 5 loader; the legacy CLI extra stays separate.
+document-worker = ["torch>=2.5,<3", "torchvision>=0.20,<1", "transformers>=5.17,<6", "safetensors>=0.4,<1"]
+document-model = ["torch>=2.5,<3", "transformers>=4.45,<5", "safetensors>=0.4,<1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

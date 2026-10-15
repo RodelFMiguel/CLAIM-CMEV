@@ -428,3 +428,7 @@ review revision as section 9.2 specifies.
 | [Module 09 review and report](module-09-review-report.md) | Review, finalize and print behaviour |
 | [Evaluation plan](evaluation_plan.md) | Service checks and end-to-end evidence |
 | [ADR 0002](../adr/0002-containerised-event-runtime.md) | The runtime decision this document implements |
+
+### Corrected document evidence endpoint (2026-10-14)
+
+Additive API: `GET /claims/{claim_id}/assessments/{assessment_revision}/pages/{page_id}/corrected` under `/api/v1`. It serves only a corrected artifact pinned in that assessment, after authentication, claim ownership, page-membership and byte-hash checks. Assessment-view `pages[]` optionally includes `corrected_url`; old snapshots without corrected references return null and retain original-file navigation. New snapshots preserve M4 transforms and corrected-render references. The review client draws M5 rows and M6 marks on this corrected image, with originals separately accessible. This uses existing JSON snapshot storage and requires no migration or Kafka envelope change.

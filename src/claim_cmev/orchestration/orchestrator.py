@@ -222,9 +222,11 @@ class Orchestrator:
 
     def _line_items_payload(self, session: Session, claim: str, rev: int) -> dict[str, Any]:
         v = self.versions.for_stage("line_items")
+        neural = v.get("extraction_method") == "layoutlmv3"
+        model_id, model_version = _split(v.get("line_items_model")) if neural else (None, None)
         return {"pages": self._pages(session, claim, rev, True), "parser_config_version": v.get("parser_config", "not-recorded"),
                 "taxonomy_version": v.get("taxonomy", "not-recorded"), "claim_currency": self._currency(session, claim, rev),
-                "engine": "parser", "model_id": None, "model_version": None}
+                "engine": "layoutlmv3" if neural else "parser", "model_id": model_id, "model_version": model_version}
 
     def _pen_marks_payload(self, session: Session, claim: str, rev: int) -> dict[str, Any]:
         v = self.versions.for_stage("pen_marks")

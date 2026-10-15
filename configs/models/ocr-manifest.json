@@ -1,0 +1,36 @@
+{
+  "model_version": "ocr/paddleocr-2.10.0-en-v1",
+  "engine": "paddleocr",
+  "engine_version": "2.10.0",
+  "runtime_version": "2.6.2",
+  "granularity": "line",
+  "files": {
+    "det/inference.pdiparams": "83676ec730627ab4502f401410a4b6a3ce1c0bb98fa249b71db055b6bddae051",
+    "det/inference.pdiparams.info": "2fe414d9eadf914bf44e3f9ba212988a6f26f364e4f87c6d0af57438ffffc0c4",
+    "det/inference.pdmodel": "c4bfb1b05d9d1d5a760801eaf6d20180ef7e47bcc675fb17d1f3a89da5fef427",
+    "rec/inference.pdiparams": "75f64a1ffb70c56b7a25655963ca16f5bf3286202e3f52ac972bee05cdee2f56",
+    "rec/inference.pdiparams.info": "710d9f3d7c503067ae708f4bc3adc6973c0d6391adb7a1470c36eb70da6b5b83",
+    "rec/inference.pdmodel": "85b952f05f709af259cfe4254012aa7208bef0998f71f57a15495446f25ccd43",
+    "cls/inference.pdiparams": "d1efda1b80e174b4fcb168a035ac96c1af4938892bd86a55f300a6027105d08c",
+    "cls/inference.pdiparams.info": "ee0c2eaa4c09814802bf520c01dfdbc1345dc2879dc9e67424d32c7b0ee88e59",
+    "cls/inference.pdmodel": "3c4337ec61722a20b1dca2e5bfaffc313c0592bc89ad6e0d45168224186f6683"
+  },
+  "license": "Apache-2.0 (upstream PaddleOCR repository)",
+  "license_url": "https://github.com/PaddlePaddle/PaddleOCR/blob/v2.10.0/LICENSE",
+  "sources": {
+    "det": {
+      "url": "https://paddleocr.bj.bcebos.com/PP-OCRv3/english/en_PP-OCRv3_det_infer.tar",
+      "sha256": "e740eb522521827cc83da3ba33e1c70ccfd9b3cf7d9a24a420ce4ca5ebb8794f"
+    },
+    "rec": {
+      "url": "https://paddleocr.bj.bcebos.com/PP-OCRv4/english/en_PP-OCRv4_rec_infer.tar",
+      "sha256": "d5ae153a6fbdacd5776543d3194c4258154ed6f83467d55de1cc345f7dd20322"
+    },
+    "cls": {
+      "url": "https://paddleocr.bj.bcebos.com/dygraph_v2.0/ch/ch_ppocr_mobile_v2.0_cls_infer.tar",
+      "sha256": "507352585040d035da3b1e6374694ad679a850acb0a36a8d0d47984176357717"
+    }
+  },
+  "source_documentation": "https://www.paddleocr.ai/v2.10.0/en/ppocr/model_list.html",
+  "hash_provenance": "SHA256 calculated from official HTTPS downloads on 2026-10-11; not upstream signed checksums"
+}

@@ -1,0 +1,6 @@
+# Pretrained English OCR; line geometry, no project-specific training.
+model_version: ocr/paddleocr-2.10.0-en-v1
+engine: paddleocr
+engine_version: "2.10.0"
+runtime_version: "2.6.2"
+config_version: ocr-model-config/1.0.0

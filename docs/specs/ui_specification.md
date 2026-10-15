@@ -1240,3 +1240,15 @@ Pending requests are keyed by the authenticated actor and claim. IndexedDB compa
 - A damage row counts "uploaded photographs" when it is model output and "illustrative photographs" when it is a fixture.
 - With model image results, the identity and coverage form says its photo IDs are the uploaded photographs, the evidence panel says the masks are stored but not shown, and the print footer names both sources.
 - Before an assessment exists the notice makes no claim about how the evidence will be processed, because the page does not know which workers are running.
+
+### Evidence popups (2026-10-14)
+
+- Each damage card built from model-analysed photographs has a "View evidence" button. It opens a modal popup with the photograph or photographs recorded as that card's source observations (joined by recorded membership, as for the observation list), each captioned with its file name, damage code and model confidence. The predicted damage region is not outlined, and the popup says so. Illustrative fixture rows and the printed report have no button, because fixture photograph IDs do not link to uploaded pixels.
+- The "View evidence" button on an estimate row also opens a popup, and still selects the row in the Evidence panel. It shows the corrected estimate page at a larger size with the extracted rows and pen marks outlined, the selected row shaded and scrolled into view. With no corrected page it shows the linked original file; with no linked file it says nothing is linked.
+- Both popups share one component (`EvidenceDialog.tsx`): a native modal `<dialog>` with a title, an "X" close button in the top right corner, closing on Esc and on a click outside the popup, and focus returning to the button that opened it. On small screens the popup uses nearly the full width. The page is fitted to the popup width, so on a phone a full estimate page is still small; there is no zoom control.
+- Display only. No popup changes a finding, link or decision. Checked with `tests/e2e/evidence-popup.mjs` using synthetic API responses; the real-backend scripts were not rerun for this change.
+
+### Hidden side label and demonstration surveyor name (2026-10-14)
+
+- The damage cards and the evidence popup no longer show "Side: unknown (unconfirmed)". It is one constant, `SHOW_UNKNOWN_SIDE` in `DamageSummary.tsx`; set it to `true` to show the label again. A known side (for example "not applicable") is still shown, and the printed report keeps the label because it is the frozen record. The data is unchanged: the side is still unknown until a surveyor confirms it, and the coverage text still asks for that confirmation. The estimate rows still show their own "Side: ..." text.
+- The signed-in demonstration user is "Acery AI" (initials AA), replacing "R. Miguel". New claims record it as their surveyor, as does the seeded claim CLM-24019. Claims already stored keep the surveyor name they were created with.

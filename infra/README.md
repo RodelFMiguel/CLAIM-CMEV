@@ -40,14 +40,28 @@ Named volumes `postgres-data`, `kafka-data`, `objectstore-data` and `cost-tables
 | `cmev-db` | PostgreSQL application state | `pg_isready` |
 | `cmev-objectstore` | Private S3-compatible evidence storage | `/minio/health/ready` |
 
-Only nginx publishes a host port. Database, broker, object store and API communicate on an internal network. Evidence goes through the authenticated API. The offline cost-bootstrap job publishes a deterministic synthetic table into the cost-tables volume without network access. API and workers mount that volume read-only and pin a table per assessment. No trained model registry is consumed unless the parts worker's Compose file is added (see below).
+Only nginx publishes a host port. Database, broker, object store and API communicate on an internal network. Evidence goes through the authenticated API. The offline cost-bootstrap job publishes a deterministic synthetic table into the cost-tables volume without network access. API and workers mount that volume read-only and pin a table per assessment. Optional parts, image and OCR overlays mount their selected model registries read-only (see below).
 
 API startup applies Alembic migrations, seeds demonstration claims and initializes the evidence bucket. Readiness checks the expected schema head. Workers start after API and broker health and cost-bootstrap completion. Topics are explicitly created by worker startup; broker topic auto-creation is disabled. Outbox requests can remain pending during a broker outage.
 
-Use --profile full instead of --profile lean to run the split fixture services. Stop cmev-worker-combined before switching an existing project to full; stop the split services before switching back. Full still groups all fixture producers in one container. The only per-model container is the opt-in M1 parts worker described below; the other model containers, GPU parity and dedicated migration-job packaging remain future work.
+Use --profile full instead of --profile lean to run the split fixture services. Stop cmev-worker-combined before switching an existing project to full; stop the split services before switching back. Full still groups the remaining fixture producers in one container. Opt-in containers implement the image branch and M4 OCR; M5/M6 model workers, GPU parity and dedicated migration-job packaging remain future work.
 
 
-`CMEV_FIXTURE_MODE=true` is explicit in Compose. Setting it false does not enable real inference: the backend refuses unsupported live processing. The one exception is the parts stage, which is switched by adding `docker-compose.parts.yml`. The demo uses one local account and HTTP cookies; deployment authentication, TLS, scoped service credentials and production hardening are outside this baseline.
+`CMEV_FIXTURE_MODE=true` is explicit in Compose. Keep it enabled for the remaining fixture stages. Parts, image and OCR overlays switch only the stages owned by their live workers. The demo uses one local account and HTTP cookies; deployment authentication, TLS, scoped service credentials and production hardening are outside this baseline.
+
+## Optional pretrained OCR: M4
+
+Provision the pinned English OCR release with `python scripts/download_ocr_models.py`,
+then add `infra/compose/docker-compose.ocr.yml` to the base Compose files. It sets
+`CMEV_OCR_PRODUCER=real` across the coordinating services and starts `cmev-worker-ocr`
+with its separately pinned Paddle/NumPy environment. The overlay can also be combined
+with the image overlay. It reads uploaded PDF/image bytes, stores corrected pages and
+located OCR evidence, and emits the existing page-read completion event. M5 and M6
+remain fixtures; the full document lane is not thereby model-integrated.
+
+See [M4 setup, weights and validation](../docs/m4-ocr-worker.md) for exact commands
+and limitations. Missing/corrupt weights or incompatible config prevent startup;
+there are no automatic runtime downloads or alternative-engine fallbacks.
 
 ## Optional real image branch: M1, M2 and M3
 
@@ -134,3 +148,9 @@ Limits of this mode:
 - The [official MinIO repository](https://github.com/minio/minio) is archived and its community distribution is source-only. `Dockerfile.objectstore` builds official release `RELEASE.2025-10-15T17-29-55Z` at exact commit `9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a`, retaining its AGPL license. This avoids depending on unavailable historical image tags and preserves the ADR's S3 adapter choice. The archived dependency needs a separate supported-provider decision before a non-demo deployment. Its first source build downloads Go dependencies and can take several minutes.
 
 Validated on 2026-09-24 against an isolated Docker project on port 18080: both profile configurations passed, images built, lean had six healthy long-running services and full had eight. Cost bootstrap completed successfully. Browser checks exercised PostgreSQL persistence, MinIO uploads, Kafka processing, M8 results, review corrections/reassessment, durable replay after a lost acknowledgement, conflicts and frozen reports. See [verification evidence](../docs/verification/model-independent-2026-09-24.md). These checks do not measure trained models, real price accuracy, capacity, broker outage recovery or coordinated backup/restore.
+
+### Complete live document branch (2026-10-14)
+
+Add `infra/compose/docker-compose.document.yml` to the base Compose file (and the image overlay when desired). It includes the OCR service and separate M5/M6 neural workers, switches ownership across API/orchestration, and selects the latest explicitly pinned notebook exports. Do not combine it with the OCR-only overlay. See [live document worker operations](../docs/document-worker-live.md) for commands, candidate limitations, evidence and revision behaviour.
+
+For both live branches, use `sh scripts/live-stack.sh up --build -d` from the repository root, and the same wrapper for `ps`, `logs` and `down`. Starting the base file alone while live workers remain running resets command versions to fixtures and can cause `model_version_unsupported`. Stop the complete live stack before switching to fixtures; stored volumes are retained by `down`.

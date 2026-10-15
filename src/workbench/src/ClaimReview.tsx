@@ -55,6 +55,7 @@ import {
   type DamageGroup,
   type DamageObservation,
 } from "./DamageSummary";
+import { CorrectedPageView, EvidenceDialog, EvidenceFile } from "./EvidenceDialog";
 
 interface Evidence {
   file_id: string;
@@ -83,6 +84,7 @@ interface LineItem extends ReviewRow {
   evidence_ids: string[];
 }
 interface Mark {
+  box_norm: number[];
   mark_id: string;
   entry_id: string | null;
   page_id: string;
@@ -111,7 +113,14 @@ interface Review {
   finalized_at?: string;
   actions: Action[];
 }
+interface DocumentPage {
+  page_id: string;
+  file_id: string;
+  page_number: number;
+  corrected_url?: string | null;
+}
 interface Assessment {
+  pages?: DocumentPage[];
   review_overlay: ReviewOverlay;
   review_photo_ids: string[];
   possible_additions: {
@@ -135,7 +144,7 @@ interface Assessment {
   evidence_sources?: { image: string; document: string };
   versions: Record<string, string>;
   declaration_completeness: string;
-  fixture_notice: string;
+  fixture_notice: string | null;
   invalidated_corrections?: unknown[];
   finalize_preconditions: {
     can_finalize: boolean;
@@ -317,7 +326,9 @@ function ReviewOverview({ id }: { id: string }) {
   const [note, setNote] = useState("");
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedPage, setSelectedPage] = useState<string | null>(null);
   const [selectedRow, setSelectedRow] = useState<string | null>(null);
+  const [rowPopup, setRowPopup] = useState(false);
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [actor, setActor] = useState("");
@@ -597,10 +608,12 @@ function ReviewOverview({ id }: { id: string }) {
       <Loading />
     );
   const files = assessment?.files ?? [];
-  const file =
-    files.find((f) => f.file_id === selectedFile) ??
-    (selectedRow ? undefined : files[0]);
   const row = assessment?.line_items.find((r) => r.entry_id === selectedRow);
+  const correctedPages = assessment?.pages?.filter((p) => p.corrected_url) ?? [];
+  const page = correctedPages.find((p) => p.page_id === (row?.page_id ?? selectedPage));
+  const file =
+    files.find((f) => f.file_id === (page?.file_id ?? selectedFile)) ??
+    (selectedRow ? undefined : files[0]);
   const imageFromModels = assessment?.evidence_sources?.image === "real";
   const frozen = review?.finalized ?? false;
   // A shown assessment that is not the claim's current one is read-only.
@@ -665,14 +678,12 @@ function ReviewOverview({ id }: { id: string }) {
         <Info size={18} />
         <p>
           <strong>
-            {!assessment
-              ? "Demonstration prototype."
-              : imageFromModels
-                ? "Partly demonstration results."
-                : "Demonstration results."}
+            {!assessment ? "Processing status." : assessment.fixture_notice
+              ? "Demonstration or mixed results." : "Model results."}
           </strong>{" "}
-          {assessment?.fixture_notice ??
-            "No results yet. When they appear, this notice says which come from trained models and which are demonstration fixtures."}
+          {assessment ? (assessment.fixture_notice ??
+            "Models processed the uploaded evidence. Document models have synthetic validation evidence only; review uncertain fields and proposed marks. Cost references are synthetic.") :
+            "No completed results yet. Processing failures and missing evidence remain visible."}
         </p>
       </div>
       {error && <ErrorBanner message={error} />}
@@ -869,6 +880,7 @@ function ReviewOverview({ id }: { id: string }) {
                     files={assessment.files}
                     onPhoto={(photoId) => {
                       setSelectedRow(null);
+                      setSelectedPage(null);
                       setSelectedFile(photoId);
                       document.getElementById("evidence-panel")?.focus();
                     }}
@@ -921,6 +933,11 @@ function ReviewOverview({ id }: { id: string }) {
                       <p>
                         Unlinked {label(mark.type)}: {mark.reason}
                       </p>
+                      {correctedPages.some((p) => p.page_id === mark.page_id) && <button type="button"
+                        className="button button-outline button-small" onClick={() => {
+                          setSelectedRow(null); setSelectedPage(mark.page_id);
+                          document.getElementById("evidence-panel")?.focus();
+                        }}>View mark on page</button>}
                       <label>
                         Assign mark to row
                         <select
@@ -1069,10 +1086,11 @@ function ReviewOverview({ id }: { id: string }) {
                         </div>
                         <button
                           className="button button-outline button-small"
+                          aria-haspopup="dialog"
                           onClick={() => {
                             setSelectedRow(item.entry_id);
                             setSelectedFile(item.evidence_ids[0] ?? null);
-                            document.getElementById("evidence-panel")?.focus();
+                            setRowPopup(true);
                           }}
                         >
                           View evidence
@@ -1291,6 +1309,25 @@ function ReviewOverview({ id }: { id: string }) {
                   <p>{row ? row.description : "Preserved original files"}</p>
                 </div>
               </div>
+              {correctedPages.length > 0 && (
+                <label className="evidence-select">
+                  Corrected estimate page
+                  <select value={page?.page_id ?? ""} onChange={(e) => {
+                    setSelectedRow(null);
+                    setSelectedPage(e.target.value || null);
+                  }}>
+                    <option value="">Browse original files</option>
+                    {correctedPages.map((p) => <option key={p.page_id} value={p.page_id}>
+                      {files.find((f) => f.file_id === p.file_id)?.original_name ?? "Estimate"} · page {p.page_number}
+                    </option>)}
+                  </select>
+                </label>
+              )}
+              {page?.corrected_url && (
+                <CorrectedPageView page={page} rows={assessment.line_items}
+                  marks={assessment.marks} selectedRow={selectedRow} />
+              )}
+              {page && <p className="evidence-caption">Blue: extracted rows. Red: proposed or confirmed marks. Grey: rejected marks.</p>}
               {files.length ? (
                 <>
                   <label className="evidence-select">
@@ -1299,6 +1336,7 @@ function ReviewOverview({ id }: { id: string }) {
                       value={file?.file_id ?? ""}
                       onChange={(e) => {
                         setSelectedRow(null);
+                        setSelectedPage(null);
                         setSelectedFile(e.target.value);
                       }}
                     >
@@ -1321,7 +1359,7 @@ function ReviewOverview({ id }: { id: string }) {
                   )}
                   {file && (
                     <>
-                      <div className="evidence-preview">
+                      {!page && <div className="evidence-preview">
                         {file.media_type === "application/pdf" ? (
                           <iframe
                             title={`Original estimate: ${file.original_name}`}
@@ -1339,7 +1377,7 @@ function ReviewOverview({ id }: { id: string }) {
                             }}
                           />
                         )}
-                      </div>
+                      </div>}
                       <a
                         className="button button-outline button-small"
                         href={file.url}
@@ -1390,12 +1428,43 @@ function ReviewOverview({ id }: { id: string }) {
               <div className="inline-info">
                 <Info size={16} />
                 <span>
-                  {imageFromModels
+                  {correctedPages.length > 0
+                    ? "Document overlays show model proposals. Confirm marks and review uncertain fields before finalizing."
+                    : imageFromModels
                     ? "The part and damage masks are stored but not shown here. Repair prices are not validated."
                     : "Mock processing does not produce evidence overlays or validate repair prices."}
                 </span>
               </div>
             </aside>
+            {rowPopup && row && (
+              <EvidenceDialog
+                title={row.description}
+                subtitle={
+                  page
+                    ? `${files.find((f) => f.file_id === page.file_id)?.original_name ?? "Estimate"} \u00b7 page ${page.page_number}`
+                    : file?.original_name
+                }
+                onClose={() => setRowPopup(false)}
+              >
+                {page?.corrected_url ? (
+                  <>
+                    <CorrectedPageView page={page} rows={assessment.line_items}
+                      marks={assessment.marks} selectedRow={selectedRow} centerOnSelected />
+                    <p className="evidence-dialog-note">
+                      Blue: extracted rows. Red: proposed or confirmed marks. Grey: rejected marks.
+                      The selected row is shaded.
+                    </p>
+                  </>
+                ) : file ? (
+                  <EvidenceFile file={file} />
+                ) : (
+                  <p className="evidence-dialog-note">
+                    No original file is linked to this row, so there is nothing to enlarge. The
+                    Evidence panel lets you browse the uploaded files separately.
+                  </p>
+                )}
+              </EvidenceDialog>
+            )}
           </div>
           <section className="panel finalize-panel">
             <div>

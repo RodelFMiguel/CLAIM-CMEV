@@ -1,6 +1,6 @@
 # M4 - Page reading
 
-Owner lane: 2 (Document extraction). Runtime container: `cmev-worker-ocr`. Code: `src/claim_cmev/documents/text_layout/`. Training pipeline: none, OCR is pretrained and pinned. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 2.2, 8.1, 9.3, 9.4, 10 (M4), 11.1, 11.3, 12.1, 13.1. Status: specified for v2; not implemented, not measured.
+Owner lane: 2 (Document extraction). Runtime container: `cmev-worker-ocr`. Code: `src/claim_cmev/documents/text_layout/`. Training pipeline: none, OCR is pretrained and pinned. Source: [proposal v2](../CLAIM-CMEV_project_proposal_v2.md) sections 2.2, 8.1, 9.3, 9.4, 10 (M4), 11.1, 11.3, 12.1, 13.1. Status (2026-10-11): library and opt-in persisted worker implemented; synthetic contract integration tested. Real-page accuracy and neural-M5 word alignment remain unvalidated. See [worker setup and validation](../m4-ocr-worker.md).
 
 > **Runtime note.** The user directed containerised modules with Kafka as the transport between them on 2026-09-22. Proposal v2 section 9.1 has since been rewritten to describe this same runtime directly; it originally specified one API process plus one worker, a jobs table and no broker. Every v2 domain rule is unchanged: the decision rules in section 8, the exchanged records in section 9.3, module scope in section 10, datasets in section 11 and targets in section 13.1.
 
@@ -106,6 +106,14 @@ def correct_page_geometry(image, config) -> GeometryResult:
 
 Page ids are deterministic from `(file_id, page_number)`, so a retry reuses page identity and M5 and M6 links stay valid.
 
+Implementation note (2026-10-11): with `skip_superseded_revisions` enabled, a queued
+obsolete command stops before storage/OCR and is recorded by the existing runtime
+as a non-replayable dead letter with `superseded_input_revision`, rather than adding
+a new persisted `superseded` state. It emits the generic failure event but no
+page-read completion event. Failed/unrenderable pages retain job/DLQ reasons;
+their failed page records are not committed. Stable logical page IDs are retained,
+while database page-record IDs are scoped to the producing job to preserve history.
+
 ## Processing specification
 
 1. Validate the envelope and apply the duplicate and superseded table before any work.
@@ -132,7 +140,7 @@ Page ids are deterministic from `(file_id, page_number)`, so a retry reuses page
 | Boundary unreliable and no deskew applied on a clearly skewed page | `partial` | Recorded so a later column failure in M5 is explainable |
 | Everything within thresholds | `complete` | |
 
-15. Obscured print: where a pen stroke covers printed text, OCR confidence drops or text is missing. M4 records this as a low confidence region with flag `low_confidence_region`. It does **not** label it a pen mark. M6 owns that decision, and M8 must never read a missing row as a confirmed absence.
+15. Obscured print: where a pen stroke covers printed text, OCR confidence may drop or text may be missing; synthetic smoke also demonstrated confident incorrect text. Low confidence is therefore not a reliable obscuration detector. M4 flags low-confidence returned regions with `low_confidence_region`, retains original text and page evidence, and does **not** label it a pen mark. M6 owns mark detection, and M8 must never read a missing row as a confirmed absence. Real obscured-print acceptance remains open.
 
 ### Worked example
 
@@ -155,7 +163,7 @@ Box `bx_061` is flagged `low_confidence_region`. M4 does not correct it and does
 
 ## Configuration and thresholds
 
-Keys live in versioned configuration at `configs/pipeline/page_reading.yaml`. Thresholds are selected on development and validation pages and frozen at the day 6 checkpoint. They are never chosen after seeing the final test pages.
+Keys live in versioned configuration at `configs/pipeline/m4_page_reading.yaml`. Thresholds are selected on development and validation pages and frozen at the day 6 checkpoint. They are never chosen after seeing the final test pages.
 
 | Key | Proposed default | Note |
 | --- | --- | --- |
@@ -209,12 +217,12 @@ v2 section 13.1 sets no single numeric threshold for M4. It requires reporting b
 
 - [ ] Day 2 smoke test: install the pinned PaddleOCR, run it on three real photographed pages, and record the actual text box granularity, the confidence field and the per page latency and memory.
 - [ ] Decide by day 2 whether Tesseract is needed as an installation fallback, and record the decision with its reason.
-- [ ] Implement `correct_page_geometry` with the reliability gate, the rotation fallback and the stored homography pair.
-- [ ] Implement PDF rasterisation with deterministic page ids from `(file_id, page_number)`.
-- [ ] Implement `run_page_reading`, the box round trip mapping and the quality signal set.
-- [ ] Implement the granularity assertion and its failing test.
-- [ ] Implement the consumer shell: envelope validation, `job_key` lookup, advisory lock, outbox publish, dead letter path.
-- [ ] Write the `cmev-worker-ocr` Dockerfile with pinned OCR weights baked in, and its `lean` and `full` Compose entries.
+- [x] Implement `correct_page_geometry` with the reliability gate, the rotation fallback and the stored homography pair.
+- [x] Implement PDF rasterisation with deterministic page ids from `(file_id, page_number)`.
+- [x] Implement `run_page_reading`, the box round trip mapping and the quality signal set.
+- [x] Implement the granularity assertion and its failing test.
+- [x] Implement the consumer shell: envelope validation, `job_key` lookup, transactional job-row lock, outbox publish, dead letter path. Local SQLite/in-memory tests exercise delivery and retries; PostgreSQL/Kafka acceptance must be reported separately.
+- [x] Write the `cmev-worker-ocr` Dockerfile with verified pinned OCR weights mounted read-only, and its `lean` and `full` Compose entries. Linux ARM64 build and isolated inference/persistence smoke pass; a full Kafka/PostgreSQL/MinIO deployment is separate acceptance.
 - [ ] Build page fixtures: flat scan, perspective photograph, rotated photograph, glare, shadow, partly obscured print, unreadable page.
 - [ ] Agree the image quality buckets with Lane 3 before measuring, so buckets are not chosen after seeing errors.
 - [ ] Measure and report word error rate and exact amount accuracy by bucket, with counts.

@@ -4,7 +4,7 @@ Evidence-led motor own-damage claim review: vehicle photographs, marked workshop
 
 ## Working baseline
 
-The baseline provides a public information page, session login, searchable claim dashboard, claim intake, review and browser print views. React/TypeScript calls real FastAPI endpoints. Persistence, orchestration, deterministic M8 checks and review actions are real; stage producers supply clearly labelled fixture evidence records. Corrections trigger versioned reassessment, and finalization freezes the reviewed report. No trained model analyses uploaded evidence, and synthetic costs do not validate real prices or final claim approval.
+The application provides a public information page, session login, searchable claim dashboard, claim intake, review and browser print views. React/TypeScript calls FastAPI endpoints. The live stack connects trained M1/M2 image models, M3 evidence summary, pretrained M4 OCR, the selected M5/M6 notebook exports, pinned M7 costs, deterministic M8 checks and M9 review/reporting. Corrections trigger versioned reassessment, and finalization freezes the reviewed report. M5/M6 remain synthetic-trained candidates with layout/generalization limits; synthetic costs do not validate real prices or final claim approval. The base Compose file alone runs fixture stage producers.
 
 Application code lives under `src`, as recorded in [ADR 0003](docs/adr/0003-fixture-ui-api-baseline.md). The [current handoff](CONTEXT.md) records checks actually run and remaining work.
 
@@ -13,14 +13,17 @@ Application code lives under `src`, as recorded in [ADR 0003](docs/adr/0003-fixt
 Requires Docker Engine/Desktop with Compose support. From the repository root:
 
 ```sh
+# First setup only; keep your existing .env when restarting.
 cp infra/compose/.env.example infra/compose/.env
 # Edit the local demo password and infrastructure credentials in the copied file.
-docker compose --env-file infra/compose/.env -f infra/compose/docker-compose.yml --profile lean up --build
+sh scripts/live-stack.sh up --build -d
 ```
 
 Open **http://localhost:8080**. Sign in with `surveyor@claim-cmev.demo` and the `CMEV_DEMO_PASSWORD` configured above. The login page includes a default demo credential suggestion; replace its password if you configured a different value. API documentation is at **http://localhost:8080/api/v1/docs**; the OpenAPI schema is at `/api/v1/openapi.json`.
 
-The lean baseline contains the web app, API, fixture worker, Kafka-compatible broker, PostgreSQL and S3-compatible object storage. Infrastructure services are private; only the web port is published to loopback. See [infra/README.md](infra/README.md) for configuration, persistent volumes, image dependencies and validation limitations. The `full` profile separates the orchestrator, fixture producers and consolidator. It is verified fixture packaging, not the final six inference services or GPU runtime.
+The live command requires the selected model entries under `artifacts/models/`, including the pinned OCR release. It starts lean orchestration plus real image, OCR, line-item and pen-mark workers. See [live document setup](docs/document-worker-live.md) for model provisioning and limitations. Use `sh scripts/live-stack.sh ps`, `logs`, and `down` to keep the same overlays on every command. Infrastructure services are private; only the web port is published to loopback. See [infra/README.md](infra/README.md) for persistent volumes and other deployment modes.
+
+For a fixture demonstration without model weights, use the base Compose file alone. If live workers are already running, first stop them with `sh scripts/live-stack.sh down` (keeps volumes), then run the base-only command. Dropping overlays from `up` leaves old workers running beside fixture consumers and can cause `model_version_unsupported` failures.
 
 ## Local development without containers
 

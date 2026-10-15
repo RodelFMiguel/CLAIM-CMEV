@@ -1,10 +1,11 @@
 """Insert-only store for validated contract records produced by the branch stages.
 
 Every stage result is written as one ``pipeline.stage_records`` row per record, keyed by
-the record's own deterministic ID and tied to the producing job key, in the producing
+the record's deterministic ID and tied to the producing job key, in the producing
 job's transaction. A replay never reaches this code (the job is already ``succeeded``);
 a second record with an existing ID is an ``IntegrityError`` (a conflict), never an
-overwrite. Rows are re-validated into contract models on load.
+overwrite. Document pages have a stable logical page ID across revisions, so their
+storage ID also includes the producing job. Rows are re-validated into contract models on load.
 """
 from __future__ import annotations
 
@@ -39,6 +40,8 @@ RECORD_KINDS: dict[str, type[BaseModel] | None] = {
     "identity_confirmation": IdentityConfirmation,
     "coverage_confirmation": CoverageConfirmation,
     "document_page": DocumentPage,
+    "page_reading": None,
+    "page_text_box": None,
     "line_item": LineItem,
     "declaration_completeness": DeclarationCompleteness,
     "pen_mark": PenMark,
@@ -47,12 +50,14 @@ RECORD_KINDS: dict[str, type[BaseModel] | None] = {
 _ID_FIELDS = {"part_prediction": "prediction_id", "damage_observation": "observation_id", "part_summary": "summary_id",
               "part_coverage": "coverage_id", "identity_confirmation": "confirmation_id",
               "coverage_confirmation": "confirmation_id", "document_page": "page_id", "line_item": "entry_id",
-              "pen_mark": "mark_id", "fixture_mark_action": "action_id"}
+              "pen_mark": "mark_id", "fixture_mark_action": "action_id", "page_text_box": "box_id"}
 
 
 def record_id(kind: str, record: Any, job_key: str) -> str:
     """The record's own ID, or a deterministic one for records that have none."""
     body = record if isinstance(record, dict) else record.__dict__
+    if kind == "document_page":
+        return deterministic_id("page-record", job_key, body["page_id"])
     field = _ID_FIELDS.get(kind)
     if field:
         return body[field]
@@ -60,6 +65,8 @@ def record_id(kind: str, record: Any, job_key: str) -> str:
         return deterministic_id("iq", job_key, body["photo_id"])
     if kind == "declaration_completeness":
         return deterministic_id("dc", job_key)
+    if kind == "page_reading":
+        return deterministic_id("pr", job_key, body["page_id"])
     raise KeyError(kind)
 
 

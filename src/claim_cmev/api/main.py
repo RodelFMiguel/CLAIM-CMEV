@@ -47,8 +47,8 @@ from ..review.state import ReviewActionRequest
 
 log = logging.getLogger("cmev.api")
 COOKIE = "cmev_session"
-DEMO_USER = {"id": "demo-surveyor", "name": "R. Miguel", "email": setting("DEMO_EMAIL", "surveyor@claim-cmev.demo"),
-             "role": "surveyor", "initials": "RM"}
+DEMO_USER = {"id": "demo-surveyor", "name": "Acery AI", "email": setting("DEMO_EMAIL", "surveyor@claim-cmev.demo"),
+             "role": "surveyor", "initials": "AA"}
 BACKLOG_LIMIT = int(setting("OUTBOX_BACKLOG_LIMIT", str(DEFAULT_BACKLOG_LIMIT)))
 # The evidence a carried correction rests on. Identity/coverage confirmations and accepted
 # additions (proposed from photographed damage observations) rest on the photographs;
@@ -155,7 +155,8 @@ def create_app(database_url=None, storage_path=None):
     storage = Storage(storage_path)
     settings = RuntimeSettings.from_env()
     # what the orchestrator pins on new work
-    versions = VersionBundle.for_runtime(settings.parts_producer, settings.damage_producer)
+    versions = VersionBundle.for_runtime(settings.parts_producer, settings.damage_producer, settings.ocr_producer,
+                                         settings.lineitems_producer, settings.penmarks_producer)
     allowed = [s.strip() for s in setting("ALLOWED_ORIGINS", "http://localhost:8080,http://localhost:5173,"
                                           "http://127.0.0.1:5173").split(",")]
     failures = LoginFailures(max_keys=int(setting("LOGIN_FAILURE_MAX_KEYS", "10000")))
@@ -196,11 +197,12 @@ def create_app(database_url=None, storage_path=None):
 
     @asynccontextmanager
     async def lifespan(app):
-        if not settings.fixture_mode:
-            raise RuntimeError("Only fixture mode is implemented; real model execution is unavailable")
+        if not settings.fixture_mode and not all(p == "real" for p in (settings.parts_producer,
+                settings.damage_producer, settings.ocr_producer, settings.lineitems_producer, settings.penmarks_producer)):
+            raise RuntimeError("fixture mode is required while any stage uses fixture producers")
         database.initialize()
         storage.initialize()
-        if setting("SEED", "true").lower() == "true":
+        if settings.source_kind == "fixture" and setting("SEED", "true").lower() == "true":
             try:
                 settings.active_cost_table()
             except CostTableError:  # readiness reports it; seeds are created on a later start
@@ -254,7 +256,7 @@ def create_app(database_url=None, storage_path=None):
 
     @app.get("/api/v1/healthz")
     def health():
-        return {"status": "ok", "fixture_mode": True}
+        return {"status": "ok", "fixture_mode": settings.source_kind == "fixture"}
 
     @app.get("/api/v1/readyz")
     def ready():
@@ -280,11 +282,11 @@ def create_app(database_url=None, storage_path=None):
             failing.append("cost_table")
         if failing:
             fail(503, "dependency_unavailable", "A required dependency is not ready.", failing=failing, **detail)
-        return {"status": "ready", **detail, "fixture_mode": True}
+        return {"status": "ready", **detail, "fixture_mode": settings.source_kind == "fixture"}
 
     @app.get("/api/v1/version")
     def version():
-        return {"version": "0.2.0", "schema_version": "0.2.0", "fixture_mode": True, "runtime_profile": settings.profile,
+        return {"version": "0.2.0", "schema_version": "0.2.0", "fixture_mode": settings.source_kind == "fixture", "runtime_profile": settings.profile,
                 "expected_schema_head": EXPECTED_HEAD, "stage_versions": {s: versions.for_stage(s) for s in versions.stages}}
 
     @app.post("/api/v1/auth/login")
@@ -442,6 +444,27 @@ def create_app(database_url=None, storage_path=None):
                 fail(404, "fixture_original_absent", "This fixture reference has no stored original.")
         return Response(storage.read(fid), media_type=item["media_type"],
                         headers={"ETag": '"' + item["sha256"] + '"', "Content-Disposition": "inline"})
+
+    @app.get("/api/v1/claims/{cid}/assessments/{revision}/pages/{pid}/corrected")
+    def corrected_page(cid: str, revision: int, pid: str):
+        from ..contracts.common import ArtifactRef
+        from ..documents.worker_common import read_verified
+        from ..messaging.consumer import PermanentError, TransientError
+        with database.session() as db:
+            claim_for(db, cid)
+            assessment = views.assessment_row(db, cid, revision)
+            page = next((p for p in assessment["inputs"].get("pages", []) if p["page_id"] == pid), None) if assessment else None
+            if not page or not page.get("corrected_render_ref"):
+                fail(404, "evidence_not_found", "No corrected page is stored for this assessment.")
+            ref = ArtifactRef.model_validate(page["corrected_render_ref"])
+        try:
+            data = read_verified(storage, ref)
+        except PermanentError:
+            fail(409, "evidence_unavailable", "The corrected page is missing or its integrity check failed.")
+        except TransientError:
+            fail(503, "evidence_unavailable", "The evidence store is unavailable.")
+        return Response(data, media_type=ref.media_type, headers={"ETag": '"' + ref.sha256 + '"',
+                        "Content-Disposition": "inline", "Cache-Control": "private, no-cache"})
 
     @app.post("/api/v1/claims/{cid}/input-revisions", status_code=202)
     def commit_input(cid: str, body: InputCreate, request: Request):

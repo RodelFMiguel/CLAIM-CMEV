@@ -1,4 +1,4 @@
-# Manual vision training notebooks
+# Manual model training notebooks
 
 | Task | Notebook (including the training plan) |
 | --- | --- |
@@ -6,6 +6,8 @@
 | M2: 8 HITL damage types plus background | [M2_HITL_damage_training.ipynb](M2_HITL_damage_training.ipynb) |
 | M2: missed-label review and tiny training-subset diagnostic | [M2_HITL_failure_audit.ipynb](M2_HITL_failure_audit.ipynb) |
 | M2: 6 CarDD damage types plus background (the specified M2 dataset) | [M2_CarDD_damage_training.ipynb](M2_CarDD_damage_training.ipynb) |
+| M5: LayoutLMv3 line items from M4 OCR output | [M5_Document_Worker.ipynb](M5_Document_Worker.ipynb) |
+| M6: pen-mark detection and row linking from M4 pages | [M6_Document_Worker.ipynb](M6_Document_Worker.ipynb) |
 
 The CarDD notebook reads the original release from `data/raw/CarDD_release/` (COCO annotation files for train, val and test, plus their images), prepares masks once into `data/processed/cardd/v1`, and saves runs under `artifacts/models/damage-cardd/`. It keeps CarDD's official splits, never reads HITL labels, and reports against the specification target of 0.45 test mIoU. Its scores are not comparable with HITL runs.
 
@@ -53,3 +55,16 @@ Clear notebook outputs before committing. Keep datasets, weights and generated e
 5. Make the registry entry available to the image worker and rebuild/recreate the API and workers together using the image Compose overlay. Assess a new input revision and verify the pinned model/taxonomy. Existing assessments retain their original versions.
 
 HITL and CarDD switching uses one selected M2 entry and its own vocabulary, never a class-name mapping. Export alone does not modify the active YAML or deploy anything. No new dataset training or model selection was performed by this notebook update. Saved output cells were cleared so previous centred-frame results do not appear to be results of these defaults.
+
+
+## M5 and M6 document notebooks (2026-10-13)
+
+These notebooks consume the real M4 cache at `data/processed/synthetic_motor_claims_500_w_annotation/m4-v1/` and the annotated synthetic dataset. They use the `claim-cmev` kernel, local cached weights, shared training/serving encoding or detector reconstruction, and explicit candidate exports. Results are **synthetic validation evidence only**; no specification target is established. LayoutLMv3 remains the separately reported neural M5 route.
+
+To inspect a saved run without training, set `RELOAD_RUN_DIR` to its folder. Keep `FINAL_EVAL=False`. With `QUICK_RUN=True`, reload uses a validation subset and isolated reports; it does not exercise training. M6 also skips its optimization walkthrough in reload mode. Set `EXPORT_FOR_SERVING=True` and choose a new `EXPORT_NAME` to export; existing entries are never overwritten. Export does not select or deploy a model. Use `caffeinate -i -s` around long headless jobs on this Mac.
+
+M5 reports the coordinate-only baseline, accepted wrong amounts/quantities, vertical and horizontal shift probes, and atomic `rows_for_m6_validation.json` output from the serving adapter. Its row-slot predictions depend strongly on page height: do not serve the candidate on pages not aligned with the training layout. M6 compares full table bands, oracle printed-cell unions and the actual M5 rows side by side; `M5_ROWS_FILE="auto"` finds the newest row handoff and refuses a quick-run file during full evaluation. Missing rows remain in recall denominators. M6's selected thresholds and recall-preserving alternatives are proposed; `configs/pipeline/m6_linking.yaml` is unchanged.
+
+The corrected executed references are the ignored `artifacts/evaluation/notebook-validation/M{5,6}_Document_Worker-reload-20261013.ipynb` files and their HTML renderings. The original runs were trained on 2026-10-12; the correction pass uses saved weights only, including quick checks. Builders and headless runners are retained under `runtime/handoff-m5-m6-20261013/m5/` and `m6/`; edit their cell parts and rebuild, never hand-edit generated notebook JSON. Builders are local ignored handoff material and must accompany future notebook maintenance.
+
+Live M5/M6 serving is now available through the [document worker integration](../docs/document-worker-live.md). Explicit model YAML selections and the document Compose overlay activate the exported candidates. Notebook export remains separate from deployment; trained-model acceptance remains unestablished.
