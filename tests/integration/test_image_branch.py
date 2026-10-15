@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -48,10 +49,24 @@ IMAGE_GROUPS = {"cmev-worker-parts", "cmev-worker-damage", "cmev-worker-summary"
 DOCUMENT_GROUPS = {"cmev-worker-ocr", "cmev-worker-lineitems", "cmev-worker-penmarks"}
 TOPICS = {"cmev-worker-parts": "cmev.cmd.parts-segment.v1", "cmev-worker-damage": "cmev.cmd.damage-segment.v1",
           "cmev-worker-summary": "cmev.cmd.part-summary.v1"}
-DAMAGE_CLASSES = ["background", "missing-part", "broken-part", "scratch", "cracked", "dent", "flaking", "paint-chip",
-                  "corrosion"]  # the served checkpoint's own numbering
+HITL_CLASSES = ["background", "missing-part", "broken-part", "scratch", "cracked", "dent", "flaking", "paint-chip",
+                "corrosion"]
 CARDD_CLASSES = ["background", "dent", "scratch", "crack", "glass-shatter", "lamp-broken", "tire-flat"]
+CLASSES_BY_TAXONOMY = {"damage-hitl-1.0.0": HITL_CLASSES, "damage-cardd-1.0.0": CARDD_CLASSES}
 SIGNALS = {"part_area_fraction", "blur_score", "mean_luma", "clipped_fraction", "border_touch_fraction"}
+
+
+@pytest.fixture(params=["hitl", "cardd"])
+def damage_config(request, tmp_path, monkeypatch):
+    """Exercise both vocabularies independently of the developer's served checkpoint."""
+    model_id = f"damage-{request.param}"
+    path = tmp_path / "test-damage.yaml"
+    path.write_text(yaml.safe_dump({
+        "model_id": model_id, "model_version": f"{model_id}/integration-test",
+        "taxonomy_version": f"{model_id}-1.0.0", "config_version": f"{model_id}-cfg-test",
+        "input_size": 512, "device": "cpu"}), encoding="utf-8")
+    monkeypatch.setenv("CMEV_DAMAGE_CONFIG", str(path))
+    return load_damage_model_config()
 
 
 def _checkpoint(folder: Path, labels: int, always: int, id2label: dict[int, str] | None = None) -> bytes:
@@ -81,21 +96,22 @@ def _records_of(folder: Path, config, weights: bytes, **extra) -> None:
 
 
 @pytest.fixture
-def registry(tmp_path: Path) -> Path:
+def registry(tmp_path: Path, damage_config) -> Path:
     """Both configured versions: every pixel is a front door, and every pixel is a dent."""
     root = tmp_path / "registry"
     parts, damage = load_parts_config(), load_damage_model_config()
+    classes = CLASSES_BY_TAXONOMY[damage.taxonomy_version]
     door = {code: i for i, code in ID_TO_PART_CODE.items()}["front-door"]
     _records_of(root / parts.model_version, parts,
                 _checkpoint(root / parts.model_version, 22, door, ID_TO_PART_CODE))
     _records_of(root / damage.model_version, damage,
-                _checkpoint(root / damage.model_version, 9, DAMAGE_CLASSES.index("dent")),
-                **{"label_schema.json": {"id_to_code": {str(i): c for i, c in enumerate(DAMAGE_CLASSES)}}})
+                _checkpoint(root / damage.model_version, len(classes), classes.index("dent")),
+                **{"label_schema.json": {"id_to_code": {str(i): c for i, c in enumerate(classes)}}})
     return root
 
 
 @pytest.fixture
-def versions() -> VersionBundle:
+def versions(damage_config) -> VersionBundle:
     return VersionBundle.for_runtime("real", "real")
 
 
@@ -132,7 +148,7 @@ def test_version_bundle_pins_both_models_and_the_real_summary_rules(versions):
     assert versions.for_stage("damage") == {
         "damage_model": damage.model_version, "damage_config": damage.config_version,
         "parts_model": parts.model_version, "assignment_config": load_assignment_config().config_version,
-        "taxonomy": "damage-hitl-1.0.0", "code": CODE_VERSION}
+        "taxonomy": damage.taxonomy_version, "code": CODE_VERSION}
     assert versions.for_stage("summary") == {"summary_config": load_summary_config().config_version,
                                              "taxonomy": parts.taxonomy_version, "code": CODE_VERSION}
     for stage in ("page_read", "line_items", "pen_marks"):
@@ -333,7 +349,8 @@ def test_damage_is_assigned_against_the_mask_the_parts_worker_made_for_that_phot
     for photo_id, job in damage_jobs.items():
         command = job["command"]["payload"]
         assert command["part_mask_ref"] == parts_jobs[photo_id]["result_ref"]["part_mask_ref"]
-        assert command["accepted_parts"] == ["front-door"] and command["taxonomy_version"] == "damage-hitl-1.0.0"
+        assert command["accepted_parts"] == ["front-door"]
+        assert command["taxonomy_version"] == versions.for_stage("damage")["taxonomy"]
     assert len(observations) == len(processed.photo_ids)  # the checkpoint calls each whole photograph one dent
     for observation in observations:
         photo_id = observation["photo_id"]
@@ -538,11 +555,12 @@ def test_a_damage_command_pinned_to_the_fixture_versions_is_dead_lettered(databa
 class _ControlledLogits:
     """Synthetic logits for worker regression tests, not an evaluated model."""
 
-    def __init__(self, stage: str, damage_mode: str):
+    def __init__(self, stage: str, damage_mode: str, damage_classes: list[str]):
         self.stage, self.damage_mode = stage, damage_mode
+        self.damage_classes = damage_classes
 
     def __call__(self, *, pixel_values):
-        count = 22 if self.stage == "parts" else len(DAMAGE_CLASSES)
+        count = 22 if self.stage == "parts" else len(self.damage_classes)
         logits = torch.zeros((1, count, 512, 512), device=pixel_values.device)
         logits[:, 0] = 100
         if self.stage == "parts":
@@ -550,11 +568,12 @@ class _ControlledLogits:
             logits[:, 0, 64:320, 64:448] = 0
             logits[:, part_id, 64:320, 64:448] = 100
         elif self.damage_mode != "clean":
-            dent = DAMAGE_CLASSES.index("dent")
+            dent = self.damage_classes.index("dent")
             end = 110 if self.damage_mode == "small" else 120
             logits[:, 0, 100:end, 100:end] = 0
-            # With nine classes, exp(2)/(8+exp(2)) = 0.480: dent wins but is uncertain.
-            logits[:, dent, 100:end, 100:end] = 100 if self.damage_mode == "small" else 2
+            # Keep dent at probability 0.48 (below the 0.50 gate) for either label count.
+            uncertain_logit = math.log(0.48 * (count - 1) / (1 - 0.48))
+            logits[:, dent, 100:end, 100:end] = 100 if self.damage_mode == "small" else uncertain_logit
             if self.damage_mode == "positive":
                 logits[:, 0, 200:240, 200:240] = 0
                 logits[:, dent, 200:240, 200:240] = 100
@@ -562,11 +581,13 @@ class _ControlledLogits:
 
 
 def _controlled_image_pipeline(database, storage, cost_tables, versions, damage_mode):
+    config = load_damage_model_config()
+    classes = CLASSES_BY_TAXONOMY[config.taxonomy_version]
     parts = SimpleNamespace(config=load_parts_config(), device=torch.device("cpu"),
-                            id_to_part_code=ID_TO_PART_CODE, model=_ControlledLogits("parts", damage_mode))
-    damage = SimpleNamespace(config=load_damage_model_config(), device=torch.device("cpu"),
-                             damage_classes={i: name for i, name in enumerate(DAMAGE_CLASSES) if i},
-                             model=_ControlledLogits("damage", damage_mode))
+                            id_to_part_code=ID_TO_PART_CODE, model=_ControlledLogits("parts", damage_mode, classes))
+    damage = SimpleNamespace(config=config, device=torch.device("cpu"),
+                             damage_classes={i: name for i, name in enumerate(classes) if i},
+                             model=_ControlledLogits("damage", damage_mode, classes))
     common = {"profile": "lean", "clock": Clock(), "sleep": lambda _s: None}
     runtimes = [*build_runtimes(database.session, "combined", versions=versions,
                                consolidator=Consolidator(cost_table_root=cost_tables),

@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 import pytest
+import yaml
 
 torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
@@ -23,7 +24,9 @@ from claim_cmev.contracts.common import HITL_DAMAGE_CODES, Provenance, version_s
 from claim_cmev.contracts.imaging import MaskRef  # noqa: E402
 from claim_cmev.vision.damage import adapter as damage_adapter  # noqa: E402
 from claim_cmev.vision.damage.config import load_assignment_config  # noqa: E402
-from claim_cmev.vision.damage.model_config import DamageModelConfig, load_damage_model_config  # noqa: E402
+from claim_cmev.vision.damage.model_config import (  # noqa: E402
+    DEFAULT_CONFIG_PATH, DamageModelConfig, load_damage_model_config,
+)
 from claim_cmev.vision.frame import build_model_frame  # noqa: E402
 from claim_cmev.vision.palette import ID_TO_PART_CODE  # noqa: E402
 from claim_cmev.vision.parts.adapter import (  # noqa: E402
@@ -99,10 +102,13 @@ def registry(tmp_path: Path, config: DamageModelConfig) -> Path:
 # Configuration
 # ---------------------------------------------------------------------------
 
-def test_the_served_damage_configuration_names_the_hitl_model_and_its_taxonomy():
-    served = load_damage_model_config()
-    assert served.model_version == "damage-hitl/0.1.0-b3-compound"
-    assert served.taxonomy_version == "damage-hitl-1.0.0"
+def test_the_served_damage_configuration_keeps_model_taxonomy_and_label_count_together():
+    served = load_damage_model_config(DEFAULT_CONFIG_PATH)
+    declared = yaml.safe_load(DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+    assert served.model_id in {"damage-hitl", "damage-cardd"}
+    assert served.model_version.startswith(f"{served.model_id}/")
+    assert served.taxonomy_version == f"{served.model_id}-1.0.0"
+    assert declared["num_labels"] == len(served.damage_codes) + 1  # includes background
     assert (served.input_size, served.resize_policy) == (512, "longest_edge_pad")
 
 
