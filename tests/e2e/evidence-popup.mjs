@@ -118,6 +118,7 @@ try {
   assert.equal(await dialog.getAttribute('aria-labelledby') !== null, true);
   await page.getByRole('heading', { name: /front bumper: photographic evidence/i }).waitFor();
   assert.match(await dialog.innerText(), /Predicted damage: scratch/);
+  assert.doesNotMatch(await dialog.innerText(), /Side:/, 'the hidden side label is not in the popup either');
   assert.equal(await dialog.locator('img').count(), 1, 'only the photograph recorded for this part');
   assert.equal(await dialog.locator('img').getAttribute('src'), PHOTO_TWO);
   assert.match(await dialog.innerText(), /photo-2\.png: scratch, model confidence 82\.0%/);

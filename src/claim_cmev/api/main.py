@@ -47,8 +47,8 @@ from ..review.state import ReviewActionRequest
 
 log = logging.getLogger("cmev.api")
 COOKIE = "cmev_session"
-DEMO_USER = {"id": "demo-surveyor", "name": "R. Miguel", "email": setting("DEMO_EMAIL", "surveyor@claim-cmev.demo"),
-             "role": "surveyor", "initials": "RM"}
+DEMO_USER = {"id": "demo-surveyor", "name": "Acery AI", "email": setting("DEMO_EMAIL", "surveyor@claim-cmev.demo"),
+             "role": "surveyor", "initials": "AA"}
 BACKLOG_LIMIT = int(setting("OUTBOX_BACKLOG_LIMIT", str(DEFAULT_BACKLOG_LIMIT)))
 # The evidence a carried correction rests on. Identity/coverage confirmations and accepted
 # additions (proposed from photographed damage observations) rest on the photographs;

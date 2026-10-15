@@ -36,7 +36,7 @@ FIXTURE_NOTICE = ("Demonstration fixtures only. Branch records come from hand-au
 NO_PIXELS = "uploaded-pixels:not-read"
 SEED_MARKER = "seed:pipeline-v2"
 SEEDS = (  # reference, policy, surveyor, make, model, year, plate, workshop, loss date, scenario, phase
-    ("CLM-24019", "MOT/2026/884213", "R. Miguel", "Toyota", "Corolla Altis 1.6", 2019, "SJB 4412 K",
+    ("CLM-24019", "MOT/2026/884213", "Acery AI", "Toyota", "Corolla Altis 1.6", 2019, "SJB 4412 K",
      "Northbridge Autoworks", "2026-09-09", "pending_price_change", "drain"),
     ("CLM-24020", "MOT/2026/884977", "L. Tan", "Honda", "City 1.5", 2019, "SGA 9087 M", "Kallang Panel & Paint",
      "2026-09-12", "exclusion_and_supported", "worker"),

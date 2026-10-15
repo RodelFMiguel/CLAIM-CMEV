@@ -47,6 +47,10 @@ interface Viewing {
   subtitle: string;
   photos: ViewPhoto[];
 }
+// "Side: unknown (unconfirmed)" is hidden for now: no served model resolves left or right, so it
+// reads the same on almost every card. Set to true to show it again. A known side is always
+// shown, and the printed report keeps the label because it is the frozen record.
+const SHOW_UNKNOWN_SIDE = false;
 const label = (value: string) =>
   value.replaceAll("_", " ").replaceAll("-", " ");
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -138,6 +142,11 @@ export function DamageSummary({
               : [];
           });
     const heading = unresolved(row) ? "Part uncertain" : label(row.part_code);
+    const sideText =
+      row.side === "unknown"
+        ? "Side: unknown (unconfirmed)"
+        : `Side: ${label(row.side)}`;
+    const showSide = row.side !== "unknown" || SHOW_UNKNOWN_SIDE || print;
     const detail = members.map((o) => (
       <li key={o.observation_id}>
         <strong>{label(o.damage_code)}</strong> · Model confidence:{" "}
@@ -199,11 +208,7 @@ export function DamageSummary({
       <article className="damage-item" key={row.summary_id ?? index}>
         <div className="damage-title">
           <strong>{heading}</strong>
-          <span className="muted">
-            {row.side === "unknown"
-              ? "Side: unknown (unconfirmed)"
-              : `Side: ${label(row.side)}`}
-          </span>
+          {showSide && <span className="muted">{sideText}</span>}
           {photos.length > 0 && (
             <button
               type="button"
@@ -217,9 +222,7 @@ export function DamageSummary({
                     codes?.length
                       ? `Predicted damage: ${codes.map(label).join(", ")}`
                       : "",
-                    row.side === "unknown"
-                      ? "Side: unknown (unconfirmed)"
-                      : `Side: ${label(row.side)}`,
+                    showSide ? sideText : "",
                   ]
                     .filter(Boolean)
                     .join(" · "),

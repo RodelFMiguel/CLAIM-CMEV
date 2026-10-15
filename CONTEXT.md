@@ -2859,3 +2859,19 @@ Decisions (accepted/proposed): proposed wording and layout. The popup's empty me
 Checks actually run, results and artifact locations: `npx tsc -b` and `npm run build` pass; the new files pass prettier (`ClaimReview.tsx` was not prettier-clean before and was not reformatted). `evidence-popup.mjs` passes against the Vite dev server (React StrictMode) and against `vite preview` of the production build; `damage-summary.mjs` still passes. Screenshots in ignored `artifacts/evaluation/ui-evidence-popup-20261014/`, inspected. Synthetic API responses only.
 Uncommitted work, limitations and missing prerequisites: the real-backend scripts (`baseline`, `review-controls`, `review-defects`, `review-regressions`, `print-report`) were not rerun; `review-defects.mjs` clicks "View evidence" and was checked by reading only (it reloads before any later click). The running Docker `cmev-web` image is unchanged; rebuild it to see the popups there. Only Chrome was tested. On a phone the whole estimate page fits the width and is small; there is no zoom. The popup does not outline the predicted damage region.
 Next concrete step and agreed owner (or unassigned): rebuild `cmev-web`, try the popups on a real claim, and rerun the real-backend e2e scripts on a disposable stack.
+
+
+## Hidden side label and demonstration surveyor name (2026-10-14)
+
+Date/time and timezone: 2026-10-14, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request.
+Task and relevant module: two review-screen display changes (M9); no model, contract or rule change.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `a93c20a` / uncommitted; no push.
+Changed paths and completed behaviour:
+- `src/workbench/src/DamageSummary.tsx`: `SHOW_UNKNOWN_SIDE = false` hides "Side: unknown (unconfirmed)" on damage cards and in the evidence popup. A known side still shows, and the printed report keeps the label.
+- `src/claim_cmev/api/main.py`: `DEMO_USER` is now "Acery AI", initials "AA" (was "R. Miguel", "RM"). `src/claim_cmev/fixtures.py`: the seeded claim CLM-24019 names "Acery AI" as its surveyor. The other three seeded claims keep their own surveyor names.
+- `tests/e2e/damage-summary.mjs` and `evidence-popup.mjs` assert the hidden label (and that it stays in print and that a known side shows); a dated note in `docs/specs/ui_specification.md`.
+Decisions (accepted/proposed): the printed report keeps the label because the project requires an unknown side to stay explicit in the frozen record; the user can ask for it hidden there too (one condition in `DamageSummary.tsx`). Existing database rows keep their stored surveyor name; the seed marker was not bumped, so seeded claims already in a database are not rewritten.
+Checks actually run, results and artifact locations: `npx tsc -b` passes; `damage-summary.mjs` and `evidence-popup.mjs` pass against the Vite dev server (synthetic API responses). `pytest tests/backend tests/integration`: 119 passed, **8 failed and 9 errors, all in `tests/integration/test_image_branch.py`** (`label_map_mismatch` / `taxonomy_version_mismatch` for the damage model). Set aside my two backend edits and one of those tests still failed, so they predate this change. They follow the damage model selection in `configs/models/damage.yaml` (last changed in `674c88e`). Not investigated further and `damage.yaml` was not touched.
+Uncommitted work, limitations and missing prerequisites: the running Docker stack needs the API and web images rebuilt to show either change. The real-backend e2e scripts were not run.
+Next concrete step and agreed owner (or unassigned): the owner of `configs/models/damage.yaml` fixes the damage selection or the registry entry so `test_image_branch.py` passes again; then commit and push these two changes.

@@ -80,6 +80,9 @@ try {
   assert.match(await assigned.innerText(), /Coverage: Needs confirmation/);
   assert.match(await assigned.innerText(), /Confirm the physical part/);
   assert.doesNotMatch(await assigned.innerText(), /identity_not_resolved/);
+  // "Side: unknown (unconfirmed)" is hidden on screen; a known side is still shown.
+  assert.doesNotMatch(await page.locator('.damage-summary-list').innerText(), /unconfirmed\)|Side: unknown/);
+  assert.match(await cards.filter({ hasText: 'hood' }).innerText(), /Side: not applicable/);
   console.log('Damage labels and identity text passed');
   await assigned.locator('summary').click();
   await assigned.getByRole('button', { name: 'View synthetic-2.svg' }).click();
@@ -107,6 +110,7 @@ try {
   await page.getByRole('button', { name: 'Print to PDF' }).waitFor();
   await page.emulateMedia({ media: 'print' });
   assert.match(await page.locator('.damage-summary-list').innerText(), /47.0% overlap/);
+  assert.match(await page.locator('.damage-summary-list').innerText(), /Side: unknown \(unconfirmed\)/); // the printed record keeps it
   assert.equal(await page.locator('.damage-summary-list details').count(), 0);
   await page.pdf({ path: `${out}/synthetic-report.pdf`, format: 'A4', printBackground: true });
   await page.emulateMedia({ media: 'screen' });
