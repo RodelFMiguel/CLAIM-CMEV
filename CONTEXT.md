@@ -2842,3 +2842,20 @@ Checks actually run and results:
 
 Limitations and next concrete step:
 No full pytest rerun or new browser automation in this repair (application/UI code unchanged). No retraining or held-out test evaluation; no accuracy target established. The two test claims' photographs/documents are unrelated manual-test inputs, so completed combined inference is execution evidence only. Earlier accuracy, load and known full-suite limitations remain. User can refresh either claim's review page; use the live-stack wrapper for future restarts, and explicitly stop it before a fixture-only deployment.
+
+
+## Evidence popups in the workbench (2026-10-14)
+
+Date/time and timezone: 2026-10-14, Asia/Singapore.
+Contributor / coding agent: Claude Code, at the user's request.
+Task and relevant module: M9 review screen, evidence display (FR-34/FR-45, UI specification 6.4). Display only.
+Branch / baseline commit / resulting commit or PR: `document-worker` / `ec8bcba` / uncommitted; no push.
+Changed paths and completed behaviour:
+- New `src/workbench/src/EvidenceDialog.tsx`: `EvidenceDialog` (native modal `<dialog>`; "X" top right, Esc, click outside, focus returns to the opener, page scroll locked), `EvidenceImage`, `EvidenceFile`, and `CorrectedPageView` (the corrected page with row and mark outlines, optionally scrolling the selected row to the middle).
+- `src/workbench/src/DamageSummary.tsx`: a "View evidence" button on each card whose rows are model output, opening the photographs recorded as that card's source observations. No button for fixture rows or in print.
+- `src/workbench/src/ClaimReview.tsx`: the estimate row's "View evidence" also opens a popup (corrected page, else the linked original file, else a "nothing linked" message). The panel's page overlay now uses the shared `CorrectedPageView` with identical markup. The row button no longer moves focus to the panel, so focus returns to the button on close.
+- `src/workbench/src/styles.css` (appended), `tests/e2e/evidence-popup.mjs` (new), `tests/README.md` and a dated note in `docs/specs/ui_specification.md`.
+Decisions (accepted/proposed): proposed wording and layout. The popup's empty message deliberately differs from the Evidence panel's, because `review-defects.mjs` waits for the panel's text and would otherwise match twice.
+Checks actually run, results and artifact locations: `npx tsc -b` and `npm run build` pass; the new files pass prettier (`ClaimReview.tsx` was not prettier-clean before and was not reformatted). `evidence-popup.mjs` passes against the Vite dev server (React StrictMode) and against `vite preview` of the production build; `damage-summary.mjs` still passes. Screenshots in ignored `artifacts/evaluation/ui-evidence-popup-20261014/`, inspected. Synthetic API responses only.
+Uncommitted work, limitations and missing prerequisites: the real-backend scripts (`baseline`, `review-controls`, `review-defects`, `review-regressions`, `print-report`) were not rerun; `review-defects.mjs` clicks "View evidence" and was checked by reading only (it reloads before any later click). The running Docker `cmev-web` image is unchanged; rebuild it to see the popups there. Only Chrome was tested. On a phone the whole estimate page fits the width and is small; there is no zoom. The popup does not outline the predicted damage region.
+Next concrete step and agreed owner (or unassigned): rebuild `cmev-web`, try the popups on a real claim, and rerun the real-backend e2e scripts on a disposable stack.

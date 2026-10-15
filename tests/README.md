@@ -27,6 +27,8 @@ node tests/e2e/review-controls.mjs
 node tests/e2e/print-report.mjs
 ```
 
+Some scripts need no backend: they answer every API call with synthetic responses and write nothing. `damage-summary.mjs`, `identity-controls.mjs` and `evidence-popup.mjs` only need a running workbench (for example `npx vite --host 127.0.0.1 --port 4175` from src/workbench, which also exercises React StrictMode) and `CMEV_E2E_URL`. `CMEV_BROWSER_CHANNEL=chrome` uses the installed Chrome instead of the Playwright browser.
+
 The default URL is http://127.0.0.1:5173; set CMEV_E2E_URL for Docker. CMEV_DEMO_EMAIL and CMEV_DEMO_PASSWORD override demonstration credentials. Linux needs the Playwright browser system libraries. A nonstandard browser installation can use PLAYWRIGHT_BROWSERS_PATH and LD_LIBRARY_PATH.
 
 Use disposable synthetic state. Baseline uploads evidence and finalizes seed CLM-24019, so rerunning it requires a fresh test database/project. Review-controls exercises CLM-24020; reruns verify previously accepted/dismissed scope rather than duplicating those actions. Print-report exports the frozen CLM-24019 report after baseline. These scripts change demonstration records; do not point them at real claims. Screenshots/PDFs go to ignored artifacts/evaluation directories. See the dated verification record for the exact exercised boundaries.

@@ -55,6 +55,7 @@ import {
   type DamageGroup,
   type DamageObservation,
 } from "./DamageSummary";
+import { CorrectedPageView, EvidenceDialog, EvidenceFile } from "./EvidenceDialog";
 
 interface Evidence {
   file_id: string;
@@ -327,6 +328,7 @@ function ReviewOverview({ id }: { id: string }) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedPage, setSelectedPage] = useState<string | null>(null);
   const [selectedRow, setSelectedRow] = useState<string | null>(null);
+  const [rowPopup, setRowPopup] = useState(false);
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [actor, setActor] = useState("");
@@ -1084,10 +1086,11 @@ function ReviewOverview({ id }: { id: string }) {
                         </div>
                         <button
                           className="button button-outline button-small"
+                          aria-haspopup="dialog"
                           onClick={() => {
                             setSelectedRow(item.entry_id);
                             setSelectedFile(item.evidence_ids[0] ?? null);
-                            document.getElementById("evidence-panel")?.focus();
+                            setRowPopup(true);
                           }}
                         >
                           View evidence
@@ -1321,25 +1324,8 @@ function ReviewOverview({ id }: { id: string }) {
                 </label>
               )}
               {page?.corrected_url && (
-                <div style={{ position: "relative" }}>
-                  <img src={page.corrected_url} alt={`Corrected estimate page ${page.page_number}`}
-                       style={{ display: "block", width: "100%" }} />
-                  <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-label="Extracted rows and pen marks"
-                       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
-                    {assessment.line_items.filter((r) => r.page_id === page.page_id).map((r) => {
-                      const [x0,y0,x1,y1] = r.row_box_norm;
-                      return <rect key={r.entry_id} x={x0} y={y0} width={x1-x0} height={y1-y0}
-                        fill={r.entry_id === selectedRow ? "#2563eb22" : "none"} stroke="#2563eb"
-                        strokeWidth="2" vectorEffect="non-scaling-stroke" />;
-                    })}
-                    {assessment.marks.filter((m) => m.page_id === page.page_id).map((m) => {
-                      const [x0,y0,x1,y1] = m.box_norm;
-                      return <rect key={m.mark_id} x={x0} y={y0} width={x1-x0} height={y1-y0}
-                        fill="none" stroke={m.state === "rejected" ? "#777" : "#dc2626"}
-                        strokeWidth="2" vectorEffect="non-scaling-stroke" />;
-                    })}
-                  </svg>
-                </div>
+                <CorrectedPageView page={page} rows={assessment.line_items}
+                  marks={assessment.marks} selectedRow={selectedRow} />
               )}
               {page && <p className="evidence-caption">Blue: extracted rows. Red: proposed or confirmed marks. Grey: rejected marks.</p>}
               {files.length ? (
@@ -1450,6 +1436,35 @@ function ReviewOverview({ id }: { id: string }) {
                 </span>
               </div>
             </aside>
+            {rowPopup && row && (
+              <EvidenceDialog
+                title={row.description}
+                subtitle={
+                  page
+                    ? `${files.find((f) => f.file_id === page.file_id)?.original_name ?? "Estimate"} \u00b7 page ${page.page_number}`
+                    : file?.original_name
+                }
+                onClose={() => setRowPopup(false)}
+              >
+                {page?.corrected_url ? (
+                  <>
+                    <CorrectedPageView page={page} rows={assessment.line_items}
+                      marks={assessment.marks} selectedRow={selectedRow} centerOnSelected />
+                    <p className="evidence-dialog-note">
+                      Blue: extracted rows. Red: proposed or confirmed marks. Grey: rejected marks.
+                      The selected row is shaded.
+                    </p>
+                  </>
+                ) : file ? (
+                  <EvidenceFile file={file} />
+                ) : (
+                  <p className="evidence-dialog-note">
+                    No original file is linked to this row, so there is nothing to enlarge. The
+                    Evidence panel lets you browse the uploaded files separately.
+                  </p>
+                )}
+              </EvidenceDialog>
+            )}
           </div>
           <section className="panel finalize-panel">
             <div>

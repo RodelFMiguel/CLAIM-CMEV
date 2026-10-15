@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { EvidenceDialog, EvidenceImage } from "./EvidenceDialog";
+
 // Display only: identity, coverage and assignment decisions remain owned by M2/M3.
 export interface DamageRow {
   summary_id?: string | null;
@@ -29,9 +32,20 @@ interface Props {
   rows: DamageRow[];
   groups?: DamageGroup[];
   observations?: DamageObservation[];
-  files: { file_id: string; original_name: string }[];
+  files: { file_id: string; original_name: string; url?: string }[];
   onPhoto?: (id: string) => void;
   print?: boolean;
+}
+interface ViewPhoto {
+  id: string;
+  url: string;
+  name: string;
+  observations: DamageObservation[];
+}
+interface Viewing {
+  title: string;
+  subtitle: string;
+  photos: ViewPhoto[];
 }
 const label = (value: string) =>
   value.replaceAll("_", " ").replaceAll("-", " ");
@@ -77,6 +91,10 @@ export function DamageSummary({
   );
   const groupsById = new Map(groups.map((g) => [g.summary_id, g]));
   const names = new Map(files.map((f) => [f.file_id, f.original_name]));
+  const urls = new Map(
+    files.flatMap((f) => (f.url ? [[f.file_id, f.url]] : [])),
+  );
+  const [viewing, setViewing] = useState<Viewing | null>(null);
   const unresolved = (row: DamageRow) =>
     row.identity_status === "unresolved" || row.part_code === "unresolved";
 
@@ -102,6 +120,24 @@ export function DamageSummary({
         : row.source_kind === "fixture"
           ? "Illustrative fixture; no model analysed the uploaded photographs."
           : "Observation source not recorded.";
+    // Only model-analysed rows link to uploaded pixels; fixture photograph IDs are demonstration IDs.
+    const photos: ViewPhoto[] =
+      print || row.source_kind !== "real"
+        ? []
+        : [...new Set(members.map((o) => o.photo_id))].flatMap((id) => {
+            const url = urls.get(id);
+            return url
+              ? [
+                  {
+                    id,
+                    url,
+                    name: names.get(id) ?? id,
+                    observations: members.filter((o) => o.photo_id === id),
+                  },
+                ]
+              : [];
+          });
+    const heading = unresolved(row) ? "Part uncertain" : label(row.part_code);
     const detail = members.map((o) => (
       <li key={o.observation_id}>
         <strong>{label(o.damage_code)}</strong> · Model confidence:{" "}
@@ -162,14 +198,38 @@ export function DamageSummary({
     return (
       <article className="damage-item" key={row.summary_id ?? index}>
         <div className="damage-title">
-          <strong>
-            {unresolved(row) ? "Part uncertain" : label(row.part_code)}
-          </strong>
+          <strong>{heading}</strong>
           <span className="muted">
             {row.side === "unknown"
               ? "Side: unknown (unconfirmed)"
               : `Side: ${label(row.side)}`}
           </span>
+          {photos.length > 0 && (
+            <button
+              type="button"
+              className="button button-outline button-small damage-evidence-button"
+              aria-haspopup="dialog"
+              aria-label={`View evidence for ${heading}${codes?.length ? `, ${codes.map(label).join(", ")}` : ""}`}
+              onClick={() =>
+                setViewing({
+                  title: `${heading.replace(/\b\w/g, (c) => c.toUpperCase())}: photographic evidence`,
+                  subtitle: [
+                    codes?.length
+                      ? `Predicted damage: ${codes.map(label).join(", ")}`
+                      : "",
+                    row.side === "unknown"
+                      ? "Side: unknown (unconfirmed)"
+                      : `Side: ${label(row.side)}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                  photos,
+                })
+              }
+            >
+              View evidence
+            </button>
+          )}
         </div>
         <p className="damage-types">
           <strong>
@@ -214,24 +274,55 @@ export function DamageSummary({
   const assignedRows = rows.filter((row) => !unresolved(row));
   const uncertainRows = rows.filter(unresolved);
   return (
-    <div className="damage-summary-list">
-      {assignedRows.map(card)}
-      {uncertainRows.length > 0 &&
-        (print ? (
-          <section>
-            <h3>Unresolved observations ({uncertainRows.length})</h3>
-            {uncertainRows.map(card)}
-          </section>
-        ) : (
-          <details className="damage-unresolved" open>
-            <summary>Unresolved observations ({uncertainRows.length})</summary>
-            <p>
-              Damage was predicted, but its part could not be assigned. These
-              observations do not establish an unsupported repair.
-            </p>
-            {uncertainRows.map(card)}
-          </details>
-        ))}
-    </div>
+    <>
+      <div className="damage-summary-list">
+        {assignedRows.map(card)}
+        {uncertainRows.length > 0 &&
+          (print ? (
+            <section>
+              <h3>Unresolved observations ({uncertainRows.length})</h3>
+              {uncertainRows.map(card)}
+            </section>
+          ) : (
+            <details className="damage-unresolved" open>
+              <summary>
+                Unresolved observations ({uncertainRows.length})
+              </summary>
+              <p>
+                Damage was predicted, but its part could not be assigned. These
+                observations do not establish an unsupported repair.
+              </p>
+              {uncertainRows.map(card)}
+            </details>
+          ))}
+      </div>
+      {viewing && (
+        <EvidenceDialog
+          title={viewing.title}
+          subtitle={viewing.subtitle}
+          onClose={() => setViewing(null)}
+        >
+          {viewing.photos.map((photo) => (
+            <figure className="evidence-dialog-figure" key={photo.id}>
+              <EvidenceImage url={photo.url} alt={`Photograph ${photo.name}`} />
+              <figcaption>
+                <strong>{photo.name}</strong>
+                {": "}
+                {photo.observations
+                  .map(
+                    (o) =>
+                      `${label(o.damage_code)}, model confidence ${percent(o.damage_confidence)}`,
+                  )
+                  .join("; ")}
+              </figcaption>
+            </figure>
+          ))}
+          <p className="evidence-dialog-note">
+            Photographs are shown as uploaded. The predicted damage region is
+            not outlined here.
+          </p>
+        </EvidenceDialog>
+      )}
+    </>
   );
 }
