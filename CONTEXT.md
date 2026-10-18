@@ -2905,3 +2905,21 @@ Checks actually run, results and artifact locations:
 
 Uncommitted work, limitations and missing prerequisites: only the two test files and this handoff changed. No full repository suite, real-claim browser workflow, new inference or model accuracy evaluation was run. Existing stored surveyor names remain historical; rebuilds do not rewrite database rows.
 Next concrete step and agreed owner (or unassigned): refresh the workbench at `http://localhost:8080` to use the deployed display changes; review/commit the test correction through the normal version-control workflow (unassigned).
+
+
+## M1 Serving-B2, M2 CarDD-B2, Dual-Gate Seam Splitting (`m2-assignment/0.2.1`) & M5/M9 Improvements (2026-10-18)
+
+Date/time and timezone: 2026-10-18, Asia/Singapore.
+Contributor / coding agent: Antigravity, at the user's request.
+Task and relevant module: M1/M2 model selection and dual-gated seam-splitting deployment (`m2-assignment/0.2.1`), M5 parser item filtering, and M9 UI auto-running claim reference and collapsible empty mark section.
+Branch / baseline commit / resulting commit or PR: `m1-m2-cardd-dualgate-and-ui-improvements` (branched from `main`).
+
+Changed paths and completed behaviour:
+- `configs/models/parts.yaml`: Pinned M1 to `parts/parts-segformer-20261009T165726Z-ab6d41d2-serving` (`nvidia/mit-b2`, `0.7857` val mIoU).
+- `configs/models/damage.yaml`: Pinned M2 to `damage-cardd/damage_cardd-segformer-20261010T032804Z-b031eedc-serving` (`damage-cardd-1.0.0`, `num_labels: 7`, `0.7331` val mIoU).
+- `configs/pipeline/m2_assignment.yaml` & `src/claim_cmev/vision/damage/assignment.py`: Bumped `config_version` to `m2-assignment/0.2.1` with `split_components: true` (`split_min_pixels: 400`, `split_min_proportion: 0.20`), and expanded the dual-gate trigger in `assign_damage_to_part` to cover both `ambiguous_between_parts` and `below_containment_threshold`.
+- `tests/unit/m2/test_m2_assignment.py`, `tests/unit/m2/test_m2_regions_config.py`, `tests/unit/m2/test_m2_serving.py`: Updated M2 config/serving assertions for `m2-assignment/0.2.1` (`split_components=True`) and added unit coverage for `below_containment_threshold` multi-panel dual-gate splitting.
+- `src/workbench/src/App.tsx` & `src/workbench/src/ClaimReview.tsx`: Auto-filled sequential running `Claim reference` (`CLM-24022`, ...) as `readOnly` on `NewClaim`, and added a visible empty-state `<fieldset>` inside `Review all mark links and confirmed amounts` so folding/unfolding works when `marks.length === 0`.
+- Synced updated configs and code into `claim-cmev-cmev-api-1`, `claim-cmev-cmev-worker-combined-1`, and `claim-cmev-cmev-worker-image-1`, committed `claim-cmev-app:pipeline` and `claim-cmev-worker-image:pipeline`, rebuilt `claim-cmev-cmev-web-1`, and verified all 10 containers healthy.
+
+Next concrete step and agreed owner (or unassigned): submit a new test claim via `http://localhost:8080` to observe live `M1 Serving-B2` + `M2 CarDD-B2` + `m2-assignment/0.2.1` dual-gated part assignment end to end (unassigned).

@@ -986,83 +986,98 @@ function ReviewOverview({ id }: { id: string }) {
                   ))}
                 <details className="review-controls">
                   <summary>Review all mark links and confirmed amounts</summary>
-                  {assessment.marks
-                    .filter((m) => m.entry_id && m.state !== "rejected")
-                    .map((mark) => (
-                      <div key={mark.mark_id}>
-                        <p>
-                          {label(mark.type)}: {mark.state}, row{" "}
-                          {
-                            assessment.line_items.find(
-                              (i) => i.entry_id === mark.entry_id,
-                            )?.description
-                          }
-                        </p>
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            const f = new FormData(e.currentTarget);
-                            void reviewAction({
-                              action_type: "correct_mark_link",
-                              mark_id: mark.mark_id,
-                              target_entry_id: f.get("entry"),
-                            });
-                          }}
-                        >
-                          <fieldset disabled={locked}>
-                            <label>
-                              Correct row link
-                              <select
-                                name="entry"
-                                defaultValue={mark.entry_id ?? ""}
+                  {assessment.marks.some(
+                    (m) => m.entry_id && m.state !== "rejected",
+                  ) ? (
+                    assessment.marks
+                      .filter((m) => m.entry_id && m.state !== "rejected")
+                      .map((mark) => (
+                        <div key={mark.mark_id}>
+                          <p>
+                            {label(mark.type)}: {mark.state}, row{" "}
+                            {
+                              assessment.line_items.find(
+                                (i) => i.entry_id === mark.entry_id,
+                              )?.description
+                            }
+                          </p>
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              const f = new FormData(e.currentTarget);
+                              void reviewAction({
+                                action_type: "correct_mark_link",
+                                mark_id: mark.mark_id,
+                                target_entry_id: f.get("entry"),
+                              });
+                            }}
+                          >
+                            <fieldset disabled={locked}>
+                              <label>
+                                Correct row link
+                                <select
+                                  name="entry"
+                                  defaultValue={mark.entry_id ?? ""}
+                                >
+                                  {assessment.line_items
+                                    .filter((i) => i.page_id === mark.page_id)
+                                    .map((i) => (
+                                      <option
+                                        key={i.entry_id}
+                                        value={i.entry_id}
+                                      >
+                                        {i.description}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                              <button className="button button-outline button-small">
+                                Correct mark link
+                              </button>
+                            </fieldset>
+                          </form>
+                          {mark.state === "confirmed" &&
+                            mark.type === "price_change" && (
+                              <form
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const f = new FormData(e.currentTarget);
+                                  void reviewAction({
+                                    action_type: "enter_amount",
+                                    mark_id: mark.mark_id,
+                                    amount: f.get("amount"),
+                                  });
+                                }}
                               >
-                                {assessment.line_items
-                                  .filter((i) => i.page_id === mark.page_id)
-                                  .map((i) => (
-                                    <option key={i.entry_id} value={i.entry_id}>
-                                      {i.description}
-                                    </option>
-                                  ))}
-                              </select>
-                            </label>
-                            <button className="button button-outline button-small">
-                              Correct mark link
-                            </button>
-                          </fieldset>
-                        </form>
-                        {mark.state === "confirmed" &&
-                          mark.type === "price_change" && (
-                            <form
-                              onSubmit={(e) => {
-                                e.preventDefault();
-                                const f = new FormData(e.currentTarget);
-                                void reviewAction({
-                                  action_type: "enter_amount",
-                                  mark_id: mark.mark_id,
-                                  amount: f.get("amount"),
-                                });
-                              }}
-                            >
-                              <fieldset disabled={locked}>
-                                <label>
-                                  Change confirmed amount
-                                  <input
-                                    name="amount"
-                                    type="number"
-                                    min="0"
-                                    max="999999.99"
-                                    step=".01"
-                                    required
-                                  />
-                                </label>
-                                <button className="button button-outline button-small">
-                                  Save revised amount
-                                </button>
-                              </fieldset>
-                            </form>
-                          )}
-                      </div>
-                    ))}
+                                <fieldset disabled={locked}>
+                                  <label>
+                                    Change confirmed amount
+                                    <input
+                                      name="amount"
+                                      type="number"
+                                      min="0"
+                                      max="999999.99"
+                                      step=".01"
+                                      required
+                                    />
+                                  </label>
+                                  <button className="button button-outline button-small">
+                                    Save revised amount
+                                  </button>
+                                </fieldset>
+                              </form>
+                            )}
+                        </div>
+                      ))
+                  ) : (
+                    <fieldset>
+                      <p className="muted">
+                        No linked pen marks or confirmed amounts on this
+                        estimate. To add a missed pen mark, open &ldquo;Correct
+                        row or add a missed mark&rdquo; on the line item below.
+                      </p>
+                    </fieldset>
+                  )}
                 </details>
                 {assessment.line_items.length ? (
                   assessment.line_items.map((item) => (

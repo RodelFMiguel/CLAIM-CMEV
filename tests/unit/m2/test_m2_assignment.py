@@ -283,6 +283,24 @@ def test_dual_gated_split_sub_threshold_stays_unresolved():
     assert obs.area_pixels == 400
 
 
+def test_dual_gated_split_resolves_below_containment_threshold_multi_panel_split():
+    # 1000 px damage: 550 px (55%) on front-door, 300 px (30%) on fender, 150 px (15%) on background.
+    # Lead margin is 25% (>= 20%), so unsplit reason is below_containment_threshold (55% < 60%).
+    # With split_components=True, both front-door (550 px, 55%) and fender (300 px < 400 -> wait, make total 2000 px: 1100 px door, 600 px fender, 300 px bg)
+    parts = blank()
+    paint(parts, PART_ID["front-door"], 0, 0, 55, 128)
+    paint(parts, PART_ID["fender"], 55, 0, 85, 128)
+    damage = paint(blank(), DAMAGE_ID["lamp-broken"], 0, 10, 100, 30)  # 20 rows x 100 cols = 2000 px
+    cfg = config(assignment={"split_components": True})
+    result = run(damage, parts, cfg=cfg)
+
+    assert len(result.observations) == 2
+    assert [(o.part_code, o.area_pixels, o.assignment_status) for o in result.observations] == [
+        ("front-door", 1100, "assigned"),
+        ("fender", 600, "assigned"),
+    ]
+
+
 
 # ---------------------------------------------------------------- damage vocabularies
 HITL_CLASSES = {1: "missing-part", 2: "broken-part", 3: "scratch", 4: "cracked", 5: "dent", 6: "flaking",

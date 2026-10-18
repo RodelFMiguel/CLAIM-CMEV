@@ -787,6 +787,17 @@ function Stat({
     </article>
   );
 }
+function nextClaimReference(items: { reference: string }[]): string {
+  const taken = new Set(items.map((c) => c.reference.trim().toUpperCase()));
+  let seq = items.reduce((max, item) => {
+    const match = /^CLM-(\d+)$/i.exec(item.reference.trim());
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 24021);
+  do {
+    seq += 1;
+  } while (taken.has(`CLM-${seq}`));
+  return `CLM-${seq}`;
+}
 function NewClaim() {
   const navigate = useNavigate();
   // Keep the same keys when an acknowledged response is lost and intake is retried.
@@ -809,8 +820,15 @@ function NewClaim() {
     [error, setError] = useState(""),
     [progress, setProgress] = useState(""),
     [photos, setPhotos] = useState<File[]>([]),
-    [estimates, setEstimates] = useState<File[]>([]);
+    [estimates, setEstimates] = useState<File[]>([]),
+    [reference, setReference] = useState("CLM-24022");
   const [createdId, setCreatedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (createdId) return;
+    api<ClaimList>("/claims")
+      .then((list) => setReference(nextClaimReference(list.items)))
+      .catch(() => {});
+  }, [createdId]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -827,7 +845,7 @@ function NewClaim() {
       let id = createdId;
       if (!id) {
         const claim = await save<Claim>("/claims", {
-          reference: form.get("reference"),
+          reference: form.get("reference") || reference,
           vehicle_make: form.get("vehicle_make"),
           vehicle_model: form.get("vehicle_model"),
           vehicle_year: Number(form.get("vehicle_year")),
@@ -912,10 +930,10 @@ function NewClaim() {
               Claim reference{" "}
               <input
                 name="reference"
-                required
-                placeholder="e.g. CLM-24022"
-                disabled={!!createdId}
+                value={reference}
+                readOnly
               />
+              <small>Auto-generated running number</small>
             </label>
             <label>
               Policy number
