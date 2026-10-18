@@ -2974,3 +2974,28 @@ Checks actually run, results and artifact locations:
 Next concrete step and agreed owner (or unassigned): Submit a new test claim via `http://localhost:8080` to verify that `back-bumper` damage is restored on Photos 1, 2, and 3, `back-door` and `front-bumper` remain 0, and `quarter-panel` is available for surveyor HITL confirmation (unassigned).
 
 
+## Damage Confidence Recalibration to 0.60 (`m2-assignment/0.2.4`) (2026-10-18)
+
+Date/time and timezone: 2026-10-18, Asia/Singapore.
+Contributor / coding agent: Antigravity, at the user's request.
+Task and relevant module: Recalibrate M2 `min_damage_confidence` to `0.60` (`m2-assignment/0.2.4`) to balance true `back-bumper` damage retention on Photo 1 (dent, 260 px >= 256, mean conf 0.681) while firmly rejecting low-confidence artifacts (< 0.60), preserving macro view-consistency and dual-gate splitting rules.
+Branch / baseline commit / resulting commit or PR: `m1-m2-cardd-dualgate-and-ui-improvements`.
+
+Changed paths and completed behaviour:
+- `configs/pipeline/m2_assignment.yaml`: Bumped `config_version` to `m2-assignment/0.2.4` and set `min_damage_confidence` to `0.60`.
+  - Photo 1 back-bumper dent: retains 260 pixels with confidence >= 0.60 (mean conf: 0.681), satisfying the `>= 256` pixel threshold.
+  - Photo 1 quarter-panel dent: retains 373 pixels (mean conf: 0.715), accepted.
+  - Spurious back-door ding: completely eliminated (0 pixels >= 0.60; original mean conf: 0.592).
+  - Macro view-consistency remapping opposing slivers (front-bumper -> back-bumper on rear views) remains fully active.
+- `tests/unit/m2/test_m2_regions_config.py`: Updated config assertions to verify `m2-assignment/0.2.4` and `min_damage_confidence: 0.60`.
+- Container deployment: Synced `m2_assignment.yaml` to `claim-cmev-cmev-worker-image-1`, `claim-cmev-cmev-worker-combined-1`, and `claim-cmev-cmev-api-1`. Committed updated image layers `claim-cmev-worker-vision:pipeline`, `claim-cmev-worker-combined:pipeline`, and `claim-cmev-app:pipeline`. Restarted services and verified all 10 containers healthy.
+
+Checks actually run, results and artifact locations:
+- Ran `python3 -m pytest tests/unit/m2/` inside `claim-cmev-worker-vision:pipeline`: 76 passed.
+- Verified in-container configuration: `m2-assignment/0.2.4` active with `0.60` confidence floor in both `claim-cmev-cmev-worker-image-1` and `claim-cmev-cmev-api-1`.
+- Verified container health: all 10 containers up and healthy.
+
+Next concrete step and agreed owner (or unassigned): Submit a new test claim via `http://localhost:8080` to observe live assessment under `m2-assignment/0.2.4` with `back-bumper` damage recognized on Photo 1 and Photo 3 (unassigned).
+
+
+
