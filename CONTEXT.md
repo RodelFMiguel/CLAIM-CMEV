@@ -2998,4 +2998,36 @@ Checks actually run, results and artifact locations:
 Next concrete step and agreed owner (or unassigned): Submit a new test claim via `http://localhost:8080` to observe live assessment under `m2-assignment/0.2.4` with `back-bumper` damage recognized on Photo 1 and Photo 3 (unassigned).
 
 
+## UI Damage Evidence Overlay & Defect-Type Filtering (2026-10-18)
+
+Date/time and timezone: 2026-10-18, Asia/Singapore.
+Contributor / coding agent: Antigravity, at the user's request.
+Task and relevant module: Implement Option A in M9 Workbench: interactive defect region overlay on original evidence photos in Damage Summary "View evidence" dialog, with defect-type filter pills, confidence badges, and an overlay toggle for A/B comparison.
+Branch / baseline commit / resulting commit or PR: `m1-m2-cardd-dualgate-and-ui-improvements`.
+
+Changed paths and completed behaviour:
+- `src/workbench/src/DamageSummary.tsx`:
+  - Updated `DamageObservation` interface with `bbox_norm?: number[]` and `part_code?: string | null`.
+  - Added `defectColor(code)` mapping CarDD and HITL defect classes (`dent`, `scratch`, `crack`, `glass_shatter`, `lamp_broken`, `tire_flat`) to accessible color palettes with distinct stroke, fill, hover fill, and badge colors.
+  - Implemented `DamagePhotoView` rendering the evidence photo with an overlay layer using `bbox_norm` normalized box coordinates, corner-aware badges, and hover interactions.
+  - Implemented `DamageEvidenceView` providing:
+    - Defect type filter buttons (`All defects`, `Dent`, `Scratch`, etc.) to isolate specific defect types on the photograph.
+    - Toggle checkbox (`Show defect overlay`) for instant A/B inspection against the raw original photo.
+    - Interactive observation chips in the photo caption displaying defect type, model confidence, and part code, with hover cross-highlighting to the defect box.
+    - Replaced the previous placeholder note ("Photographs are shown as uploaded...") with informative instructions.
+- `src/workbench/src/styles.css`:
+  - Added CSS classes for the toolbar (`.damage-dialog-toolbar`, `.damage-dialog-filters`, `.damage-filter-pill`), toggle (`.damage-dialog-toggle`), image wrapper (`.damage-photo-wrapper`, `.damage-overlay-container`), defect highlight box (`.damage-defect-box`, `.damage-defect-badge`), and caption chips (`.damage-photo-obs-list`, `.damage-obs-chip`).
+- Container runtime deployment:
+  - Built frontend image with `tsc -b && vite build` (zero errors, 1.97s).
+  - Recreated `claim-cmev-cmev-web-1` and verified healthy status.
+
+Checks actually run, results and artifact locations:
+- Tested TypeScript compilation and Vite build: `tsc -b && vite build` passed with zero errors.
+- Verified container health: `claim-cmev-cmev-web-1` is Up and healthy.
+- Verified web server responses: HTML and asset bundles (`index-BEGrkOdy.js`, `index-C2Lq4K9q.css`) served properly.
+
+Next concrete step and agreed owner (or unassigned): Verify the "View evidence" modal in `http://localhost:8080` on case `CLM-24022` to inspect defect region overlays, defect filter pills, and overlay toggle live (unassigned).
+
+
+
 

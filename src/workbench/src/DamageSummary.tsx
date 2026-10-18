@@ -20,9 +20,11 @@ export interface DamageObservation {
   damage_code: string;
   damage_confidence: number;
   assignment_status: string;
+  part_code?: string | null;
   part_reason?: string | null;
   candidates: { part_code: string; containment: number; rank: number }[];
   background_containment: number;
+  bbox_norm?: number[];
 }
 export interface DamageGroup {
   summary_id: string;
@@ -81,6 +83,71 @@ const reasons: Record<string, string> = {
 };
 const reasonText = (code: string) =>
   reasons[code] ?? `Review reason: ${label(code)}.`;
+
+interface DefectColorDef {
+  stroke: string;
+  fill: string;
+  fillHover: string;
+  fillLight: string;
+  badgeBg: string;
+}
+
+function defectColor(code: string): DefectColorDef {
+  switch (code.toLowerCase().replace(/[-_]/g, "")) {
+    case "dent":
+    case "crease":
+      return {
+        stroke: "#d97706",
+        fill: "rgba(245, 158, 11, 0.22)",
+        fillHover: "rgba(245, 158, 11, 0.38)",
+        fillLight: "rgba(254, 243, 199, 0.6)",
+        badgeBg: "#b45309",
+      };
+    case "scratch":
+      return {
+        stroke: "#0284c7",
+        fill: "rgba(14, 165, 233, 0.22)",
+        fillHover: "rgba(14, 165, 233, 0.38)",
+        fillLight: "rgba(224, 242, 254, 0.6)",
+        badgeBg: "#0369a1",
+      };
+    case "crack":
+    case "tear":
+    case "hole":
+      return {
+        stroke: "#dc2626",
+        fill: "rgba(239, 68, 68, 0.24)",
+        fillHover: "rgba(239, 68, 68, 0.40)",
+        fillLight: "rgba(254, 226, 226, 0.6)",
+        badgeBg: "#b91c1c",
+      };
+    case "glassshatter":
+    case "lampbroken":
+      return {
+        stroke: "#9333ea",
+        fill: "rgba(168, 85, 247, 0.24)",
+        fillHover: "rgba(168, 85, 247, 0.40)",
+        fillLight: "rgba(243, 232, 255, 0.6)",
+        badgeBg: "#7e22ce",
+      };
+    case "tireflat":
+      return {
+        stroke: "#059669",
+        fill: "rgba(16, 185, 129, 0.22)",
+        fillHover: "rgba(16, 185, 129, 0.38)",
+        fillLight: "rgba(209, 250, 229, 0.6)",
+        badgeBg: "#047857",
+      };
+    default:
+      return {
+        stroke: "#ea580c",
+        fill: "rgba(234, 88, 12, 0.22)",
+        fillHover: "rgba(234, 88, 12, 0.38)",
+        fillLight: "rgba(255, 237, 213, 0.6)",
+        badgeBg: "#c2410c",
+      };
+  }
+}
 
 export function DamageSummary({
   rows,
@@ -300,32 +367,248 @@ export function DamageSummary({
           ))}
       </div>
       {viewing && (
-        <EvidenceDialog
-          title={viewing.title}
-          subtitle={viewing.subtitle}
+        <DamageEvidenceView
+          viewing={viewing}
           onClose={() => setViewing(null)}
-        >
-          {viewing.photos.map((photo) => (
-            <figure className="evidence-dialog-figure" key={photo.id}>
-              <EvidenceImage url={photo.url} alt={`Photograph ${photo.name}`} />
-              <figcaption>
-                <strong>{photo.name}</strong>
-                {": "}
-                {photo.observations
-                  .map(
-                    (o) =>
-                      `${label(o.damage_code)}, model confidence ${percent(o.damage_confidence)}`,
-                  )
-                  .join("; ")}
-              </figcaption>
-            </figure>
-          ))}
-          <p className="evidence-dialog-note">
-            Photographs are shown as uploaded. The predicted damage region is
-            not outlined here.
-          </p>
-        </EvidenceDialog>
+        />
       )}
     </>
+  );
+}
+
+function DamagePhotoView({
+  photo,
+  showOverlay,
+  activeFilter,
+  hoveredId,
+  onHover,
+}: {
+  photo: ViewPhoto;
+  showOverlay: boolean;
+  activeFilter: string | null;
+  hoveredId: string | null;
+  onHover: (id: string | null) => void;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <p className="evidence-dialog-note">
+        This image could not be loaded. Close this view, then refresh or use
+        &ldquo;Open original file&rdquo; in the Evidence panel.
+      </p>
+    );
+  }
+
+  const visibleObservations = photo.observations.filter(
+    (o) => !activeFilter || o.damage_code === activeFilter,
+  );
+
+  return (
+    <div className="damage-photo-wrapper">
+      <img
+        className="evidence-dialog-image"
+        src={photo.url}
+        alt={`Photograph ${photo.name}`}
+        onError={() => setFailed(true)}
+      />
+      {showOverlay && visibleObservations.length > 0 && (
+        <div className="damage-overlay-container">
+          {visibleObservations.map((obs) => {
+            if (!obs.bbox_norm || obs.bbox_norm.length < 4) return null;
+            const [x0, y0, x1, y1] = obs.bbox_norm;
+            const color = defectColor(obs.damage_code);
+            const isHovered = hoveredId === obs.observation_id;
+            const badgeInside = y0 < 0.06;
+            const badgeAtRight = x0 > 0.75;
+
+            return (
+              <div
+                key={obs.observation_id}
+                className={`damage-defect-box ${isHovered ? "hovered" : ""}`}
+                style={{
+                  left: `${x0 * 100}%`,
+                  top: `${y0 * 100}%`,
+                  width: `${Math.max(0.6, (x1 - x0) * 100)}%`,
+                  height: `${Math.max(0.6, (y1 - y0) * 100)}%`,
+                  borderColor: color.stroke,
+                  backgroundColor: isHovered ? color.fillHover : color.fill,
+                  boxShadow: isHovered
+                    ? `0 0 0 3px ${color.stroke}, 0 4px 14px rgba(0,0,0,0.4)`
+                    : `0 0 0 1px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.2)`,
+                  zIndex: isHovered ? 15 : 5,
+                }}
+                onMouseEnter={() => onHover(obs.observation_id)}
+                onMouseLeave={() => onHover(null)}
+              >
+                <span
+                  className="damage-defect-badge"
+                  style={{
+                    backgroundColor: color.badgeBg,
+                    color: "#ffffff",
+                    top: badgeInside ? "3px" : "-24px",
+                    left: badgeAtRight ? "auto" : "0",
+                    right: badgeAtRight ? "0" : "auto",
+                  }}
+                >
+                  {label(obs.damage_code)} · {percent(obs.damage_confidence)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DamageEvidenceView({
+  viewing,
+  onClose,
+}: {
+  viewing: Viewing;
+  onClose: () => void;
+}) {
+  const [showOverlay, setShowOverlay] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  const allObservations = viewing.photos.flatMap((p) => p.observations);
+  const uniqueCodes = Array.from(
+    new Set(allObservations.map((o) => o.damage_code)),
+  );
+
+  return (
+    <EvidenceDialog
+      title={viewing.title}
+      subtitle={viewing.subtitle}
+      onClose={onClose}
+    >
+      <div className="damage-dialog-toolbar">
+        <div className="damage-dialog-filters">
+          <span className="damage-dialog-filter-label">Defect filter:</span>
+          <button
+            type="button"
+            className={`damage-filter-pill ${activeFilter === null ? "active" : ""}`}
+            onClick={() => setActiveFilter(null)}
+          >
+            All ({allObservations.length})
+          </button>
+          {uniqueCodes.map((code) => {
+            const count = allObservations.filter(
+              (o) => o.damage_code === code,
+            ).length;
+            const color = defectColor(code);
+            const isActive = activeFilter === code;
+            return (
+              <button
+                key={code}
+                type="button"
+                className={`damage-filter-pill ${isActive ? "active" : ""}`}
+                style={
+                  isActive
+                    ? {
+                        borderColor: color.stroke,
+                        backgroundColor: color.badgeBg,
+                        color: "#ffffff",
+                      }
+                    : {}
+                }
+                onClick={() => setActiveFilter(isActive ? null : code)}
+              >
+                <span
+                  className="damage-pill-dot"
+                  style={{
+                    backgroundColor: isActive ? "#ffffff" : color.stroke,
+                  }}
+                />
+                {label(code)} ({count})
+              </button>
+            );
+          })}
+        </div>
+        <label className="damage-dialog-toggle">
+          <input
+            type="checkbox"
+            checked={showOverlay}
+            onChange={(e) => setShowOverlay(e.target.checked)}
+          />
+          <span>Show defect overlay</span>
+        </label>
+      </div>
+
+      {viewing.photos.map((photo) => (
+        <figure className="evidence-dialog-figure" key={photo.id}>
+          <DamagePhotoView
+            photo={photo}
+            showOverlay={showOverlay}
+            activeFilter={activeFilter}
+            hoveredId={hoveredId}
+            onHover={setHoveredId}
+          />
+          <figcaption className="damage-photo-figcaption">
+            <strong>{photo.name}</strong>
+            {photo.observations.length > 0 ? (
+              <div className="damage-photo-obs-list">
+                {photo.observations.map((o) => {
+                  const color = defectColor(o.damage_code);
+                  const isFiltered =
+                    activeFilter && o.damage_code !== activeFilter;
+                  const isHovered = hoveredId === o.observation_id;
+                  return (
+                    <button
+                      key={o.observation_id}
+                      type="button"
+                      className={`damage-obs-chip ${isHovered ? "hovered" : ""} ${isFiltered ? "dimmed" : ""}`}
+                      style={{
+                        borderColor: color.stroke,
+                        backgroundColor: isHovered
+                          ? color.fillHover
+                          : isFiltered
+                            ? "#f1f5f9"
+                            : color.fillLight,
+                        opacity: isFiltered ? 0.45 : 1,
+                      }}
+                      onMouseEnter={() => setHoveredId(o.observation_id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                      onClick={() =>
+                        setActiveFilter(
+                          activeFilter === o.damage_code ? null : o.damage_code,
+                        )
+                      }
+                      title={`Click to filter to ${label(o.damage_code)}`}
+                    >
+                      <span
+                        className="damage-chip-indicator"
+                        style={{ backgroundColor: color.stroke }}
+                      />
+                      <strong>{label(o.damage_code)}</strong>
+                      <span className="damage-chip-conf">
+                        {percent(o.damage_confidence)}
+                      </span>
+                      {o.part_code && (
+                        <span className="damage-chip-part">
+                          ({label(o.part_code)})
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="muted">
+                No damage observations on this photograph.
+              </p>
+            )}
+          </figcaption>
+        </figure>
+      ))}
+
+      <p className="evidence-dialog-note">
+        {showOverlay
+          ? "Defect regions are predicted by the damage segmentation model (CarDD) and mapped to photograph coordinates. Hover or click a defect tag above to isolate and inspect that defect type."
+          : "Photographs are shown in original unprocessed form. Check 'Show defect overlay' to view predicted defect regions."}
+      </p>
+    </EvidenceDialog>
   );
 }

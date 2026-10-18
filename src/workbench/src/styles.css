@@ -2936,6 +2936,167 @@ fieldset:disabled {
   line-height: 1.6;
   color: #526570;
 }
+
+/* Damage evidence overlay and toolbar */
+.damage-dialog-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.damage-dialog-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.damage-dialog-filter-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 4px;
+}
+.damage-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 550;
+  border-radius: 9999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.damage-filter-pill:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+.damage-filter-pill.active {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+}
+.damage-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.damage-dialog-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 550;
+  color: #1e293b;
+  cursor: pointer;
+  user-select: none;
+}
+.damage-dialog-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #0284c7;
+}
+.damage-photo-wrapper {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+  border-radius: 6px;
+  overflow: visible;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+.damage-overlay-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 6px;
+  overflow: visible;
+}
+.damage-defect-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2.5px solid;
+  border-radius: 4px;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.damage-defect-badge {
+  position: absolute;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+.damage-photo-figcaption {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #334155;
+  text-align: left;
+}
+.damage-photo-obs-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.damage-obs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: #ffffff;
+  color: #1e293b;
+  text-align: left;
+  user-select: none;
+}
+.damage-obs-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.damage-obs-chip.hovered {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+.damage-chip-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.damage-chip-conf {
+  color: #64748b;
+  font-size: 11px;
+}
+.damage-chip-part {
+  color: #475569;
+  font-size: 11px;
+  font-style: italic;
+}
 @media (max-width: 600px) {
   .evidence-dialog {
     width: calc(100vw - 16px);
