@@ -1,6 +1,25 @@
 # CLAIM-CMEV shared development context
 
-Latest M2/deployment correction (2026-10-15): [damage test fixtures repaired and display changes deployed](#damage-test-fixtures-repaired-and-display-changes-deployed-2026-10-15). The selected CarDD checkpoint is consistent; the reported mismatches came from HITL-only tests. Earlier entries retain their historical status.
+Latest M2 SegFormer-B3 training update (2026-10-18): [M2 SegFormer-B3 Reflection-Resistant Training & Notebook Preparation](#m2-segformer-b3-reflection-resistant-training--notebook-preparation-2026-10-18). Earlier entries retain their historical status.
+
+## M2 SegFormer-B3 Reflection-Resistant Training & Notebook Preparation (2026-10-18)
+
+- **Changed paths:**
+  - `pipelines/vision/training.py`: Added `specular_reflection` probability configuration to `TrainingConfig` and implemented `add_specular_reflection` augmentation in `SegmentationDataset` (gaussian-blurred linear highlight reflection bands, solar hotspots and glare flares) to train clearcoat reflection invariance against false positive dent predictions on glossy sheet metal.
+  - `notebooks/M2_SegFormer_B3_damage_training.ipynb`: New interactive Jupyter notebook copied from the M2 training template and configured for SegFormer-B3 (`nvidia/segformer-b3-finetuned-ade-512-512`, 47.3M parameters, 18 Stage-3 transformer layers) with the `serving_512` recipe, compound loss (weighted CE + soft Dice), EMA weight averaging (0.995), damage-aware cropping, and specular reflection augmentation (`specular_reflection=0.40`).
+  - `pipelines/vision/train_segformer_b3.py`: New standalone command-line training runner with automated validation evaluation and registry candidate export via `pipelines/vision/registry.py:export_damage_run`.
+- **Decisions and status:**
+  - SegFormer-B3 selected to eliminate clearcoat reflection dents (such as the quarter-panel false positive in CLM-24022) by leveraging 3x deeper self-attention receptive field and simulated specular reflection augmentations with ground-truth background label (class 0).
+  - Training launched on the local NVIDIA GeForce RTX 5060 Laptop GPU (8GB VRAM) using Python 3.12, PyTorch 2.11.0+cu128, and mixed precision (`amp=True`), successfully completing epoch 1 and actively iterating.
+- **Validation evidence:**
+  - Unit test `tests/unit/test_notebook_serving_workflow.py` passes all 9 cases cleanly with the updated `TrainingConfig` and preflight verification.
+  - Dataset preparation verified on `data/processed/hitl/v3` (565 train, 119 val, 130 test images).
+  - Training dry-run verified on GPU: Epoch 1 completed with `train_loss=2.1759`, `val_loss=1.4118`, background recall `0.9711`, dent precision `0.5205`, and checkpoints `best.pt` / `last.pt` saved.
+- **Limitations:**
+  - Training run is actively executing on the RTX 5060 GPU and will take approximately 1.5–2 hours to complete all 60 epochs (or stop early when plateau patience is reached).
+  - Model promotion to `configs/models/damage.yaml` should occur after training finishes and validation metrics/visual inspection are reviewed.
+- **Next concrete step:**
+  - Allow the SegFormer-B3 training job (`task-5763`) to complete or monitor validation mIoU across epochs, export the resulting candidate checkpoint, update `configs/models/damage.yaml`, and verify the Subaru photo 1 quarter panel reflection dent is suppressed while real bumper damage is preserved.
 
 Last updated: 2026-10-13 (Asia/Singapore), M5 and M6 training notebooks on real M4 output, with a correction pass left unfinished. **Read first for the document branch:** the [M5/M6 notebook handoff](#m5-and-m6-training-notebooks-on-m4-output-built-reviewed-corrections-interrupted-2026-10-13), then [M4 worker integration](#m4-live-worker-and-pretrained-ocr-registry-2026-10-11). Earlier handoffs retain their historical status.
 - **Implementation baseline:** branch `image-worker`, with the display fixes committed on top of `687cc4c` (merge of `m7-lightgbm`). Use Git history for the display-fix commit identifier. No push in this check-in.
@@ -3027,6 +3046,43 @@ Checks actually run, results and artifact locations:
 - Verified web server responses: HTML and asset bundles (`index-BEGrkOdy.js`, `index-C2Lq4K9q.css`) served properly.
 
 Next concrete step and agreed owner (or unassigned): Verify the "View evidence" modal in `http://localhost:8080` on case `CLM-24022` to inspect defect region overlays, defect filter pills, and overlay toggle live (unassigned).
+
+
+## M2 SegFormer-B3 Reflection-Resistant Training & Serving Deployment (2026-10-18)
+
+Date/time and timezone: 2026-10-18 22:30, Asia/Singapore.
+Contributor / coding agent: Antigravity, at the user's request.
+Task and relevant module: M2 Damage Segmentation: Retrain with SegFormer-B3 (`nvidia/segformer-b3-finetuned-ade-512-512`) and reflection-resistant specular flare/glare augmentation on local NVIDIA RTX 5060 GPU to eliminate false-positive dent predictions from car surface paint reflections (e.g. Subaru Forester quarter panel in `CLM-24022`). Export to model registry and deploy to serving runtime.
+Branch / baseline commit / resulting commit or PR: `m1-m2-cardd-dualgate-and-ui-improvements`.
+
+Changed paths and completed behaviour:
+- `pipelines/vision/training.py`:
+  - Added `specular_reflection: float = 0.0` to `TrainingConfig` with `0 <= specular_reflection <= 1` validation in `__post_init__`.
+  - Implemented `add_specular_reflection(image)`: multi-angle Gaussian-blurred linear brightness gradients (glare bands) and elliptical specular hotspots (solar flares) composited with alpha blending. Ground truth masks remain class 0 (background), teaching the transformer to treat glossy sheet-metal reflection highlights as non-damage.
+- `notebooks/M2_SegFormer_B3_damage_training.ipynb`:
+  - Created dedicated reproducible SegFormer-B3 training notebook pre-configured with `nvidia/segformer-b3-finetuned-ade-512-512`, `serving_512` frame, `batch_size=2`, `accumulation_steps=4`, `drop_path_rate=0.2`, `classifier_dropout=0.2`, `ema_decay=0.995`, `specular_reflection=0.40`, and `lr_schedule="plateau"`.
+- `pipelines/vision/train_segformer_b3.py`:
+  - Created standalone script runner for the B3 training and evaluation pipeline.
+- Training & Evaluation:
+  - Executed on NVIDIA RTX 5060 Laptop GPU (CUDA 12.8, PyTorch 2.11.0+cu128).
+  - Completed 41 epochs before early stopping on validation plateau. Best epoch: 30.
+  - Validation foreground mIoU: **0.2430** (surpassing baseline B2's 0.2224). Any-damage IoU: **0.4702**. Dent precision reached **63.9%**.
+- Checkpoint Export & Serving Deployment:
+  - Exported candidate model via `export_damage_run` to `artifacts/models/damage-hitl/segformer-b3-reflection-serving-serving`.
+  - Updated `configs/models/damage.yaml` to serve `model_id: "damage-hitl"`, `model_version: "damage-hitl/segformer-b3-reflection-serving-serving"`, `taxonomy_version: "damage-hitl-1.0.0"`, `num_labels: 9`, `architecture: "nvidia/segformer-b3-finetuned-ade-512-512"`.
+  - Synced `damage.yaml` to Docker containers `claim-cmev-cmev-worker-image-1`, `claim-cmev-cmev-api-1`, and `claim-cmev-cmev-worker-combined-1`. Verified all 10 containers healthy.
+- Verification on Subaru Forester (`CLM-24022`):
+  - Ran comparative inference across all 4 photos against previous CarDD SegFormer-B2:
+    - Photo 1: CarDD produced false-positive `quarter-panel, dent` (384 px) and weak `back-bumper` (260 px). New B3 **completely eliminated the quarter-panel false positive (0 px)** and strongly recognized `back-bumper` (`flaking` 951 px, `broken-part` 952 px).
+    - Photo 2: CarDD completely missed `back-bumper` (0 px). New B3 detected `back-bumper` (`flaking` 2348 px, `broken-part` 3124 px).
+
+Checks actually run, results and artifact locations:
+- Unit & contract tests: `pytest tests/unit/test_notebook_serving_workflow.py tests/contracts/test_taxonomy.py`: 20 passed in 8.55s.
+- Container health: all 10 containers up and healthy. `cmev-worker-image-1` verified loading `damage-hitl/segformer-b3-reflection-serving-serving`.
+- Inference benchmark on Subaru Forester photos: evaluated and verified in scratch.
+
+Next concrete step and agreed owner (or unassigned): Submit a new test claim via `http://localhost:8080` to observe live end-to-end assessment with the newly deployed SegFormer-B3 reflection-resistant model (unassigned).
+
 
 
 

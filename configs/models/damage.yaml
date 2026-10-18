@@ -20,16 +20,14 @@
 # model_version: "damage-hitl/damage-segformer-20261010T005752Z-e8a37ef9-serving"
 # taxonomy_version: "damage-hitl-1.0.0"
 # config_version: "damage-hitl-cfg-damage-segformer-20261010T005752Z-e8a37ef9-serving"
-model_id: "damage-cardd"
-model_version: "damage-cardd/damage_cardd-segformer-20261010T032804Z-b031eedc-serving"
-taxonomy_version: "damage-cardd-1.0.0"
-config_version: "damage-cardd-cfg-damage_cardd-segformer-20261010T032804Z-b031eedc-serving"
+model_id: "damage-hitl"
+model_version: "damage-hitl/segformer-b3-reflection-serving-serving"
+taxonomy_version: "damage-hitl-1.0.0"
+config_version: "damage-hitl-cfg-segformer-b3-reflection-serving-serving"
 
 # Architecture and Training Recipe
-# architecture: "nvidia/mit-b3"
-architecture: "nvidia/segformer-b2-finetuned-ade-512-512"
-# num_labels: 9
-num_labels: 7
+architecture: "nvidia/segformer-b3-finetuned-ade-512-512"
+num_labels: 9
 input_size: 512
 resize_policy: "longest_edge_pad"
 
