@@ -2950,3 +2950,27 @@ Checks actually run, results and artifact locations:
 
 Next concrete step and agreed owner (or unassigned): Submit a new test claim via `http://localhost:8080` to verify that rear-view case `CLM-24022` no longer produces false `front-bumper` or `back-door` observations, with the lower trim scratch correctly assigned to `back-bumper` (unassigned).
 
+
+## Damage Confidence Calibration to 0.55 (`m2-assignment/0.2.3`) & Quarter-Panel Identification (2026-10-18)
+
+Date/time and timezone: 2026-10-18, Asia/Singapore.
+Contributor / coding agent: Antigravity, at the user's request.
+Task and relevant module: Calibrate M2 `min_damage_confidence` to `0.55` (`m2-assignment/0.2.3`) to restore true `back-bumper` damage observations on Photos 1 and 2 while keeping spurious `back-door` noise eliminated, and provide root-cause visual breakdown of `quarter-panel` buckling vs. bumper corner damage.
+Branch / baseline commit / resulting commit or PR: `m1-m2-cardd-dualgate-and-ui-improvements`.
+
+Changed paths and completed behaviour:
+- `configs/pipeline/m2_assignment.yaml`: Bumped `config_version` to `m2-assignment/0.2.3` and calibrated `min_damage_confidence` to `0.55`.
+  - At 0.65, legitimate `back-bumper` observations on Photo 1 (dent, 394 px, conf 0.644) and Photo 2 (scratch, 311 px, conf 0.623) shrank below `min_damage_pixels: 256` and were dropped.
+  - At 0.55, `back-bumper` retains 339 px on Photo 1 (conf 0.663) and 281 px on Photo 2 (conf 0.640), successfully restoring bumper damage coverage.
+  - The spurious `back-door` ding on Photo 1 (304 px at conf 0.592) shrinks to 180 px (< 256 px) and remains completely dropped.
+- Visual Proof and Quarter-Panel Analysis: Documented in artifact `subaru_back_bumper_and_quarter_panel_analysis.md`. Generated model crop overlays demonstrating that M1 accurately separates `quarter-panel` sheet metal (yellow) from `back-bumper` fascia (cyan). The 271 px dent (conf 0.715) on Photo 1 is located on the quarter panel sheet metal directly beside the shattered tail light, accurately reflecting impact buckling.
+- `tests/unit/m2/test_m2_regions_config.py`: Updated config assertions to verify `m2-assignment/0.2.3` and `min_damage_confidence: 0.55`.
+- Container deployment: Synced `m2_assignment.yaml` to `claim-cmev-cmev-worker-image-1`, `claim-cmev-cmev-worker-combined-1`, and `claim-cmev-cmev-api-1`. Committed image layers and verified all 10 containers healthy.
+
+Checks actually run, results and artifact locations:
+- Ran `python3 -m pytest tests/unit/m2/` inside `claim-cmev-worker-vision:pipeline`: 76 passed.
+- Verified in-container imports and configuration: `m2-assignment/0.2.3` active with `0.55` confidence floor.
+
+Next concrete step and agreed owner (or unassigned): Submit a new test claim via `http://localhost:8080` to verify that `back-bumper` damage is restored on Photos 1, 2, and 3, `back-door` and `front-bumper` remain 0, and `quarter-panel` is available for surveyor HITL confirmation (unassigned).
+
+

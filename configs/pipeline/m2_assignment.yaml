@@ -11,12 +11,12 @@
 #
 # File name follows this directory's m<N>_<name>.yaml convention; the specifications
 # call the same file configs/pipeline/damage_assignment.yaml.
-config_version: "m2-assignment/0.2.2"
+config_version: "m2-assignment/0.2.3"
 status: proposed
 
 regions:
   # Per-pixel softmax floor; lower pixels become background (count recorded).
-  min_damage_confidence: 0.65
+  min_damage_confidence: 0.55
   # Components below this pixel count are dropped with reason below_min_pixels.
   min_damage_pixels: 256
   # 4 or 8 connectivity for per-class connected components.
