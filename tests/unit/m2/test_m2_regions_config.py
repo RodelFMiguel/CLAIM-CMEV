@@ -146,9 +146,9 @@ def test_fuzz_side_is_always_unknown():
 # ---------------------------------------------------------------- configuration
 def test_default_configuration_is_the_proposed_specification_values():
     cfg = load_assignment_config()
-    assert cfg.status == "proposed" and cfg.config_version == "m2-assignment/0.2.1"
+    assert cfg.status == "proposed" and cfg.config_version == "m2-assignment/0.2.2"
     assert (cfg.regions.min_damage_confidence, cfg.regions.min_damage_pixels, cfg.regions.connectivity,
-            cfg.regions.max_components_per_photo) == (0.5, 256, 8, 50)
+            cfg.regions.max_components_per_photo) == (0.65, 256, 8, 50)
     rule = cfg.assignment
     assert (rule.assign_min_containment, rule.assign_ambiguity_margin, rule.assign_background_max,
             rule.split_components, rule.split_min_pixels, rule.split_min_proportion) == (0.6, 0.2, 0.5, True, 400, 0.2)

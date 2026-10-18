@@ -2923,3 +2923,30 @@ Changed paths and completed behaviour:
 - Synced updated configs and code into `claim-cmev-cmev-api-1`, `claim-cmev-cmev-worker-combined-1`, and `claim-cmev-cmev-worker-image-1`, committed `claim-cmev-app:pipeline` and `claim-cmev-worker-image:pipeline`, rebuilt `claim-cmev-cmev-web-1`, and verified all 10 containers healthy.
 
 Next concrete step and agreed owner (or unassigned): submit a new test claim via `http://localhost:8080` to observe live `M1 Serving-B2` + `M2 CarDD-B2` + `m2-assignment/0.2.1` dual-gated part assignment end to end (unassigned).
+
+
+## Macro View-Consistency Gating & Damage Confidence Floor (`m2-assignment/0.2.2`) (2026-10-18)
+
+Date/time and timezone: 2026-10-18, Asia/Singapore.
+Contributor / coding agent: Antigravity, at the user's request.
+Task and relevant module: Implement Method 1 (raising M2 `min_damage_confidence` to 0.65 with version `m2-assignment/0.2.2`) and Method 2 (macro view-consistency gating on opposing exterior facades in M1 and M2) to eliminate false `front-bumper` and low-confidence `back-door` false positives on rear-view vehicle photographs.
+Branch / baseline commit / resulting commit or PR: `m1-m2-cardd-dualgate-and-ui-improvements`.
+
+Changed paths and completed behaviour:
+- `configs/pipeline/m2_assignment.yaml`: Bumped `config_version` to `m2-assignment/0.2.2` and increased `min_damage_confidence` from `0.50` to `0.65`. This eliminates sub-threshold noisy detections (e.g. faint 304 px door ding at confidence 0.592) while retaining genuine high-confidence damage.
+- `src/claim_cmev/vision/parts/adapter.py`: Added `apply_view_consistency(preds, id_to_part)` enforcing automotive camera single-view geometry:
+  - When rear exterior markers dominate (`trunk >= 20,000` or `trunk + back-bumper >= 25,000`), an isolated opposing `front-bumper` sliver (< 4,000 px or < 10% of `back-bumper`) is remapped to `back-bumper`.
+  - When front exterior markers dominate (`hood >= 20,000` or `hood + front-bumper >= 25,000`), an isolated opposing `back-bumper` sliver is remapped to `front-bumper`.
+  - Side panels (`front-door`, `back-door`, `quarter-panel`, `fender`, `rocker-panel`) are strictly preserved and never modified, preserving multi-door side-swipes and lateral impacts.
+- `src/claim_cmev/vision/damage/adapter.py`: Sanitized `part_mask` with `apply_view_consistency` in `run_damage_segmentation` before calling `assign_damage_to_part`, ensuring M2 region assignment is protected against opposing panel slivers even on cached or pre-existing masks.
+- `tests/unit/m2/test_m2_regions_config.py`: Updated config assertions to verify `m2-assignment/0.2.2` and `min_damage_confidence: 0.65`.
+- `tests/unit/test_parts_adapter.py`: Added comprehensive unit tests for `apply_view_consistency`, verifying rear-dominant remapping, front-dominant remapping, and total preservation of multi-door side panels.
+- Container runtime deployment: Synced updated files into `claim-cmev-cmev-worker-image-1`, `claim-cmev-cmev-worker-combined-1`, and `claim-cmev-cmev-api-1`. Committed image layers `claim-cmev-worker-vision:pipeline`, `claim-cmev-worker-combined:pipeline`, and `claim-cmev-app:pipeline`. Restarted services and verified all 10 containers healthy.
+
+Checks actually run, results and artifact locations:
+- Ran `python3 -m pytest tests/unit/m2/` inside `claim-cmev-worker-vision:pipeline`: 76 passed.
+- Ran `python3 -m pytest tests/unit/test_parts_adapter.py` inside `claim-cmev-worker-vision:pipeline`: 29 passed.
+- Verified in-container imports and configuration values: `apply_view_consistency` loaded and `m2-assignment/0.2.2` active with `0.65` confidence floor.
+
+Next concrete step and agreed owner (or unassigned): Submit a new test claim via `http://localhost:8080` to verify that rear-view case `CLM-24022` no longer produces false `front-bumper` or `back-door` observations, with the lower trim scratch correctly assigned to `back-bumper` (unassigned).
+

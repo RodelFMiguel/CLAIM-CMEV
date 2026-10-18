@@ -33,6 +33,7 @@ from ...persistence.store import insert_records
 from ..artifacts import is_missing, read_object, storage_key
 from ..frame import build_model_frame, same_frame
 from ..palette import ID_TO_PART_CODE, build_palette
+from ..parts.adapter import apply_view_consistency
 from ..registry import ModelUnavailable, class_map, serving_preprocessing, verify_registry_entry
 from ..segformer import load_strict, resolve_device
 from .assignment import DamageAssignmentResult, ObservationContext, assign_damage_to_part
@@ -219,6 +220,8 @@ def run_damage_segmentation(
         raise DamageInputError("transform_mismatch", f"the part mask of {request.photo_id} was made in another "
                                "frame than this worker builds for the photograph")
     part_mask = _read_part_mask(request)
+    if part_mask is not None:
+        part_mask = apply_view_consistency(part_mask, ID_TO_PART_CODE)
 
     tensor = torch.from_numpy(frame.normalised()).unsqueeze(0).to(segmenter.device)
     is_cuda = segmenter.device.type == "cuda"
