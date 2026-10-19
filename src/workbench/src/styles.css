@@ -1010,38 +1010,186 @@ h3 {
 }
 .status:before {
   content: "";
-  display: block;
-  width: 4px;
-  height: 4px;
+  display: inline-block;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: currentColor;
+  flex-shrink: 0;
 }
-.status-in_review,
-.status-pending,
-.status-needs_review {
-  background: #fdf3e7;
-  border-color: #f3dfc5;
-  color: #b58343;
+/* DISPATCHED: Blue dot and subtle blue badge */
+.status.status-dispatched,
+.status.status-DISPATCHED,
+.status-dispatched,
+.status-DISPATCHED {
+  background: #eff6ff !important;
+  border-color: #bfdbfe !important;
+  color: #1d4ed8 !important;
 }
-.status-processing,
-.status-queued {
-  background: #edf3f9;
-  border-color: #d9e3ef;
-  color: #6f8eae;
+.status.status-dispatched:before,
+.status.status-DISPATCHED:before,
+.status-dispatched:before,
+.status-DISPATCHED:before {
+  background: #2563eb !important;
+  box-shadow: 0 0 0 1.5px rgba(37, 99, 235, 0.25) !important;
 }
+
+/* SUCCEEDED / COMPLETED / DONE / CONFIRMED / READY: Green dot and green badge */
+.status.status-succeeded,
+.status.status-SUCCEEDED,
+.status.status-ready_to_print,
+.status.status-confirmed,
+.status.status-completed,
+.status.status-done,
+.status.status-ready,
+.status-succeeded,
+.status-SUCCEEDED,
 .status-ready_to_print,
 .status-confirmed,
 .status-completed,
 .status-done,
 .status-ready {
-  background: #eef6f0;
-  border-color: #d6e7db;
-  color: #5f8c71;
+  background: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+  color: #15803d !important;
 }
-.status-failed {
-  background: #fbefed;
-  color: #b86153;
-  border-color: #eed5d0;
+.status.status-succeeded:before,
+.status.status-SUCCEEDED:before,
+.status.status-ready_to_print:before,
+.status.status-confirmed:before,
+.status.status-completed:before,
+.status-done:before,
+.status-ready:before,
+.status-succeeded:before,
+.status-SUCCEEDED:before,
+.status-ready_to_print:before,
+.status-confirmed:before,
+.status-completed:before {
+  background: #16a34a !important;
+  box-shadow: 0 0 0 1.5px rgba(22, 163, 74, 0.25) !important;
+}
+
+/* RUNNING / PROCESSING: Vibrant sky blue dot with gentle breathing pulse */
+.status.status-running,
+.status.status-RUNNING,
+.status.status-processing,
+.status.status-PROCESSING,
+.status-running,
+.status-RUNNING,
+.status-processing,
+.status-PROCESSING {
+  background: #f0f9ff !important;
+  border-color: #bae6fd !important;
+  color: #0369a1 !important;
+}
+.status.status-running:before,
+.status.status-RUNNING:before,
+.status.status-processing:before,
+.status.status-PROCESSING:before,
+.status-running:before,
+.status-RUNNING:before,
+.status-processing:before,
+.status-PROCESSING:before {
+  background: #0284c7 !important;
+  box-shadow: 0 0 0 1.5px rgba(2, 132, 199, 0.3) !important;
+  animation: status-dot-pulse 1.8s ease-in-out infinite !important;
+}
+
+/* PENDING / QUEUED / IN_REVIEW / NEEDS_REVIEW: Warm amber dot and badge */
+.status.status-pending,
+.status.status-PENDING,
+.status.status-queued,
+.status.status-QUEUED,
+.status.status-in_review,
+.status.status-needs_review,
+.status.status-incomplete,
+.status-pending,
+.status-PENDING,
+.status-queued,
+.status-QUEUED,
+.status-in_review,
+.status-needs_review,
+.status-incomplete {
+  background: #fffbeb !important;
+  border-color: #fde68a !important;
+  color: #b45309 !important;
+}
+.status.status-pending:before,
+.status.status-PENDING:before,
+.status.status-queued:before,
+.status.status-QUEUED:before,
+.status.status-in_review:before,
+.status.status-needs_review:before,
+.status.status-incomplete:before,
+.status-pending:before,
+.status-PENDING:before,
+.status-queued:before,
+.status-QUEUED:before,
+.status-in_review:before,
+.status-needs_review:before,
+.status-incomplete:before {
+  background: #f59e0b !important;
+  box-shadow: 0 0 0 1.5px rgba(245, 158, 11, 0.25) !important;
+}
+
+/* FAILED / DEAD_LETTERED: Red dot and badge */
+.status.status-failed,
+.status.status-FAILED,
+.status.status-dead_lettered,
+.status.status-DEAD_LETTERED,
+.status-failed,
+.status-FAILED,
+.status-dead_lettered,
+.status-DEAD_LETTERED {
+  background: #fef2f2 !important;
+  border-color: #fecaca !important;
+  color: #b91c1c !important;
+}
+.status.status-failed:before,
+.status.status-FAILED:before,
+.status.status-dead_lettered:before,
+.status.status-DEAD_LETTERED:before,
+.status-failed:before,
+.status-FAILED:before,
+.status-dead_lettered:before,
+.status-DEAD_LETTERED:before {
+  background: #dc2626 !important;
+  box-shadow: 0 0 0 1.5px rgba(220, 38, 38, 0.25) !important;
+}
+
+/* NOT_REQUIRED / AWAITING_UPLOAD: Neutral slate dot and badge */
+.status.status-not_required,
+.status.status-NOT_REQUIRED,
+.status.status-awaiting_upload,
+.status.status-AWAITING_UPLOAD,
+.status-not_required,
+.status-NOT_REQUIRED,
+.status-awaiting_upload,
+.status-AWAITING_UPLOAD {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #64748b !important;
+}
+.status.status-not_required:before,
+.status.status-NOT_REQUIRED:before,
+.status.status-awaiting_upload:before,
+.status.status-AWAITING_UPLOAD:before,
+.status-not_required:before,
+.status-NOT_REQUIRED:before,
+.status-awaiting_upload:before,
+.status-AWAITING_UPLOAD:before {
+  background: #94a3b8 !important;
+}
+
+@keyframes status-dot-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.25);
+  }
 }
 .vehicle-name {
   display: block;
@@ -2717,20 +2865,7 @@ fieldset:disabled {
 .row-state-note.row-state-not-evaluated {
   border-style: dotted;
 }
-.status-incomplete {
-  background: #fff4e0;
-  border-color: #efd29c;
-  color: #875a0c;
-}
-.status-queued {
-  background: #f4f5f6;
-  border-color: #d6dadd;
-  color: #5f6b74;
-}
-.status-awaiting_upload {
-  background: #f4f5f6;
-  color: #5f6b74;
-}
+
 .claim-table td .queue-state {
   display: flex;
   gap: 5px;

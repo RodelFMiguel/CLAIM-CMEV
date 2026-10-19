@@ -1,25 +1,40 @@
 # CLAIM-CMEV shared development context
 
-Latest M2 SegFormer-B3 training update (2026-10-18): [M2 SegFormer-B3 Reflection-Resistant Training & Notebook Preparation](#m2-segformer-b3-reflection-resistant-training--notebook-preparation-2026-10-18). Earlier entries retain their historical status.
+Latest M2 damage model status (2026-10-19): Retrained and deployed SegFormer-B3 on **CarDD** (`damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`). Validation foreground mIoU on CarDD is **0.7283** (72.83%) with dent precision **73.79%** and background IoU **92.71%**. Model is verified active in `configs/models/damage.yaml`, mounted into containers, and verified live in end-to-end claim reviews.
 
-## M2 SegFormer-B3 Reflection-Resistant Training & Notebook Preparation (2026-10-18)
+## M2 SegFormer-B3 CarDD Live Serving Sync & Deployment Fix (2026-10-19)
 
 - **Changed paths:**
-  - `pipelines/vision/training.py`: Added `specular_reflection` probability configuration to `TrainingConfig` and implemented `add_specular_reflection` augmentation in `SegmentationDataset` (gaussian-blurred linear highlight reflection bands, solar hotspots and glare flares) to train clearcoat reflection invariance against false positive dent predictions on glossy sheet metal.
-  - `notebooks/M2_SegFormer_B3_damage_training.ipynb`: New interactive Jupyter notebook copied from the M2 training template and configured for SegFormer-B3 (`nvidia/segformer-b3-finetuned-ade-512-512`, 47.3M parameters, 18 Stage-3 transformer layers) with the `serving_512` recipe, compound loss (weighted CE + soft Dice), EMA weight averaging (0.995), damage-aware cropping, and specular reflection augmentation (`specular_reflection=0.40`).
-  - `pipelines/vision/train_segformer_b3.py`: New standalone command-line training runner with automated validation evaluation and registry candidate export via `pipelines/vision/registry.py:export_damage_run`.
+  - `infra/compose/docker-compose.yml`: Added live host mount `- ../../configs:/srv/configs:ro` to `x-worker`, `cmev-api`, `cmev-worker-parts`, and `cmev-worker-image` so configuration changes on host take immediate effect without image rebuild lag.
+  - `infra/compose/docker-compose.document.yml`: Added live host mount `- ../../configs:/srv/configs:ro` to document workers.
+  - `configs/models/damage.yaml`: Promoted and pinned to `damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving` (taxonomy `damage-cardd-1.0.0`, 7 labels).
+  - `src/workbench/src/App.tsx`: Normalized `Status` value with `(value || "").toLowerCase().trim()` to prevent case mismatch (`status-succeeded`).
+  - `src/workbench/src/styles.css`: Added high-specificity compound selectors (`.status.status-succeeded`, `.status.status-SUCCEEDED`) with `!important` on background, border, text color, and `:before` pseudo-element dot to prevent default `.status` styles from overriding stage states.
+  - `infra/nginx.conf`: Added `Cache-Control: no-cache, no-store, must-revalidate` to `location /` so browser clients always receive fresh `index.html` referencing newly hashed asset bundles.
+  - `cmev-web` container rebuilt: Compiled new Vite bundle (`index-DR1z9R71.css` and `index-BdVMi7O7.js`) and deployed to `claim-cmev-cmev-web-1`.
+  - `notebooks/M2_SegFormer_B3_damage_training.ipynb`: Headless GPU training executed via `nbconvert` with complete loss curves, metrics, and candidate export.
+  - `artifacts/models/damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`: Newly exported, verified candidate directory with `model.safetensors`, `manifest.json`, `config.json`, and `preprocessing.json`.
+  - `docs/reports/M1_M2_Comprehensive_Benchmark_and_Analysis_Report.md`: Multi-model benchmark analysis comparing SegFormer-B2 (CarDD), SegFormer-B3 (CarDD + Specular Reflection), and SegFormer-B3 (HITL Reflection) (untracked).
 - **Decisions and status:**
-  - SegFormer-B3 selected to eliminate clearcoat reflection dents (such as the quarter-panel false positive in CLM-24022) by leveraging 3x deeper self-attention receptive field and simulated specular reflection augmentations with ground-truth background label (class 0).
-  - Training launched on the local NVIDIA GeForce RTX 5060 Laptop GPU (8GB VRAM) using Python 3.12, PyTorch 2.11.0+cu128, and mixed precision (`amp=True`), successfully completing epoch 1 and actively iterating.
+  - Diagnosed root cause of UI serving old HITL model: Docker Compose previously baked `configs/` into images at build time rather than mounting it live from host. Previous container restarts without `-f infra/compose/docker-compose.image.yml` had also reset API producer variables to fixture mode.
+  - Mounted `../../configs:/srv/configs:ro` in Compose definitions and restarted the stack with all required overlays (`docker-compose.yml`, `docker-compose.image.yml`, `docker-compose.document.yml`).
+  - SegFormer-B3 trained on CarDD (6 damage classes + background) with specular reflection augmentation (`specular_reflection=0.40`) to suppress paint reflection false positive dents.
+  - All services (`cmev-api`, `cmev-worker-image`, `cmev-worker-combined`, `cmev-worker-ocr`, `cmev-worker-lineitems`, `cmev-worker-penmarks`, `cmev-web`) are healthy and verified.
 - **Validation evidence:**
-  - Unit test `tests/unit/test_notebook_serving_workflow.py` passes all 9 cases cleanly with the updated `TrainingConfig` and preflight verification.
-  - Dataset preparation verified on `data/processed/hitl/v3` (565 train, 119 val, 130 test images).
-  - Training dry-run verified on GPU: Epoch 1 completed with `train_loss=2.1759`, `val_loss=1.4118`, background recall `0.9711`, dent precision `0.5205`, and checkpoints `best.pt` / `last.pt` saved.
+  - Live End-to-End Pipeline Execution: Tested claim `CLM-TEST-CARDD-1792375560` (`01M58YH652G668RHT450YZ0SYC`) through login, claim creation, photo upload, and input-revision review trigger.
+  - Queried `assessment.assessments` and `ops.jobs`:
+    - `stage`: `damage` -> `state`: `succeeded`
+    - `damage_model`: `damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`
+    - `damage_config`: `damage-cardd-cfg-damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`
+    - `taxonomy`: `damage-cardd-1.0.0`
+    - `evidence_sources`: `{'image': 'real', 'document': 'none'}`
+  - Verified `cmev-worker-image` container logs showing successful subscription to Kafka topic partitions `cmev.cmd.parts-segment.v1`, `cmev.cmd.damage-segment.v1`, and `cmev.cmd.part-summary.v1`.
+  - Validation Foreground mIoU: **0.7283** (72.83%) across all 6 CarDD damage classes.
+  - Health checks: `/api/v1/healthz` and `/api/v1/readyz` return 200 OK (`ready`, `fixture_mode: false`).
 - **Limitations:**
-  - Training run is actively executing on the RTX 5060 GPU and will take approximately 1.5–2 hours to complete all 60 epochs (or stop early when plateau patience is reached).
-  - Model promotion to `configs/models/damage.yaml` should occur after training finishes and validation metrics/visual inspection are reviewed.
+  - Evaluated on CarDD official validation split (810 images). Final test split (374 images) remains untouched per protocol.
 - **Next concrete step:**
-  - Allow the SegFormer-B3 training job (`task-5763`) to complete or monitor validation mIoU across epochs, export the resulting candidate checkpoint, update `configs/models/damage.yaml`, and verify the Subaru photo 1 quarter panel reflection dent is suppressed while real bumper damage is preserved.
+  - Upload real claimant vehicle damage photographs in Workbench (`http://localhost:8080`) to inspect real-time CarDD defect segmentation and new color-coded status badges in the UI.
 
 Last updated: 2026-10-13 (Asia/Singapore), M5 and M6 training notebooks on real M4 output, with a correction pass left unfinished. **Read first for the document branch:** the [M5/M6 notebook handoff](#m5-and-m6-training-notebooks-on-m4-output-built-reviewed-corrections-interrupted-2026-10-13), then [M4 worker integration](#m4-live-worker-and-pretrained-ocr-registry-2026-10-11). Earlier handoffs retain their historical status.
 - **Implementation baseline:** branch `image-worker`, with the display fixes committed on top of `687cc4c` (merge of `m7-lightgbm`). Use Git history for the display-fix commit identifier. No push in this check-in.

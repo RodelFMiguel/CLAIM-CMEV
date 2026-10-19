@@ -37,23 +37,35 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=2, help="Per-device batch size")
     parser.add_argument("--accumulation-steps", type=int, default=4, help="Gradient accumulation steps")
     parser.add_argument("--device", type=str, default="cuda", help="Device (cuda or cpu)")
+    parser.add_argument("--task", type=str, default="damage_cardd", choices=["damage_cardd", "damage"], help="Task vocabulary to train")
     parser.add_argument("--specular-reflection", type=float, default=0.40, help="Specular reflection augmentation probability")
     parser.add_argument("--run-id", type=str, default=None, help="Explicit run ID")
     parser.add_argument("--export", action="store_true", default=True, help="Export candidate to registry after training")
     args = parser.parse_args()
 
-    data_dir = PROJECT_ROOT / "data/processed/hitl/v3"
-    if not (data_dir / "manifest.json").is_file():
-        raise FileNotFoundError(f"Prepared HITL v3 data not found at {data_dir}. Run prepare_hitl first.")
+    if args.task == "damage_cardd":
+        data_dir = PROJECT_ROOT / "data/processed/cardd/v1"
+        if not (data_dir / "manifest.json").is_file():
+            raise FileNotFoundError(f"Prepared CarDD data not found at {data_dir}. Run prepare_cardd first.")
+    else:
+        data_dir = PROJECT_ROOT / "data/processed/hitl/v3"
+        if not (data_dir / "manifest.json").is_file():
+            raise FileNotFoundError(f"Prepared HITL v3 data not found at {data_dir}. Run prepare_hitl first.")
 
     log.info(f"Loading prepared data from {data_dir}...")
     manifest = load_prepared(data_dir)
 
-    class_names = manifest["class_names"]["damage"]
-    log.info(f"Taxonomy ({len(class_names)} classes): {class_names}")
+    raw_classes = manifest["class_names"]
+    class_names = raw_classes[args.task] if isinstance(raw_classes, dict) else raw_classes
+    log.info(f"Task: {args.task} | Taxonomy ({len(class_names)} classes): {class_names}")
+
+    if args.task == "damage_cardd":
+        focus_names = ["scratch", "crack"]
+    else:
+        focus_names = ["flaking", "paint-chip", "scratch", "cracked"]
 
     config = TrainingConfig(
-        task="damage",
+        task=args.task,
         architecture="segformer",
         checkpoint="nvidia/segformer-b3-finetuned-ade-512-512",
         image_size=512,
@@ -84,7 +96,7 @@ def main() -> None:
         focused_crop_probability=0.50,
         crop_scale_range=(1.0, 1.5),
         crop_focus_class_ids=tuple(
-            class_names.index(name) for name in ["flaking", "paint-chip", "scratch", "cracked"] if name in class_names
+            class_names.index(name) for name in focus_names if name in class_names
         ),
         repeat_factor_threshold=0.20,
         max_repeat_factor=3.0,
@@ -105,7 +117,7 @@ def main() -> None:
     damage_cfg = load_damage_model_config(PROJECT_ROOT / "configs/models/damage.yaml")
     validate_serving_training_config(config, parts_config=parts_cfg, damage_config=damage_cfg)
 
-    log.info(f"Starting training SegFormer-B3 ({config.checkpoint}) on {args.device}...")
+    log.info(f"Starting training SegFormer-B3 ({config.checkpoint}) for {args.task} on {args.device}...")
     run_record = train(manifest, config)
     run_dir = Path(run_record["run_dir"])
     log.info(f"Training completed successfully. Run artifacts saved to {run_dir}")
@@ -125,12 +137,13 @@ def main() -> None:
 
     if args.export:
         export_name = f"{run_dir.name}-serving"
-        model_version = f"damage-hitl/{export_name}"
+        model_prefix = "damage-cardd" if args.task == "damage_cardd" else "damage-hitl"
+        model_version = f"{model_prefix}/{export_name}"
         log.info(f"Exporting candidate model to registry: {model_version}...")
         exported_path = export_damage_run(run_dir, model_version=model_version)
         log.info(f"Candidate exported successfully to {exported_path}")
         log.info("To serve this checkpoint, update configs/models/damage.yaml with:")
-        log.info(f"  model_id: damage-hitl")
+        log.info(f"  model_id: {model_prefix}")
         log.info(f"  model_version: {model_version}")
         log.info(f"  architecture: nvidia/segformer-b3-finetuned-ade-512-512")
         log.info(f"  num_labels: {len(class_names)}")

@@ -92,9 +92,10 @@ export function Loading() {
   );
 }
 export function Status({ value }: { value: string }) {
+  const norm = (value || "").toLowerCase().trim();
   return (
-    <span className={`status status-${value}`}>
-      {value.replaceAll("_", " ")}
+    <span className={`status status-${norm}`}>
+      {(value || "").replaceAll("_", " ")}
     </span>
   );
 }
