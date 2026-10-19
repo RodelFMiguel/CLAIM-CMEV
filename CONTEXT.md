@@ -2,6 +2,38 @@
 
 Latest M2 damage model status (2026-10-19): Retrained and deployed SegFormer-B3 on **CarDD** (`damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`). Validation foreground mIoU on CarDD is **0.7283** (72.83%) with dent precision **73.79%** and background IoU **92.71%**. Model is verified active in `configs/models/damage.yaml`, mounted into containers, and verified live in end-to-end claim reviews.
 
+## Final Review Report & Surveyor Name Extraction Updates (2026-10-19)
+
+- **Changed paths:**
+  - `src/claim_cmev/documents/surveyor.py`: Added pure, deterministic surveyor name extraction from OCR text boxes (`extract_surveyor_name`, `extract_surveyor_from_pages`) supporting single-line labels ("Surveyor: <name>"), horizontal side-by-side cells ("Surveyor" + adjacent box), and vertically stacked cells.
+  - `src/claim_cmev/orchestration/consolidation.py`: In `Consolidator._step`, automatically extracts the surveyor name from M4 `document_page` text boxes during consolidation and updates `claim["surveyor"]` in the database when not manually set.
+  - `src/claim_cmev/api/views.py`: In `claim_view`, automatically detects when a claim has default `"Acery AI"` and extracts the surveyor name from stored `page_text_box` records, updating the claim in the DB.
+  - `src/claim_cmev/api/main.py`: Added optional `surveyor` field to `ClaimCreate`, set `surveyor_manually_set` flag on creation, and enhanced `print-view` endpoint to ensure the claim snapshot reflects the extracted surveyor.
+  - `src/workbench/src/App.tsx`: Added optional Surveyor field to the claim creation form grid and passed `surveyor` in the creation payload.
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Cleaned "Pinned versions" in report metadata, footer, and version display: stripped all 64-character SHA-256 digests (`*_sha256`) and internal code versions, curating clean labels for Parts model, Damage model, OCR engine, Line items model, Pen marks model, Cost table, and Rules config.
+    - Added total cost sum row to the "Estimate and review findings" table (`<tfoot>`) totaling both printed amounts and effective amounts.
+    - Added per-part category summary table to "Photographic coverage" highlighting missing parts/evidence (with warning badges), observed damage types, and review approval/rejection status.
+    - Updated "Open and withheld additions" and "Pen-mark decisions" sections to render an explicit `"None"` indicator when empty.
+  - `src/workbench/src/DamageSummary.tsx`: Exported `reasonText` for consistent reason explanations across review and print reports.
+  - `src/workbench/src/styles.css`: Added styles for `.report-table tfoot td`, `.report-badge` variants (`report-badge-approved`, `report-badge-rejected`, `report-badge-missing`, `report-badge-unclaimed`, `report-badge-neutral`), and `.row-missing-evidence`.
+- **Decisions and status:**
+  - Surveyor Name: Extracted directly from uploaded surveyor report text boxes. For existing and newly processed claims, the actual surveyor name (e.g. "H. Tan") is displayed rather than defaulting to "Acery AI".
+  - Pinned Versions: Long internal cryptographic hashes and redundant `.code` versions are filtered out from the human-facing report while maintaining exact versioning for key models, taxonomy, and cost tables.
+  - Estimate Totals: Both printed estimate and surveyor effective totals are clearly summed at the bottom of the table.
+  - Photographic Coverage Summary: Structured into an overview table per part category with clear status badges, highlighting missing evidence, followed by detailed damage observation cards.
+  - Empty States: Explicitly displays "None" when no pen marks or additions exist.
+  - Containers `cmev-api`, `cmev-worker-combined`, and `cmev-web` rebuilt and verified healthy.
+- **Validation evidence:**
+  - Surveyor extraction test in `claim-cmev-cmev-api-1` passed for all synthetic and report layouts.
+  - Verified on claim `CLM-24033` (`01M5903VM50V9KMWSWTVATMVKT`): `views.claim_view` and `print_view` now report `Surveyor: H. Tan` (extracted from the uploaded survey report) instead of `Acery AI`.
+  - Frontend built cleanly (`npm run build` in `infra/Dockerfile.web`) with new assets served via Nginx.
+  - Changes committed in git commit `0cd0dc4`.
+- **Limitations:**
+  - Reports lacking a recognized surveyor label (or unreadable scans) will retain the manually entered surveyor name or default surveyor.
+- **Next concrete step:**
+  - User can review the updated print report in the browser at `http://localhost:8080/claims/<claim_id>/review/print` or test a new claim upload with an estimate.
+
 ## M2 SegFormer-B3 CarDD Live Serving Sync & Deployment Fix (2026-10-19)
 
 - **Changed paths:**
