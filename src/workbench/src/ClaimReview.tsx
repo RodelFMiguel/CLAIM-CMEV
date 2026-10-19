@@ -12,20 +12,28 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import {
+  AlertTriangle,
   ArrowDownToLine,
   ArrowLeft,
+  ArrowRight,
   ArrowUpToLine,
+  Calculator,
   Camera,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   CircleDashed,
+  ExternalLink,
   FileText,
   Info,
   Loader2,
+  Maximize2,
   MinusCircle,
   OctagonAlert,
   Printer,
   RefreshCw,
   ShieldCheck,
+  UploadCloud,
 } from "lucide-react";
 import { api, ApiError, money, type Claim } from "./api";
 import {
@@ -45,6 +53,7 @@ import {
   CompletenessControl,
   IdentityControls,
   Additions,
+  type DeclarationData,
   type ReviewOverlay,
   type ReviewRow,
 } from "./ReviewControls";
@@ -57,6 +66,8 @@ import {
   type DamageObservation,
 } from "./DamageSummary";
 import { CorrectedPageView, EvidenceDialog, EvidenceFile } from "./EvidenceDialog";
+import { SupplementaryEvidenceModal } from "./SupplementaryEvidenceModal";
+import { SupplementaryReopeningModal } from "./SupplementaryReopeningModal";
 
 interface Evidence {
   file_id: string;
@@ -77,6 +88,8 @@ interface LineItem extends ReviewRow {
   printed_amount_corrected?: boolean;
   original_amount_text?: string | null;
   effective_amount: string | null;
+  effective_price_source?: string | null;
+  effective_price_reason?: string | null;
   mark_state: string;
   photo_check: string;
   cost_check: string;
@@ -113,6 +126,14 @@ interface Review {
   finalized: boolean;
   finalized_at?: string;
   actions: Action[];
+  report?: {
+    header?: {
+      reviewed_by?: string;
+      finalized_at?: string;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
 }
 interface DocumentPage {
   page_id: string;
@@ -146,6 +167,7 @@ interface Assessment {
   evidence_sources?: { image: string; document: string };
   versions: Record<string, string>;
   declaration_completeness: string;
+  declaration?: DeclarationData;
   fixture_notice: string | null;
   invalidated_corrections?: unknown[];
   finalize_preconditions: {
@@ -331,11 +353,23 @@ function ReviewOverview({ id }: { id: string }) {
   const [selectedPage, setSelectedPage] = useState<string | null>(null);
   const [selectedRow, setSelectedRow] = useState<string | null>(null);
   const [rowPopup, setRowPopup] = useState(false);
+  const [showEvidenceModal, setShowEvidenceModal] = useState(false);
+  const [showReopeningModal, setShowReopeningModal] = useState(false);
+  const [evidenceTab, setEvidenceTab] = useState<"photos" | "pages">("photos");
+  const [popupEvidence, setPopupEvidence] = useState<{
+    kind: "file";
+    file: Evidence;
+  } | {
+    kind: "page";
+    page: DocumentPage;
+    name: string;
+  } | null>(null);
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [actor, setActor] = useState("");
   const [localReady, setLocalReady] = useState(false);
   const [tabId, setTabId] = useState("");
+  const [expandReviewHistory, setExpandReviewHistory] = useState(false);
   useEffect(() => {
     void reviewTabId()
       .then(setTabId)
@@ -555,19 +589,30 @@ function ReviewOverview({ id }: { id: string }) {
       success,
     });
   }
-  async function reviewAction(values: Record<string, unknown>) {
+  async function reviewAction(
+    values: Record<string, unknown> | Record<string, unknown>[],
+  ) {
     if (!assessment || !review || !claim) return false;
+    const isBatch = Array.isArray(values);
+    const body = isBatch
+      ? values.map((v) => ({
+          ...v,
+          expected_input_revision: claim.input_revision,
+          expected_review_revision: review.review_revision,
+        }))
+      : {
+          ...values,
+          expected_input_revision: claim.input_revision,
+          expected_review_revision: review.review_revision,
+        };
     return mutate(
       base +
         "/assessments/" +
         assessment.assessment_revision +
-        "/review-actions",
-      {
-        ...values,
-        expected_input_revision: claim.input_revision,
-        expected_review_revision: review.review_revision,
-      },
-      "Review action saved.",
+        "/review-actions" +
+        (isBatch ? "/batch" : ""),
+      body,
+      isBatch ? "Confirmations saved." : "Review action saved.",
     );
   }
   async function markDecision(mark: Mark, decision: "confirm" | "reject") {
@@ -612,10 +657,42 @@ function ReviewOverview({ id }: { id: string }) {
   const files = assessment?.files ?? [];
   const row = assessment?.line_items.find((r) => r.entry_id === selectedRow);
   const correctedPages = assessment?.pages?.filter((p) => p.corrected_url) ?? [];
+
+  // Categorize files into vehicle damage photos and estimate documents
+  const photoFiles = files.filter(
+    (f) =>
+      f.role === "photograph" ||
+      (!correctedPages.some((p) => p.file_id === f.file_id) &&
+        f.media_type.startsWith("image/")),
+  );
+  const estimateFiles = files.filter(
+    (f) =>
+      f.role === "estimate" ||
+      f.media_type === "application/pdf" ||
+      correctedPages.some((p) => p.file_id === f.file_id),
+  );
+
+  const currentPage =
+    correctedPages.find((p) => p.page_id === (row?.page_id ?? selectedPage)) ??
+    correctedPages[0];
+  const currentPhoto =
+    photoFiles.find((f) => f.file_id === selectedFile) ?? photoFiles[0];
+  const rawEstimateFile =
+    estimateFiles.find((f) => f.file_id === currentPage?.file_id) ??
+    estimateFiles[0];
+
   const page = correctedPages.find((p) => p.page_id === (row?.page_id ?? selectedPage));
+  const activeEvidenceTab: "photos" | "pages" =
+    evidenceTab === "photos" && photoFiles.length === 0 && (correctedPages.length > 0 || estimateFiles.length > 0)
+      ? "pages"
+      : evidenceTab === "pages" && correctedPages.length === 0 && estimateFiles.length === 0 && photoFiles.length > 0
+      ? "photos"
+      : evidenceTab;
+
   const file =
-    files.find((f) => f.file_id === (page?.file_id ?? selectedFile)) ??
-    (selectedRow ? undefined : files[0]);
+    activeEvidenceTab === "photos"
+      ? currentPhoto
+      : rawEstimateFile ?? files.find((f) => f.file_id === selectedFile) ?? files[0];
   const imageFromModels = assessment?.evidence_sources?.image === "real";
   const frozen = review?.finalized ?? false;
   // A shown assessment that is not the claim's current one is read-only.
@@ -648,6 +725,14 @@ function ReviewOverview({ id }: { id: string }) {
           <Status value={claim.status} />
           <button
             className="button button-outline button-small"
+            onClick={() => setShowEvidenceModal(true)}
+            disabled={busy || frozen}
+            title={frozen ? "Review finalized — claim evidence is frozen" : "Upload supplementary damage photographs or estimate pages"}
+          >
+            <UploadCloud size={15} /> Add Evidence
+          </button>
+          <button
+            className="button button-outline button-small"
             onClick={reload}
             disabled={busy}
           >
@@ -656,6 +741,12 @@ function ReviewOverview({ id }: { id: string }) {
         </div>
       </div>
       <div className="revision-strip">
+        <span>
+          Field Surveyor <b>{claim.surveyor || "Unspecified"}</b>
+        </span>
+        <span>
+          Reviewer <b>{review?.report?.header?.reviewed_by || claim.reviewer || "Acery AI"}</b>
+        </span>
         <span>
           Input <b>{claim.input_revision}</b>
         </span>
@@ -833,9 +924,17 @@ function ReviewOverview({ id }: { id: string }) {
             </div>
           ))}
           {claim.status === "awaiting_upload" && (
-            <Link className="button button-dark" to="/claims/new">
-              New claim
-            </Link>
+            <div style={{ display: "flex", gap: "10px", marginTop: "16px", justifyContent: "center" }}>
+              <button
+                className="button button-dark"
+                onClick={() => setShowEvidenceModal(true)}
+              >
+                <UploadCloud size={16} /> Upload evidence to this claim
+              </button>
+              <Link className="button button-outline" to="/claims/new">
+                New claim
+              </Link>
+            </div>
           )}
           {claim.assessment_revision === null && latestRevision !== null && (
             <div className="prior-assessment">
@@ -862,16 +961,18 @@ function ReviewOverview({ id }: { id: string }) {
           <div className="review-layout">
             <div className="review-main">
               <section className="panel">
-                <div className="panel-heading">
-                  <span className="section-icon">
-                    <Camera size={20} />
-                  </span>
-                  <div>
-                    <h2>Damage summary</h2>
-                    <p>
-                      Predicted damage is shown separately from part identity
-                      and photograph coverage.
-                    </p>
+                <div className="panel-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+                  <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                    <span className="section-icon">
+                      <Camera size={20} />
+                    </span>
+                    <div>
+                      <h2>Damage summary</h2>
+                      <p>
+                        Predicted damage is shown separately from part identity
+                        and photograph coverage.
+                      </p>
+                    </div>
                   </div>
                 </div>
                 {assessment.damage_summary.length ? (
@@ -880,10 +981,36 @@ function ReviewOverview({ id }: { id: string }) {
                     groups={assessment.part_summaries}
                     observations={assessment.observations}
                     files={assessment.files}
+                    locked={locked}
+                    onRetract={async (partCode, side, photoIds) => {
+                      const validPhotos =
+                        photoIds && photoIds.length > 0
+                          ? photoIds
+                          : assessment.review_photo_ids.length > 0
+                          ? [assessment.review_photo_ids[0]]
+                          : [];
+                      if (!validPhotos.length) {
+                        setError("No photographs available for this claim to anchor retraction.");
+                        return;
+                      }
+                      await reviewAction({
+                        action_type: "confirm_coverage",
+                        part_code: partCode,
+                        side: side,
+                        photo_ids: validPhotos,
+                        covers_enough: false,
+                        reason_code: "surveyor_retracted",
+                        note: "Confirmation retracted by surveyor",
+                      });
+                    }}
+                    onConfirm={async (actions) => {
+                      await reviewAction(actions);
+                    }}
                     onPhoto={(photoId) => {
                       setSelectedRow(null);
                       setSelectedPage(null);
                       setSelectedFile(photoId);
+                      setEvidenceTab("photos");
                       document.getElementById("evidence-panel")?.focus();
                     }}
                   />
@@ -899,6 +1026,7 @@ function ReviewOverview({ id }: { id: string }) {
                   uploadedPhotos={imageFromModels}
                   submit={reviewAction}
                   locked={locked}
+                  existingCoverage={assessment.coverage ?? assessment.damage_summary}
                 />
               </section>
               <section className="panel line-items-panel">
@@ -908,102 +1036,28 @@ function ReviewOverview({ id }: { id: string }) {
                   </span>
                   <div>
                     <h2>Estimate line items</h2>
-                    <p>
-                      Declaration completeness:{" "}
-                      {assessment.declaration_completeness}. Amounts in{" "}
-                      {claim.currency}.
-                    </p>
+                    <p>Amounts in {claim.currency}.</p>
                   </div>
                 </div>
-                <CompletenessControl submit={reviewAction} locked={locked} />
-                {assessment.marks
-                  .filter((m) => !m.entry_id && m.state !== "rejected")
-                  .map((mark) => (
-                    <form
-                      key={mark.mark_id}
-                      className="mark-form"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const f = new FormData(e.currentTarget);
-                        void reviewAction({
-                          action_type: "correct_mark_link",
-                          mark_id: mark.mark_id,
-                          target_entry_id: f.get("entry"),
-                        });
-                      }}
-                    >
-                      <p>
-                        Unlinked {label(mark.type)}: {mark.reason}
-                      </p>
-                      {correctedPages.some((p) => p.page_id === mark.page_id) && <button type="button"
-                        className="button button-outline button-small" onClick={() => {
-                          setSelectedRow(null); setSelectedPage(mark.page_id);
-                          document.getElementById("evidence-panel")?.focus();
-                        }}>View mark on page</button>}
-                      <label>
-                        Assign mark to row
-                        <select
-                          name="entry"
-                          defaultValue=""
-                          required
-                          disabled={locked}
-                        >
-                          <option value="" disabled>
-                            Choose a row
-                          </option>
-                          {assessment.line_items
-                            .filter((i) => i.page_id === mark.page_id)
-                            .map((i) => (
-                              <option key={i.entry_id} value={i.entry_id}>
-                                {i.description}
-                                {mark.candidate_entry_ids.includes(i.entry_id)
-                                  ? " (candidate)"
-                                  : ""}
-                              </option>
-                            ))}
-                        </select>
-                      </label>
-                      <button
-                        className="button button-outline button-small"
-                        disabled={locked}
-                      >
-                        Save row link
-                      </button>
-                      {mark.state === "pending" && (
-                        <button
-                          type="button"
-                          disabled={locked}
-                          className="button button-outline button-small"
-                          onClick={() =>
-                            reviewAction({
-                              action_type: "reject_mark",
-                              mark_id: mark.mark_id,
-                            })
-                          }
-                        >
-                          Reject unlinked mark
-                        </button>
-                      )}
-                    </form>
-                  ))}
-                <details className="review-controls">
-                  <summary>Review all mark links and confirmed amounts</summary>
-                  {assessment.marks.some(
-                    (m) => m.entry_id && m.state !== "rejected",
-                  ) ? (
-                    assessment.marks
-                      .filter((m) => m.entry_id && m.state !== "rejected")
-                      .map((mark) => (
-                        <div key={mark.mark_id}>
-                          <p>
-                            {label(mark.type)}: {mark.state}, row{" "}
-                            {
-                              assessment.line_items.find(
-                                (i) => i.entry_id === mark.entry_id,
-                              )?.description
-                            }
-                          </p>
+                {(() => {
+                  const unlinkedMarks = assessment.marks.filter(
+                    (m) => !m.entry_id && m.state !== "rejected",
+                  );
+                  if (!unlinkedMarks.length) return null;
+                  return (
+                    <div className="unlinked-marks-card">
+                      <div className="unlinked-marks-header">
+                        <AlertTriangle size={17} color="#d97706" />
+                        <strong>Unlinked Pen Marks ({unlinkedMarks.length})</strong>
+                        <span className="unlinked-marks-tip">
+                          Detected pen strokes not automatically matched to a row. Link or reject them:
+                        </span>
+                      </div>
+                      <div className="unlinked-marks-list">
+                        {unlinkedMarks.map((mark) => (
                           <form
+                            key={mark.mark_id}
+                            className="unlinked-mark-row"
                             onSubmit={(e) => {
                               e.preventDefault();
                               const f = new FormData(e.currentTarget);
@@ -1014,73 +1068,78 @@ function ReviewOverview({ id }: { id: string }) {
                               });
                             }}
                           >
-                            <fieldset disabled={locked}>
-                              <label>
-                                Correct row link
-                                <select
-                                  name="entry"
-                                  defaultValue={mark.entry_id ?? ""}
+                            <div className="unlinked-mark-info">
+                              <span className="unlinked-mark-kind">
+                                {label(mark.type)}
+                              </span>
+                              <span className="unlinked-mark-reason">
+                                {mark.reason}
+                              </span>
+                              {correctedPages.some((p) => p.page_id === mark.page_id) && (
+                                <button
+                                  type="button"
+                                  className="button-link-small"
+                                  onClick={() => {
+                                    setSelectedRow(null);
+                                    setSelectedPage(mark.page_id);
+                                    setEvidenceTab("pages");
+                                    document.getElementById("evidence-panel")?.focus();
+                                  }}
                                 >
-                                  {assessment.line_items
-                                    .filter((i) => i.page_id === mark.page_id)
-                                    .map((i) => (
-                                      <option
-                                        key={i.entry_id}
-                                        value={i.entry_id}
-                                      >
-                                        {i.description}
-                                      </option>
-                                    ))}
-                                </select>
-                              </label>
-                              <button className="button button-outline button-small">
-                                Correct mark link
-                              </button>
-                            </fieldset>
-                          </form>
-                          {mark.state === "confirmed" &&
-                            mark.type === "price_change" && (
-                              <form
-                                onSubmit={(e) => {
-                                  e.preventDefault();
-                                  const f = new FormData(e.currentTarget);
-                                  void reviewAction({
-                                    action_type: "enter_amount",
-                                    mark_id: mark.mark_id,
-                                    amount: f.get("amount"),
-                                  });
-                                }}
+                                  View mark on page
+                                </button>
+                              )}
+                            </div>
+                            <div className="unlinked-mark-actions">
+                              <select
+                                name="entry"
+                                defaultValue=""
+                                required
+                                disabled={locked}
+                                className="unlinked-mark-select"
                               >
-                                <fieldset disabled={locked}>
-                                  <label>
-                                    Change confirmed amount
-                                    <input
-                                      name="amount"
-                                      type="number"
-                                      min="0"
-                                      max="999999.99"
-                                      step=".01"
-                                      required
-                                    />
-                                  </label>
-                                  <button className="button button-outline button-small">
-                                    Save revised amount
-                                  </button>
-                                </fieldset>
-                              </form>
-                            )}
-                        </div>
-                      ))
-                  ) : (
-                    <fieldset>
-                      <p className="muted">
-                        No linked pen marks or confirmed amounts on this
-                        estimate. To add a missed pen mark, open &ldquo;Correct
-                        row or add a missed mark&rdquo; on the line item below.
-                      </p>
-                    </fieldset>
-                  )}
-                </details>
+                                <option value="" disabled>
+                                  Assign mark to row...
+                                </option>
+                                {assessment.line_items
+                                  .filter((i) => i.page_id === mark.page_id)
+                                  .map((i) => (
+                                    <option key={i.entry_id} value={i.entry_id}>
+                                      {i.description}
+                                      {mark.candidate_entry_ids.includes(i.entry_id)
+                                        ? " (candidate)"
+                                        : ""}
+                                    </option>
+                                  ))}
+                              </select>
+                              <button
+                                className="button button-dark button-small"
+                                disabled={locked}
+                              >
+                                Link Row
+                              </button>
+                              {mark.state === "pending" && (
+                                <button
+                                  type="button"
+                                  disabled={locked}
+                                  className="button button-outline button-small"
+                                  onClick={() =>
+                                    reviewAction({
+                                      action_type: "reject_mark",
+                                      mark_id: mark.mark_id,
+                                    })
+                                  }
+                                >
+                                  Reject
+                                </button>
+                              )}
+                            </div>
+                          </form>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {assessment.line_items.length ? (
                   assessment.line_items.map((item) => (
                     <article
@@ -1107,6 +1166,7 @@ function ReviewOverview({ id }: { id: string }) {
                           onClick={() => {
                             setSelectedRow(item.entry_id);
                             setSelectedFile(item.evidence_ids[0] ?? null);
+                            setEvidenceTab("pages");
                             setRowPopup(true);
                           }}
                         >
@@ -1138,9 +1198,13 @@ function ReviewOverview({ id }: { id: string }) {
                         <div>
                           <span>Effective surveyor amount</span>
                           <strong>
-                            {item.effective_amount === null
-                              ? "Withheld"
-                              : money(item.effective_amount, claim.currency)}
+                            {item.row_state === "excluded" ? (
+                              <span className="line-excluded-amount">Excluded ($0.00)</span>
+                            ) : item.effective_amount === null ? (
+                              "Withheld"
+                            ) : (
+                              money(item.effective_amount, claim.currency)
+                            )}
                           </strong>
                         </div>
                         <div>
@@ -1220,14 +1284,34 @@ function ReviewOverview({ id }: { id: string }) {
                             </small>
                           </form>
                         ))}
-                      <RowControls
-                        row={item}
-                        submit={reviewAction}
-                        locked={locked}
-                        dismissed={
-                          assessment.review_overlay.dismissals[item.finding_id]
-                        }
-                      />
+                      {(() => {
+                        const itemPage = assessment.pages?.find(
+                          (p) => p.page_id === item.page_id,
+                        );
+                        const itemFile = itemPage
+                          ? files.find((f) => f.file_id === itemPage.file_id)
+                          : undefined;
+                        const pageNumber = itemPage?.page_number;
+                        const pageLabel = itemPage
+                          ? `Estimate Page ${itemPage.page_number}${
+                              itemFile ? ` (${itemFile.original_name})` : ""
+                            }`
+                          : undefined;
+                        return (
+                          <RowControls
+                            row={item}
+                            submit={reviewAction}
+                            locked={locked}
+                            dismissed={
+                              assessment.review_overlay.dismissals[
+                                item.finding_id
+                              ]
+                            }
+                            pageNumber={pageNumber}
+                            pageLabel={pageLabel}
+                          />
+                        );
+                      })()}
                     </article>
                   ))
                 ) : (
@@ -1236,6 +1320,104 @@ function ReviewOverview({ id }: { id: string }) {
                     to review.
                   </p>
                 )}
+                {assessment.line_items.length > 0 && (() => {
+                  const totalPrinted = assessment.line_items.reduce(
+                    (sum, item) => sum + (Number(item.printed_amount) || 0),
+                    0,
+                  );
+                  const totalAgreed = assessment.line_items.reduce(
+                    (sum, item) =>
+                      sum +
+                      (item.row_state === "excluded"
+                        ? 0
+                        : Number(item.effective_amount) || 0),
+                    0,
+                  );
+                  const netDiff = totalAgreed - totalPrinted;
+                  const pct =
+                    totalPrinted > 0
+                      ? ((netDiff / totalPrinted) * 100).toFixed(1)
+                      : "0.0";
+                  const excludedCount = assessment.line_items.filter(
+                    (i) => i.row_state === "excluded",
+                  ).length;
+                  const priceChangedCount = assessment.line_items.filter(
+                    (i) => i.effective_price_source === "surveyor_entry",
+                  ).length;
+
+                  return (
+                    <div className="review-estimate-summary-bar">
+                      <div className="summary-bar-header">
+                        <div className="summary-bar-title-wrap">
+                          <Calculator size={19} className="summary-bar-icon" />
+                          <div>
+                            <h4>Estimate &amp; Agreed Totals</h4>
+                            <span className="summary-bar-sub">
+                              Live calculation across {assessment.line_items.length} line items
+                              {excludedCount > 0 && ` (${excludedCount} excluded)`}
+                              {priceChangedCount > 0 && ` (${priceChangedCount} revised)`}
+                            </span>
+                          </div>
+                        </div>
+                        {Math.abs(netDiff) >= 0.01 ? (
+                          <div
+                            className={`summary-variance-pill ${
+                              netDiff < 0 ? "negative" : "positive"
+                            }`}
+                          >
+                            <span>Net Adjustment:</span>
+                            <strong>
+                              {netDiff < 0 ? "-" : "+"}
+                              {money(Math.abs(netDiff), claim.currency)} ({pct}%)
+                            </strong>
+                          </div>
+                        ) : (
+                          <div className="summary-variance-pill neutral">
+                            <span>Net Adjustment:</span>
+                            <strong>$0.00 (Agreed in full)</strong>
+                          </div>
+                        )}
+                      </div>
+                      <div className="summary-bar-metrics">
+                        <div className="summary-metric-card">
+                          <span className="metric-label">Declared Estimate</span>
+                          <strong className="metric-value declared">
+                            {money(totalPrinted, claim.currency)}
+                          </strong>
+                          <span className="metric-sub">Sum of printed amounts</span>
+                        </div>
+                        <div className="summary-metric-arrow">
+                          <ArrowRight size={20} />
+                        </div>
+                        <div className="summary-metric-card highlight">
+                          <span className="metric-label">Effective Agreed Total</span>
+                          <strong className="metric-value agreed">
+                            {money(totalAgreed, claim.currency)}
+                          </strong>
+                          <span className="metric-sub">Single-part basis &middot; Pre-tax</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                <div
+                  className="completeness-signoff-wrapper"
+                  id="declaration-completeness-section"
+                >
+                  <div className="completeness-signoff-heading">
+                    <span className="signoff-step-tag">ESTIMATE REVIEW SIGN-OFF</span>
+                    <h3>Declaration Completeness</h3>
+                    <p>
+                      Now that you have reviewed the extracted line items above, confirm whether all estimate pages and items are present.
+                    </p>
+                  </div>
+                  <CompletenessControl
+                    declaration={assessment.declaration}
+                    completenessState={assessment.declaration_completeness}
+                    submit={reviewAction}
+                    locked={locked}
+                  />
+                </div>
               </section>
               <section className="panel">
                 <div className="panel-heading">
@@ -1269,22 +1451,63 @@ function ReviewOverview({ id }: { id: string }) {
                     <FileText size={20} />
                   </span>
                   <div>
-                    <h2>Review notes</h2>
+                    <h2>
+                      Review notes
+                      {review?.actions && review.actions.length > 0 && (
+                        <span className="review-notes-count-badge">
+                          {review.actions.length}
+                        </span>
+                      )}
+                    </h2>
                     <p>Saved with the actor, time and review revision.</p>
                   </div>
                 </div>
                 {review?.actions.length ? (
-                  <ol className="review-history">
-                    {review.actions.map((action) => (
-                      <li key={action.action_id}>
-                        <strong>{action.actor}</strong>
-                        <time>
-                          {new Date(action.created_at).toLocaleString()}
-                        </time>
-                        <p>{actionText(action)}</p>
-                      </li>
-                    ))}
-                  </ol>
+                  <>
+                    {review.actions.length > 3 && (
+                      <div className="review-history-toggle-bar">
+                        <span className="muted" style={{ fontSize: "11.5px" }}>
+                          {expandReviewHistory
+                            ? `Showing all ${review.actions.length} recorded actions`
+                            : `Showing latest 3 of ${review.actions.length} actions`}
+                        </span>
+                        <button
+                          type="button"
+                          className="review-history-toggle-btn"
+                          onClick={() => setExpandReviewHistory((prev) => !prev)}
+                        >
+                          {expandReviewHistory ? (
+                            <>
+                              <ChevronUp size={14} /> Show recent only
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown size={14} /> Show earlier history (
+                              {review.actions.length - 3} more)
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                    <ol
+                      className={`review-history ${
+                        expandReviewHistory ? "review-history-expanded" : ""
+                      }`}
+                    >
+                      {(expandReviewHistory
+                        ? review.actions
+                        : review.actions.slice(-3)
+                      ).map((action) => (
+                        <li key={action.action_id}>
+                          <strong>{action.actor}</strong>
+                          <time>
+                            {new Date(action.created_at).toLocaleString()}
+                          </time>
+                          <p>{actionText(action)}</p>
+                        </li>
+                      ))}
+                    </ol>
+                  </>
                 ) : (
                   <p className="muted">No review actions recorded yet.</p>
                 )}
@@ -1326,97 +1549,263 @@ function ReviewOverview({ id }: { id: string }) {
                   <p>{row ? row.description : "Preserved original files"}</p>
                 </div>
               </div>
-              {correctedPages.length > 0 && (
-                <label className="evidence-select">
-                  Corrected estimate page
-                  <select value={page?.page_id ?? ""} onChange={(e) => {
+              <div style={{ marginBottom: "14px" }}>
+                <button
+                  type="button"
+                  className="button button-outline button-small"
+                  style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "center", gap: "6px" }}
+                  onClick={() => setShowEvidenceModal(true)}
+                  disabled={busy || frozen}
+                  title={frozen ? "Review finalized — claim evidence is frozen" : "Upload supplementary evidence"}
+                >
+                  <UploadCloud size={15} /> Upload supplementary evidence
+                </button>
+                {frozen && (
+                  <div className="frozen-upload-notice">
+                    <ShieldCheck size={13} color="#059669" />
+                    <span>Review finalized. Original evidence is frozen.</span>
+                  </div>
+                )}
+              </div>
+              <div className="evidence-tabs">
+                <button
+                  type="button"
+                  className={`evidence-tab ${activeEvidenceTab === "photos" ? "active" : ""}`}
+                  onClick={() => {
                     setSelectedRow(null);
-                    setSelectedPage(e.target.value || null);
-                  }}>
-                    <option value="">Browse original files</option>
-                    {correctedPages.map((p) => <option key={p.page_id} value={p.page_id}>
-                      {files.find((f) => f.file_id === p.file_id)?.original_name ?? "Estimate"} · page {p.page_number}
-                    </option>)}
-                  </select>
-                </label>
-              )}
-              {page?.corrected_url && (
-                <CorrectedPageView page={page} rows={assessment.line_items}
-                  marks={assessment.marks} selectedRow={selectedRow} />
-              )}
-              {page && <p className="evidence-caption">Blue: extracted rows. Red: proposed or confirmed marks. Grey: rejected marks.</p>}
-              {files.length ? (
+                    setEvidenceTab("photos");
+                  }}
+                  disabled={photoFiles.length === 0}
+                  title={
+                    photoFiles.length === 0
+                      ? "No damage photographs uploaded"
+                      : "View vehicle damage photographs"
+                  }
+                >
+                  <Camera size={14} />
+                  <span>Damage Photos ({photoFiles.length})</span>
+                </button>
+                <button
+                  type="button"
+                  className={`evidence-tab ${activeEvidenceTab === "pages" ? "active" : ""}`}
+                  onClick={() => {
+                    setEvidenceTab("pages");
+                  }}
+                  disabled={correctedPages.length === 0 && estimateFiles.length === 0}
+                  title={
+                    correctedPages.length === 0 && estimateFiles.length === 0
+                      ? "No estimate documents uploaded"
+                      : "View estimate pages and AI bounding boxes"
+                  }
+                >
+                  <FileText size={14} />
+                  <span>Estimate Pages ({correctedPages.length || estimateFiles.length})</span>
+                </button>
+              </div>
+
+              {activeEvidenceTab === "photos" && (
                 <>
-                  <label className="evidence-select">
-                    Original file
-                    <select
-                      value={file?.file_id ?? ""}
-                      onChange={(e) => {
-                        setSelectedRow(null);
-                        setSelectedPage(null);
-                        setSelectedFile(e.target.value);
-                      }}
-                    >
-                      <option value="" disabled>
-                        Select an original file
-                      </option>
-                      {files.map((f) => (
-                        <option value={f.file_id} key={f.file_id}>
-                          {f.original_name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {!file && (
-                    <p>
-                      No linked original evidence is available for this
-                      selection. Choose an original file to browse it
-                      separately.
-                    </p>
-                  )}
-                  {file && (
+                  {photoFiles.length > 0 ? (
                     <>
-                      {!page && <div className="evidence-preview">
-                        {file.media_type === "application/pdf" ? (
-                          <iframe
-                            title={`Original estimate: ${file.original_name}`}
-                            src={file.url}
-                          />
-                        ) : (
-                          <img
-                            src={file.url}
-                            alt={`Original evidence: ${file.original_name}`}
-                            onError={(e) => {
-                              e.currentTarget.style.display = "none";
-                              setError(
-                                "The original image could not be loaded. Use the original-file link or refresh.",
-                              );
+                      <label className="evidence-select">
+                        Damage photograph
+                        <select
+                          value={currentPhoto?.file_id ?? ""}
+                          onChange={(e) => {
+                            setSelectedRow(null);
+                            setSelectedPage(null);
+                            setSelectedFile(e.target.value);
+                          }}
+                        >
+                          {photoFiles.map((f, i) => (
+                            <option value={f.file_id} key={f.file_id}>
+                              {f.original_name || `Damage Photo ${i + 1}`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {currentPhoto && (
+                        <>
+                          <div
+                            className="evidence-preview-wrap clickable"
+                            onClick={() => setPopupEvidence({ kind: "file", file: currentPhoto })}
+                            title="Click to inspect full-size photo in popup"
+                          >
+                            <img
+                              src={currentPhoto.url}
+                              alt={`Damage photo: ${currentPhoto.original_name}`}
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                                setError(
+                                  "The original image could not be loaded. Use the original-file link or refresh.",
+                                );
+                              }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="button button-outline button-small"
+                            style={{
+                              width: "100%",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "6px",
+                              marginTop: "10px",
                             }}
-                          />
-                        )}
-                      </div>}
-                      <a
-                        className="button button-outline button-small"
-                        href={file.url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Open original file
-                      </a>
-                      <p className="evidence-caption">{file.original_name}</p>
+                            onClick={() => setPopupEvidence({ kind: "file", file: currentPhoto })}
+                          >
+                            <Maximize2 size={14} /> Inspect full-size photo
+                          </button>
+                          <p className="evidence-caption">{currentPhoto.original_name}</p>
+                        </>
+                      )}
                     </>
+                  ) : (
+                    <div className="evidence-empty">
+                      <Camera size={28} />
+                      <h3>No damage photos</h3>
+                      <p>No vehicle damage photographs have been uploaded for this claim.</p>
+                    </div>
                   )}
                 </>
-              ) : (
-                <div className="evidence-empty">
-                  <Camera size={32} />
-                  <h3>No original files</h3>
-                  <p>
-                    No linked original evidence is available for this selection.
-                    Demonstration results do not establish links to uploaded
-                    files.
-                  </p>
-                </div>
+              )}
+
+              {activeEvidenceTab === "pages" && (
+                <>
+                  {correctedPages.length > 0 ? (
+                    <>
+                      <label className="evidence-select">
+                        Estimate page (AI Annotated)
+                        <select
+                          value={currentPage?.page_id ?? ""}
+                          onChange={(e) => {
+                            setSelectedRow(null);
+                            setSelectedPage(e.target.value || null);
+                          }}
+                        >
+                          {correctedPages.map((p) => {
+                            const pFile = files.find((f) => f.file_id === p.file_id);
+                            return (
+                              <option key={p.page_id} value={p.page_id}>
+                                {pFile?.original_name ?? "Estimate"} · page {p.page_number}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </label>
+                      {currentPage?.corrected_url && (
+                        <div
+                          className="evidence-preview-wrap clickable"
+                          onClick={() => {
+                            const pFile = files.find((f) => f.file_id === currentPage.file_id);
+                            const pTitle = `${pFile?.original_name ?? "Estimate"} · Page ${currentPage.page_number}`;
+                            setPopupEvidence({ kind: "page", page: currentPage, name: pTitle });
+                          }}
+                          title="Click to enlarge annotated estimate page"
+                        >
+                          <CorrectedPageView
+                            page={currentPage}
+                            rows={assessment.line_items}
+                            marks={assessment.marks}
+                            selectedRow={selectedRow}
+                          />
+                        </div>
+                      )}
+                      <p className="evidence-caption">
+                        Blue: extracted rows. Red: proposed or confirmed marks. Grey: rejected marks.
+                      </p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
+                        <button
+                          type="button"
+                          className="button button-outline button-small"
+                          style={{
+                            width: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "6px",
+                          }}
+                          onClick={() => {
+                            const pFile = files.find((f) => f.file_id === currentPage.file_id);
+                            const pTitle = `${pFile?.original_name ?? "Estimate"} · Page ${currentPage.page_number}`;
+                            setPopupEvidence({ kind: "page", page: currentPage, name: pTitle });
+                          }}
+                        >
+                          <Maximize2 size={14} /> Enlarge annotated page
+                        </button>
+                        {rawEstimateFile && (
+                          <button
+                            type="button"
+                            className="button button-link-small"
+                            style={{ textAlign: "center", color: "#64748b", fontSize: "12px" }}
+                            onClick={() => setPopupEvidence({ kind: "file", file: rawEstimateFile })}
+                          >
+                            Inspect raw original PDF ({rawEstimateFile.original_name})
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  ) : estimateFiles.length > 0 ? (
+                    <>
+                      <label className="evidence-select">
+                        Original estimate document
+                        <select
+                          value={rawEstimateFile?.file_id ?? ""}
+                          onChange={(e) => {
+                            setSelectedRow(null);
+                            setSelectedPage(null);
+                            setSelectedFile(e.target.value);
+                          }}
+                        >
+                          {estimateFiles.map((f) => (
+                            <option value={f.file_id} key={f.file_id}>
+                              {f.original_name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {rawEstimateFile && (
+                        <>
+                          <div className="evidence-preview">
+                            {rawEstimateFile.media_type === "application/pdf" ? (
+                              <iframe
+                                title={`Original estimate: ${rawEstimateFile.original_name}`}
+                                src={rawEstimateFile.url}
+                              />
+                            ) : (
+                              <img
+                                src={rawEstimateFile.url}
+                                alt={`Original evidence: ${rawEstimateFile.original_name}`}
+                              />
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            className="button button-outline button-small"
+                            style={{
+                              width: "100%",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "6px",
+                            }}
+                            onClick={() => setPopupEvidence({ kind: "file", file: rawEstimateFile })}
+                          >
+                            <Maximize2 size={14} /> Inspect original document
+                          </button>
+                          <p className="evidence-caption">{rawEstimateFile.original_name}</p>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <div className="evidence-empty">
+                      <FileText size={28} />
+                      <h3>No estimate documents</h3>
+                      <p>No estimate documents have been uploaded for this claim.</p>
+                    </div>
+                  )}
+                </>
               )}
               <div className="evidence-cost">
                 <h3>Synthetic cost reference</h3>
@@ -1482,6 +1871,56 @@ function ReviewOverview({ id }: { id: string }) {
                 )}
               </EvidenceDialog>
             )}
+            {popupEvidence && (
+              <EvidenceDialog
+                title={
+                  popupEvidence.kind === "file"
+                    ? popupEvidence.file.original_name
+                    : popupEvidence.name
+                }
+                subtitle={
+                  popupEvidence.kind === "file"
+                    ? popupEvidence.file.role === "photograph" ||
+                      popupEvidence.file.media_type.startsWith("image/")
+                      ? "Vehicle Photograph · Original Evidence"
+                      : "Estimate Document · Original Evidence"
+                    : `Page ${popupEvidence.page.page_number} · AI Overlays & OCR Extracted Rows`
+                }
+                onClose={() => setPopupEvidence(null)}
+              >
+                {popupEvidence.kind === "file" ? (
+                  <>
+                    <EvidenceFile file={popupEvidence.file} />
+                    <div
+                      style={{
+                        marginTop: "14px",
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <a
+                        className="button button-outline button-small"
+                        href={popupEvidence.file.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        <ExternalLink size={14} /> Open in new browser tab
+                      </a>
+                    </div>
+                  </>
+                ) : (
+                  <CorrectedPageView
+                    page={popupEvidence.page}
+                    rows={assessment.line_items}
+                    marks={assessment.marks}
+                    selectedRow={selectedRow}
+                  />
+                )}
+              </EvidenceDialog>
+            )}
           </div>
           <section className="panel finalize-panel">
             <div>
@@ -1501,9 +1940,34 @@ function ReviewOverview({ id }: { id: string }) {
               </p>
               {blockers.length > 0 && !frozen && !notCurrent && (
                 <ul className="blocker-list">
-                  {blockers.map((check) => (
-                    <li key={check.code}>{check.message}</li>
-                  ))}
+                  {blockers.map((check) => {
+                    const isCompleteness =
+                      check.code.includes("completeness") ||
+                      check.message.toLowerCase().includes("completeness");
+                    return (
+                      <li key={check.code}>
+                        <div className="blocker-item-row">
+                          <span>{check.message}</span>
+                          {isCompleteness && (
+                            <button
+                              type="button"
+                              className="blocker-action-link"
+                              onClick={() => {
+                                const el = document.getElementById("declaration-completeness-section");
+                                if (el) {
+                                  el.scrollIntoView({ behavior: "smooth", block: "center" });
+                                  el.classList.add("highlight-pulse");
+                                  setTimeout(() => el.classList.remove("highlight-pulse"), 2500);
+                                }
+                              }}
+                            >
+                              Go to Declaration Completeness &rarr;
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
               <small>
@@ -1512,12 +1976,22 @@ function ReviewOverview({ id }: { id: string }) {
               </small>
             </div>
             {frozen ? (
-              <Link
-                className="button button-dark"
-                to={`${base}/print?assessment=${assessment.assessment_revision}&review=${review!.review_revision}`}
-              >
-                <Printer size={17} /> Print report
-              </Link>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                <Link
+                  className="button button-dark"
+                  to={`${base}/print?assessment=${assessment.assessment_revision}&review=${review!.review_revision}`}
+                >
+                  <Printer size={17} /> Print report
+                </Link>
+                <button
+                  type="button"
+                  className="button button-outline button-supplementary-reopen"
+                  onClick={() => setShowReopeningModal(true)}
+                  title="File supplementary post-dismantling damage or additional estimate pages"
+                >
+                  <UploadCloud size={17} /> File Supplementary Claim
+                </button>
+              </div>
             ) : notCurrent ? null : (
               <button
                 className="button button-dark"
@@ -1544,6 +2018,29 @@ function ReviewOverview({ id }: { id: string }) {
             ))}
           </div>
         </>
+      )}
+      {showReopeningModal && claim && review && assessment && (
+        <SupplementaryReopeningModal
+          claim={claim}
+          assessmentRevision={assessment.assessment_revision}
+          reviewRevision={review.review_revision}
+          inputRevision={claim.input_revision || assessment.input_revision || 0}
+          onClose={() => setShowReopeningModal(false)}
+          onProceed={() => {
+            setShowReopeningModal(false);
+            setShowEvidenceModal(true);
+          }}
+        />
+      )}
+      {showEvidenceModal && claim && (
+        <SupplementaryEvidenceModal
+          claim={claim}
+          onClose={() => setShowEvidenceModal(false)}
+          onSuccess={async () => {
+            setNotice(`Amended claim ${claim.reference}. The pipeline is evaluating the new evidence revision.`);
+            await load();
+          }}
+        />
       )}
     </>
   );
@@ -1795,7 +2292,11 @@ function PrintReport({ id }: { id: string }) {
     0,
   );
   const totalEffectiveAmount = assessment.line_items.reduce(
-    (sum, item) => sum + (Number(item.effective_amount) || 0),
+    (sum, item) =>
+      sum +
+      (item.row_state === "excluded"
+        ? 0
+        : Number(item.effective_amount) || 0),
     0,
   );
   return (
@@ -1826,8 +2327,10 @@ function PrintReport({ id }: { id: string }) {
           <dd>{claim.policy_number || "Not supplied"}</dd>
           <dt>Workshop</dt>
           <dd>{claim.workshop || "Not supplied"}</dd>
-          <dt>Surveyor</dt>
-          <dd>{claim.surveyor}</dd>
+          <dt>Field Surveyor (Report)</dt>
+          <dd>{claim.surveyor || "Not supplied"}</dd>
+          <dt>Reviewing Surveyor</dt>
+          <dd>{review.report?.header?.reviewed_by || claim.reviewer || "Acery AI"}</dd>
           <dt>Finalized</dt>
           <dd>
             {review.finalized_at
@@ -1887,7 +2390,13 @@ function PrintReport({ id }: { id: string }) {
                     </small>
                   )}
                 </td>
-                <td>{money(item.effective_amount, claim.currency)}</td>
+                <td>
+                  {item.row_state === "excluded" ? (
+                    <span className="line-excluded-amount">Excluded ($0.00)</span>
+                  ) : (
+                    money(item.effective_amount, claim.currency)
+                  )}
+                </td>
                 <td>
                   <strong>{resultLabel(item)}</strong>
                   <small>{item.reason}</small>

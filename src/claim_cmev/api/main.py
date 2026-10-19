@@ -42,7 +42,7 @@ from ..runtime import Database, Record, digest, get, put, setting, uid, utcnow
 from ..storage import Storage
 from . import views, review_service
 from .ratelimit import LoginFailures
-from ..review import apply_review_action
+from ..review import apply_review_action, apply_review_batch
 from ..review.state import ReviewActionRequest
 
 log = logging.getLogger("cmev.api")
@@ -70,6 +70,7 @@ class Login(StrictModel):
 class ClaimCreate(StrictModel):
     reference: str = Field(min_length=1, max_length=100)
     surveyor: str | None = Field(default=None, max_length=100)
+    reviewer: str | None = Field(default=None, max_length=100)
     vehicle_make: str = Field(min_length=1, max_length=80)
     vehicle_model: str = Field(min_length=1, max_length=100)
     vehicle_year: int = Field(ge=1950, le=2100)
@@ -350,8 +351,10 @@ def create_app(database_url=None, storage_path=None):
                     fail(409, "reference_exists", "A claim already uses this reference.")
                 cid = uid()
                 s_name = body.surveyor.strip() if body.surveyor and body.surveyor.strip() else DEMO_USER["name"]
+                r_name = body.reviewer.strip() if body.reviewer and body.reviewer.strip() else DEMO_USER["name"]
                 claim = {"claim_id": cid, "reference": body.reference.strip(), "policy_number": body.policy_number,
                          "surveyor": s_name, "surveyor_manually_set": bool(body.surveyor and body.surveyor.strip()),
+                         "reviewer": r_name,
                          "owner_id": DEMO_USER["id"],
                          "vehicle": {"make": body.vehicle_make, "model": body.vehicle_model, "year": body.vehicle_year,
                                      "plate": body.plate, "vehicle_class": body.vehicle_class},
@@ -632,8 +635,75 @@ def create_app(database_url=None, storage_path=None):
             response = idem(db, request, body.model_dump(mode="json"), action, cid)
             return JSONResponse(response, status_code=202 if response.get("new_input_revision") else 200)
 
+    def perform_review_batch(cid, rev, requests_list, request):
+        if not requests_list:
+            fail(400, "batch_empty", "The batch must contain at least one review action.")
+        with database.session.begin() as db:
+            c = claim_for(db, cid, lock=True)
+            row = assessment_for(db, cid, rev)
+            review = views.review_for(db, c, rev, row=row)
+
+            def action():
+                if c["input_revision"] != row["input_revision"]:
+                    fail(409, "reassessment_pending", "Wait for the current reassessment before saving.")
+                action_ids = ["ra-" + uid().lower() for _ in requests_list]
+                batch_outcome = apply_review_batch(
+                    review_service.load(db, c, row, review), requests_list, actor=DEMO_USER["name"],
+                    recorded_at=utcnow(),
+                    idempotency_key=digest(request.url.path + "|" + request.headers.get("Idempotency-Key", "")),
+                    action_ids=action_ids)
+                if not batch_outcome.ok:
+                    failed = batch_outcome.outcomes[batch_outcome.failed_index] if batch_outcome.failed_index is not None and batch_outcome.failed_index < len(batch_outcome.outcomes) else None
+                    reason = failed.reason_code if failed and failed.reason_code else batch_outcome.reason_code or "batch_failed"
+                    msg = failed.message if failed and failed.message else "One of the review actions in the batch failed."
+                    details = failed.response() if failed else {}
+                    details.pop("message", None)
+                    details.pop("reason_code", None)
+                    fail(batch_outcome.http_status, reason, msg, **details)
+
+                for outcome in batch_outcome.outcomes:
+                    review_service.save_action(db, c, row, review, outcome)
+
+                response = {
+                    "kind": batch_outcome.kind,
+                    "review_revision": batch_outcome.review_revision,
+                    "actions_applied": len(batch_outcome.outcomes),
+                }
+
+                plans = [o.plan for o in batch_outcome.outcomes if o.plan]
+                if plans:
+                    previous = get(db, f"input:{cid}:{c['input_revision']}")
+                    files = [get(db, "file:" + fid) for fid in previous["file_ids"]]
+                    new_corrections = [
+                        {"kind": "review_event", "event": o.event.model_dump(mode="json")}
+                        for o in batch_outcome.outcomes if o.event and o.event.decision_changing
+                    ]
+                    all_rerun = {stage for p in plans for stage in p.rerun_stages}
+                    from ..review.state import BRANCH_STAGES
+                    reused_stages = tuple(s for s in BRANCH_STAGES if s not in all_rerun)
+
+                    result = commit(db, c, files, corrections=[*previous.get("corrections", []), *new_corrections],
+                                    base_assessment_revision=rev, reuse_from=row["input_revision"],
+                                    reuse_stages=reused_stages,
+                                    review_revision=batch_outcome.review_revision,
+                                    cost_table_version=row["cost_table_version"])
+                    response.update(input_revision=result["input_revision"], assessment_revision=None, state="queued",
+                                    job_keys=result["job_keys"], reused_stages=result["reused_stages"],
+                                    new_input_revision=result["input_revision"])
+                return response
+
+            body_json = [r.model_dump(mode="json") for r in requests_list]
+            response = idem(db, request, body_json, action, cid)
+            return JSONResponse(response, status_code=202 if response.get("new_input_revision") else 200)
+
+    @app.post("/api/v1/claims/{cid}/assessments/{rev}/review-actions/batch")
+    def review_action_batch(cid: str, rev: int, body: list[ReviewActionRequest], request: Request):
+        return perform_review_batch(cid, rev, body, request)
+
     @app.post("/api/v1/claims/{cid}/assessments/{rev}/review-actions")
-    def review_action(cid: str, rev: int, body: ReviewActionRequest, request: Request):
+    def review_action(cid: str, rev: int, body: list[ReviewActionRequest] | ReviewActionRequest, request: Request):
+        if isinstance(body, list):
+            return perform_review_batch(cid, rev, body, request)
         return perform_review(cid, rev, body, request)
 
     @app.post("/api/v1/claims/{cid}/assessments/{rev}/notes")

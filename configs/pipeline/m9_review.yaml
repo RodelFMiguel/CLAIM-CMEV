@@ -6,7 +6,7 @@
 # configs/pipeline/review.yaml; the M9 implementation keeps it under the
 # module-prefixed name used by the other pipeline configurations. Bump
 # config_version on any change.
-config_version: "m9-review/0.2.0"
+config_version: "m9-review/0.3.0"
 
 review:
   # Proposal v2 section 2.6 and data contracts section 10. Must equal
@@ -35,10 +35,10 @@ amounts:
   allow_zero: false
 
 finalize:
-  # P1 and P2 are proposed in module-09 "Open decisions" and need a team
-  # decision; until then they are evaluated and reported as advisories only.
+  # P1 remains advisory pending pipeline supersede gating.
+  # P2 is adopted and enforced: declaration completeness must be complete or confirmed by the surveyor.
   enforce_p1_assessment_not_superseded: false
-  enforce_p2_completeness_confirmed: false
+  enforce_p2_completeness_confirmed: true
   # Branch stages whose state F1 reads for the current input revision
   # (application platform section 6.1). Consolidation is covered by F2.
   required_stages: [parts, damage, summary, page_read, line_items, pen_marks]

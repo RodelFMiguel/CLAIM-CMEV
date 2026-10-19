@@ -2,6 +2,456 @@
 
 Latest M2 damage model status (2026-10-19): Retrained and deployed SegFormer-B3 on **CarDD** (`damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`). Validation foreground mIoU on CarDD is **0.7283** (72.83%) with dent precision **73.79%** and background IoU **92.71%**. Model is verified active in `configs/models/damage.yaml`, mounted into containers, and verified live in end-to-end claim reviews.
 
+## Fixed Assessment Reassessment Pipeline Errors (Summary & Consolidate) for CLM-24041 (2026-10-20)
+
+- **Changed paths:**
+  - `src/claim_cmev/orchestration/review_summary.py`:
+    - Resolved `confirmation_unknown_photo`:
+      - In `corrected_summary()`, mapped uploaded claim photograph IDs to bundle/fixture photos via `photo_map` when `c.photo_id not in known_photos`.
+      - Filtered `baseline.identity_confirmations` and `baseline.coverage_confirmations` to only those referencing `known_photos` before passing to `summarise_parts()`.
+  - `src/claim_cmev/fixtures.py`:
+    - Guarded `source_revision = min((j["input_revision"] for j in jobs), default=ctx.envelope.input_revision)`.
+  - `src/claim_cmev/orchestration/corrections.py`:
+    - Resolved `entry_not_found` during `consolidate`:
+      - Implemented `map_line_item_ids(session, claim_id, current_items, claim_input)`:
+        - Detects when review events or mark actions reference line item entry IDs from an earlier revision whose `deterministic_id("li", job_key, page_id, ...)` differed because `line_items` was re-extracted under a new job key.
+        - Loads the prior `line_item` records from `stage_records` for the claim and matches them against the current revision's items by page, text, printed amount, and normalized bounding box IoU / vertical overlap.
+        - Maps old `entry_id` -> new `entry_id` across `event.entry_id`, `event.new_values["entry_id"]`, and `event.new_values["target_entry_id"]`.
+      - Updated `apply_corrections()` to accept `entry_map` and map each `ReviewEvent` before passing to `apply_review_event` and `correct_line_item`.
+  - `src/claim_cmev/orchestration/consolidation.py`:
+    - Updated `Consolidator.on_consolidate()` to compute `entry_map` and pass it to both `_decided_marks` and `apply_corrections`.
+    - Persisted mapped corrections back into `claim_input["corrections"]` in `baseline_records` so subsequent reassessments retain clean current IDs.
+    - Updated `_decided_marks()` to map `target_entry_id` for surveyor and fixture mark actions.
+  - `tests/unit/m9/test_m9_row_corrections.py`:
+    - Added unit tests `test_apply_corrections_with_mapped_entry_id()` and `test_apply_corrections_with_mapped_add_mark()`.
+- **Decisions and status:**
+  - Ensured real model containers run with the correct Docker Compose overlays (`-f infra/compose/docker-compose.yml -f infra/compose/docker-compose.image.yml -f infra/compose/docker-compose.document.yml`).
+  - Rebuilt image `claim-cmev-app:pipeline` and restarted `cmev-api` and `cmev-worker-combined`.
+  - Retried `01M5A7KR0V6A2XEBX42NQKZ9GM:8:consolidate:all:c45cb78b`; job completed with `succeeded`.
+  - Assessment revision 7 is now active and current (`status: in_review`, `processing_state: ready`).
+- **Validation evidence:**
+  - Verified `01M5A7KR0V6A2XEBX42NQKZ9GM:8:consolidate:all:c45cb78b` state is `succeeded`.
+  - `views.assessment_view` returns all 4 line items with the surveyor's corrected effective amount ($110 for Rear emblem and badging, trunk) and all 4 findings evaluated.
+  - `views.claim_view` shows `status: in_review`, `processing_state: ready`.
+  - Unit tests in `test_m9_row_corrections.py` executed and passed.
+- **Next concrete step:**
+  - Workbench review page for CLM-24041 is ready for final surveyor review and sign-off.
+
+
+## Streamlined Evidence Panel with Categorized Tabs & In-Page Lightbox Modal (2026-10-19)
+
+- **Changed paths:**
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Eliminated confusing stacked dropdowns ("Corrected estimate page" vs "Original file").
+    - Categorized claim assets cleanly into `photoFiles` (damage photographs) and `estimateFiles` / `correctedPages` (estimate documents & AI bounding box overlays).
+    - Introduced tabbed navigation in the Evidence panel:
+      - `[ 📷 Damage Photos (N) ]`: Shows exclusively damage photographs with single selector, click-to-enlarge preview, and dedicated `[ 🔍 Inspect full-size photo ]` button.
+      - `[ 📄 Estimate Pages (N) ]`: Shows estimate page selector with interactive bounding boxes (`CorrectedPageView`), `[ 🔍 Enlarge annotated page ]`, and secondary option to inspect the raw unannotated PDF.
+    - Synchronized tabs with review actions:
+      - Clicking damage observation (`onPhoto`) switches directly to `Damage Photos` and selects the relevant photo.
+      - Clicking "View mark on page" or "View evidence" on a line item switches directly to `Estimate Pages` and highlights the row.
+    - Replaced the external `target="_blank"` link with an in-page Lightbox Modal using `EvidenceDialog`:
+      - Clicking photo preview or "Inspect full-size photo" opens high-res lightbox popup with prominent `[✕ Close]` button, backdrop dismiss, and `Esc` key listener.
+      - Preserves review scroll position, active selection, and form state without requiring browser back navigation.
+      - Includes optional `[Open in new browser tab]` link inside modal for multi-monitor setups.
+      - Removed duplicate overlay badge ("Click to enlarge") on the thumbnail, keeping the single clean `[ ⤢ Inspect full-size photo ]` button below the image so vehicle damage isn't obscured.
+    - Fixed React hook ordering: eliminated `useEffect` hook placed after the `if (!claim) return ...` loading guard, replacing it with a pure derived `activeEvidenceTab` variable to prevent blank screen crashes.
+  - `src/workbench/src/styles.css`:
+    - Added styles for `.evidence-tabs`, `.evidence-tab` (active, hover, disabled states), `.evidence-preview-wrap.clickable` (border hover effect), and `.evidence-preview-hint` (dark frosted-glass hover pill).
+- **Decisions and status:**
+  - Solved major surveyor usability friction: removed confusing dual-dropdown layout where "Browse original files" sat above vehicle photos, and prevented disruptive navigation away from the review page when inspecting photos.
+- **Validation evidence:**
+  - Docker web build (`tsc -b && vite build`) passed in 2.23s with zero type errors.
+  - Container `claim-cmev-cmev-web-1` recreated and verified healthy.
+- **Next concrete step:**
+  - Refresh the workbench in browser (`http://127.0.0.1:8080`) to inspect the streamlined Evidence panel tabs and test the lightbox modal popup.
+
+## Differentiated Field Surveyor vs. Reviewing Surveyor in Queue and Review (2026-10-19)
+
+- **Changed paths:**
+  - `src/claim_cmev/api/main.py`:
+    - Added optional `reviewer: str | None = Field(default=None, max_length=100)` to `ClaimCreate` schema.
+    - Set `claim["reviewer"] = body.reviewer or DEMO_USER["name"]` when creating claims.
+  - `src/claim_cmev/api/views.py`:
+    - Updated `claim_view` and `claim_views` batch query to resolve both `surveyor` (the field / estimating surveyor extracted from report OCR / document intake) and `reviewer` (the reviewing desk surveyor / system assessor).
+    - If a review has finalized, reviewer is resolved from `report["header"]["reviewed_by"]`, or falls back to the actor of the latest review action or `claim.get("reviewer")` / default demo user ("Acery AI").
+  - `src/workbench/src/api.ts`:
+    - Added `reviewer?: string | null;` to the `Claim` interface.
+  - `src/workbench/src/App.tsx`:
+    - Under the Claim Reference column in the Claim Queue table, rendered dual surveyor badges `.claim-surveyors-wrap` with `.surveyor-pill.field` (`Field: [surveyor]`) and `.surveyor-pill.reviewer` (`Reviewer: [reviewer]`).
+    - Moved the policy number onto its own dedicated subline `.claim-policy-subline` for clear visual hierarchy.
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Added optional `report` typing to `interface Review` to support typed access to `report.header`.
+    - In the review revision strip at the top, displayed both `Field Surveyor: [claim.surveyor]` and `Reviewer: [review?.report?.header?.reviewed_by || claim.reviewer || "Acery AI"]`.
+    - In the final print report header (`PrintView`), separated `Field Surveyor (Report)` and `Reviewing Surveyor`.
+  - `src/workbench/src/styles.css`:
+    - Styled `.claim-surveyors-wrap`, `.surveyor-pill.field`, `.surveyor-pill.reviewer`, `.surveyor-role`, and `.claim-policy-subline`.
+- **Decisions and status:**
+    - Real-world insurance audit clarity: clearly distinguishes the on-site field surveyor who inspected the damaged vehicle / authored the estimate report from the desk surveyor reviewing and signing off in the system.
+    - Prevents attribution confusion and meets regulatory/audit requirements for surveyor accountability.
+- **Validation evidence:**
+    - Docker web build (`tsc -b && vite build`) passed with zero errors.
+    - Live database query via `views.claim_views` in `claim-cmev-cmev-api-1` verified output of both `Field: ...` and `Reviewer: ...` across all seeded and created claims.
+    - Recreated containers `claim-cmev-cmev-web-1` and `claim-cmev-cmev-api-1`; both verified healthy.
+- **Next concrete step:**
+    - Refresh workbench at `http://127.0.0.1:8080` to inspect the differentiated Field and Reviewer pills across the Claim Queue and Claim Review header.
+
+## Direct Claim Queue Actions for Finalized Claims (2026-10-19)
+
+- **Changed paths:**
+  - `src/workbench/src/App.tsx`:
+    - Imported `Printer`, `SupplementaryReopeningModal`, and `SupplementaryEvidenceModal`.
+    - Added state `reopeningClaim` and `evidenceClaim` to `Dashboard` for inline reopening and evidence handling directly from the Claim Queue.
+    - Updated table header from `<span className="sr-only">Open claim</span>` to `<th className="claim-table-action-th"><span>Actions</span></th>`.
+    - For finalized claims (`status === "ready_to_print"`), rendered two dedicated, 1-click action buttons:
+      - `[🖨 Print Report]`: Navigates straight to the frozen print report view with pre-populated assessment and review revisions.
+      - `[☁ + Supplementary]`: Opens `SupplementaryReopeningModal` for the claim right in the queue, transitioning to `SupplementaryEvidenceModal` on proceed, and automatically refreshing the queue upon upload without losing context.
+      - Utilized `e.stopPropagation()` so clicking either action does not unintentionally trigger row navigation to `/review`.
+    - For non-finalized claims, maintained the clean right-aligned `<ArrowRight className="row-arrow" />`.
+  - `src/workbench/src/styles.css`:
+    - Balanced table column percentage widths (`25%`, `27%`, `17%`, `17%`, `14%`).
+    - Added styling for `.claim-table-action-th`, `.claim-table-action-td`, `.queue-row-actions`, `.queue-action-btn` (`.print` and `.supplementary`), and `.queue-row-arrow-wrap`.
+- **Decisions and status:**
+  - Solved surveyor friction: eliminated the multi-step chore of having to click a claim, wait for review overview, scroll past all panels to the very bottom, just to print a PDF or file a supplementary claim.
+  - Surveyors and adjusters can now print finalized reports or file supplementary damage in 1 click directly from the queue.
+- **Validation evidence:**
+  - Production frontend build passed via `docker build -f infra/Dockerfile.web -t claim-cmev-cmev-web .` (`tsc -b && vite build` completed in 2.24s with zero errors).
+  - Container `claim-cmev-cmev-web-1` recreated and verified healthy.
+- **Next concrete step:**
+  - Refresh the workbench in browser (`http://127.0.0.1:8080`) to test the 1-click "Print Report" and "+ Supplementary" buttons on finalized claims in the queue.
+
+## Effective Surveyor Amount & Estimate Comparison in Queue & Review (2026-10-19)
+
+- **Changed paths:**
+  - `src/claim_cmev/api/views.py`:
+    - Added helper `_compute_effective_total(inputs, body=None)` summing `effective_price` across line items, skipping confirmed exclusions (`finding.row_state == "excluded"`), and respecting surveyor-revised amounts.
+    - Updated `claim_view` and `claim_views` batch query to include `"effective_total"` on claim summary payloads.
+  - `src/workbench/src/api.ts`:
+    - Added `effective_total?: string | null;` to the `Claim` interface.
+  - `src/workbench/src/App.tsx`:
+    - Updated claim queue table header from `<th>Estimate</th>` to `<th>Estimate & Agreed</th>`.
+    - Added `.queue-estimate-block` displaying the Agreed Surveyor Amount alongside the Declared Estimate, with dynamic variance badges (`+$X (+Y%)`, `-$X (-Y%)`, or `Agreed in full`).
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Added a live `.review-estimate-summary-bar` immediately above the Declaration Completeness sign-off, displaying Original Declared Total, Effective Agreed Total, and Net Adjustment badge with percentage change and breakdown of excluded/revised items.
+    - Handled excluded line items across both Review and Print views: excluded rows explicitly render `Excluded ($0.00)` and are excluded from the calculated effective agreed total.
+  - `src/workbench/src/styles.css`:
+    - Added styles for `.queue-estimate-block`, `.queue-agreed-row`, `.queue-declared-row`, `.queue-amount-label`, `.queue-declared-value`, `.estimate-value.agreed`, `.queue-variance-badge` (`negative`, `positive`, `equal`), `.line-excluded-amount`, `.review-estimate-summary-bar`, `.summary-bar-header`, `.summary-variance-pill`, `.summary-bar-metrics`, and `.summary-metric-card`.
+- **Decisions and status:**
+  - Preserved the core project invariant separating declared estimates, surveyor-agreed amounts, and final approvals.
+  - Excluded line items (strike-through marks confirmed by surveyor) are zeroed out from the surveyor-agreed total, while price changes directly reflect the surveyor's revised amount.
+  - Claim Queue now provides immediate financial visibility: adjusters and surveyors can see at a glance whether an estimate has been agreed in full or negotiated downwards/upwards.
+- **Validation evidence:**
+  - Verified backend: `/api/v1/claims` returns `effective_total` (e.g. `CLM-24019 Declared: 2490.00 Effective: 1340.00`, `01M5A7KR0V6A2XEBX42NQKZ9GM Declared: 2040.00 Effective: 2030.00`).
+  - Container image `claim-cmev-app:pipeline` built and deployed with zero errors.
+  - Web container `claim-cmev-cmev-web-1` built via `docker build` (`tsc -b && vite build` succeeded in 2.19s) and deployed.
+  - Health checks verified: all containers healthy (`claim-cmev-cmev-web-1`, `claim-cmev-cmev-api-1`, `claim-cmev-cmev-worker-combined-1`).
+- **Next concrete step:**
+  - Refresh the workbench in browser (`http://127.0.0.1:8080`) to inspect the Claim Queue comparison and the live Estimate & Agreed Totals bar in Claim Review.
+
+## Streamlined Estimate Review & Completeness Sign-off Layout (2026-10-19)
+
+- **Changed paths:**
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Relocated `CompletenessControl` from the top of the "Estimate line items" panel to the **very bottom of the section** as the concluding sign-off (`.completeness-signoff-wrapper`), directly following the line items list.
+    - Added structured sign-off heading with `.signoff-step-tag` ("ESTIMATE REVIEW SIGN-OFF"), clear guidance explaining that completeness is confirmed after reviewing the items above, and preserved `id="declaration-completeness-section"` for smooth blocker jumping.
+    - Removed redundant top `<details className="review-controls"><summary>Review all mark links and confirmed amounts</summary></details>` accordion. All marks linked to a row are already displayed, edited, and confirmed directly on their respective rows (`[✎ Correct Row]`, `[✑ Add Missed Mark]`, inline forms), eliminating double review and scrolling backtracking.
+    - Replaced the raw unlinked marks forms at the top with a dedicated `.unlinked-marks-card` that renders **only** when unlinked marks exist (if none exist, zero clutter is shown).
+    - Imported `AlertTriangle` icon from `lucide-react`.
+  - `src/workbench/src/styles.css`:
+    - Added styles for `.unlinked-marks-card`, `.unlinked-marks-header`, `.unlinked-marks-tip`, `.unlinked-marks-list`, `.unlinked-mark-row`, `.unlinked-mark-info`, `.unlinked-mark-kind`, `.unlinked-mark-reason`, `.unlinked-mark-actions`, `.unlinked-mark-select`.
+    - Added styles for `.completeness-signoff-wrapper`, `.completeness-signoff-heading`, and `.signoff-step-tag`.
+- **Decisions and status:**
+  - Established a natural, chronologically sound claims review sequence:
+    1. Damage Summary & Photo Coverage
+    2. Manual Grounding (if needed)
+    3. Estimate Line Items (inspecting rows, correcting OCR extractions, adding missed pen marks directly on rows)
+    4. Estimate Completeness Sign-off (confirming complete/partial/unreadable after seeing all rows)
+    5. Missing Repair Additions (evaluated using the confirmed completeness state)
+    6. Review Notes & Finalize
+  - Completely eliminated the confusion of jumping to the top accordion to review marks that were already added on rows.
+- **Validation evidence:**
+  - Frontend production build (`tsc -b && vite build`) built in 2.13s with zero errors (`claim-cmev-cmev-web:latest`).
+  - Container `claim-cmev-cmev-web-1` recreated and verified healthy (`wget -q -O - http://127.0.0.1/healthz` returns `ok`).
+  - Verified bundle contains `completeness-signoff-wrapper`.
+- **Next concrete step:**
+  - Refresh the workbench in browser (`http://127.0.0.1:8080`) to experience the clean, chronological line items review flow.
+
+## Damage Summary Confirmation Actions Consolidation (2026-10-19)
+
+- **Changed paths:**
+  - `src/workbench/src/DamageSummary.tsx`:
+    - Removed the standalone `[Retract Confirmation]` button from the damage card header (`damage-title-actions`). Each card now displays a single primary confirmation button (`[✓ Edit Confirmation]` when confirmed, or `[Confirm Identity & Coverage]` when unconfirmed), alongside `[View evidence]`.
+    - Added `canRetract?: boolean` to `ConfirmingCardData`, passed dynamically from `card()`.
+    - Updated `QuickConfirmModal`:
+      - Dynamic modal title: shows `"Edit Identity & Coverage"` when editing a confirmed part vs. `"Confirm Identity & Coverage"` when confirming for the first time.
+      - Integrated `onRetract` callback prop.
+      - Added `[↶ Retract Confirmation]` button in the modal footer (left-aligned with subtle red styling) when `cardData.canRetract` is true.
+      - Added inline audit revocation warning box (`.modal-retract-confirm-box`) with `[Keep Confirmation]` and `[Confirm Retraction]` buttons when retraction is clicked, preserving insurance audit explanation and setting photographic coverage to `inadequate` with reason `surveyor_retracted`.
+    - Removed redundant separate `retractingRow` modal state and dialog from `DamageSummary`.
+  - `src/workbench/src/styles.css`:
+    - Added styling for `.quick-confirm-modal-actions`, `.quick-confirm-footer-right`, `.button-modal-retract`, `.modal-retract-confirm-box`, `.modal-retract-header`, `.modal-retract-title`, `.modal-retract-text`, and `.modal-retract-actions`.
+- **Decisions and status:**
+  - Solved surveyor cognitive load / dual-action ambiguity: card headers are now clean and uncluttered with a single edit path.
+  - Retraction remains fully accessible, secure, and audit-compliant within the edit modal, requiring deliberate two-step confirmation before revoking an endorsement.
+- **Validation evidence:**
+  - Frontend production build (`tsc -b && vite build`) passed with zero errors (`claim-cmev-cmev-web:latest`).
+  - Container `claim-cmev-cmev-web-1` recreated and verified healthy (`wget -q -O - http://127.0.0.1/healthz` returns `ok`).
+- **Next concrete step:**
+  - Refresh the workbench in browser (`http://127.0.0.1:8080`) to inspect the streamlined damage cards and consolidated retraction action inside the edit modal.
+
+## Finalize Review Completeness Enforcement & Supplementary Claim Reopening (2026-10-19)
+
+- **Changed paths:**
+  - `configs/pipeline/m9_review.yaml`:
+    - Updated `config_version` to `"m9-review/0.3.0"`.
+    - Activated `enforce_p2_completeness_confirmed: true` under `finalize`.
+  - `tests/unit/m9/test_m9_config.py`:
+    - Updated assertion verifying `config.finalize.enforce_p2_completeness_confirmed` is `True`.
+  - `tests/unit/m9/test_m9_finalize.py`:
+    - Updated `test_p1_is_advisory_and_p2_completeness_is_enforced` to assert P2 is enforced by default while P1 remains advisory.
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Disabled header `[Add Evidence]` button when `busy || frozen` with tooltip: `"Review finalized — claim evidence is frozen"`.
+    - Disabled sidebar `[Upload supplementary evidence]` button when `busy || frozen`, rendering `.frozen-upload-notice` with green `ShieldCheck` explaining original evidence is frozen.
+    - Wrapped `CompletenessControl` in `<div id="declaration-completeness-section">`.
+    - Enhanced blocker list rendering: added `[Go to Declaration Completeness →]` link when P2 completeness unconfirmed blocks finalization, which smooth-scrolls and triggers a 2-second blue pulse highlight (`.highlight-pulse`).
+    - Replaced the direct upload button on finalized reviews with `[File Supplementary Claim]`, wired to `SupplementaryReopeningModal`.
+  - `src/workbench/src/SupplementaryReopeningModal.tsx`:
+    - Created modal dialog explaining insurance claims audit rules: finalized assessments are frozen and immutable.
+    - Visualizes the revision flow: `Assessment Rev N (Frozen)` &rarr; `Input Rev N+1 (Supplementary Photos / Repair Pages)` &rarr; `New Assessment Revision`.
+    - Clear surveyor guidance on when to reopen: hidden damage uncovered after vehicle strip-down/dismantling or supplementary workshop estimates.
+    - Provides `[Proceed to Upload Evidence]` which transitions directly to `SupplementaryEvidenceModal`.
+  - `src/workbench/src/styles.css`:
+    - Added styles for `.frozen-upload-notice`, `.button-supplementary-reopen`, `.blocker-item-row`, `.blocker-action-link`, `.highlight-pulse` (`@keyframes highlightPulse`), `.reopening-modal-card`, `.reopening-audit-banner`, `.reopening-workflow-flow`, `.reopening-step-card`, `.step-tag`, `.step-tag-next`, and `.reopening-guidance-list`.
+- **Decisions and status:**
+  - Enforced Precondition P2: Surveyors must explicitly confirm estimate completeness before finalization. If estimate was read as partial or unconfirmed, finalize is blocked with HTTP 412.
+  - Frozen reviews lock direct upload inputs to prevent unintentional alteration assumptions, adhering to insurance immutability requirements.
+  - Supplementary reopening allows post-dismantling evidence via a new Input Revision ($N+1$) while permanently preserving the baseline Rev $N$ report and PDF audit trail.
+- **Validation evidence:**
+  - Backend configuration loads cleanly with `config_version: m9-review/0.3.0` and `enforce_p2_completeness_confirmed: True`.
+  - Backend unit tests (`tests/unit/m9/test_m9_finalize.py` and `test_m9_config.py`) pass 100% in container.
+  - Frontend production build (`tsc -b && vite build`) passed with zero errors (`claim-cmev-cmev-web:latest`).
+  - Web and API containers healthy (`/healthz` and `/api/v1/healthz`).
+- **Next concrete step:**
+  - Refresh the workbench in browser (`http://127.0.0.1:8080`) to inspect the completeness enforcement on finalization, the locked frozen states, and the supplementary claim reopening workflow.
+
+## Estimate Line Item Modern Actions & Pop-Up Modals (2026-10-19)
+
+- **Changed paths:**
+  - `src/workbench/src/ReviewControls.tsx`:
+    - Refactored `RowControls` from nested collapsible `<details>` elements into a sleek, prominent 3-button action toolbar:
+      - `[✎ Correct Row]`: Opens dedicated modal to adjust extracted OCR values (`part_code`, `side`, `operation`, `quantity`, `printed_line_amount`, `reason`, `note`).
+      - `[✑ Add Missed Mark]`: Opens dedicated modal to record an un-detected surveyor pen stroke (strike-through exclusion or handwritten price adjustment) with normalized geometry coordinates (`X0`, `Y0`, `X1`, `Y1`).
+      - `[✕ Dismiss Finding]` / `[✕ Update Dismissal]`: Opens dedicated modal to disregard an item in the review overlay without modifying underlying extractions.
+    - Upgraded modal aesthetics and alignment:
+      - Replaced raw text/stark banners with `.modal-guidance-banner` (`banner-info` and `banner-danger`) featuring structured icons and audit lineage explanations.
+      - Styled modal title badges (`.modal-title-icon-badge`) and subtitles with target item descriptions and clear `[Page X]` tags.
+      - Resolved cryptic internal IDs (e.g. `pg-249fdc4aaa07ad18088c0e4e`): dynamically mapped to user-friendly `Estimate Page X` references via `assessment.pages` and `files`.
+      - Redesigned coordinate inputs into 4 distinct, equal-width `.coordinate-card` blocks with `min-width: 0 !important`, centered monospaced values, and directional badges (`X0 Left`, `Y0 Top`, `X1 Right`, `Y1 Bottom`), completely resolving the missing `Y1` column overflow.
+      - Uniformly styled inputs, selects, and textareas with matching 38px heights, borders, focus rings, and aligned grids.
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Dynamically resolved each line item's page number and document name from `assessment.pages` and `files`, passing `pageNumber` and `pageLabel` down to `RowControls`.
+    - Updated pen mark hint text from `open "Correct row or add a missed mark" on the line item below` to `click "Add Missed Mark" on the line item below`.
+  - `src/workbench/src/styles.css`:
+    - Added comprehensive styles for `.line-item-modal-card` (620px width), `.modal-title-icon-badge`, `.modal-subtitle`, `.modal-page-badge`, `.modal-guidance-banner`, `.coordinate-fields-grid`, `.coordinate-card`, `.coord-name`, `.coord-desc`, `.coord-input`, and `.button-modal-*`.
+    - Added input styling to `.quick-confirm-field` so inputs and selects share identical height (38px), padding, borders, and focus rings.
+- **Decisions and status:**
+  - Solved the surveyor usability bottleneck: "Add a missed mark" is immediately visible side-by-side with "Correct Row" and "Dismiss Finding".
+  - Eliminated coordinate truncation: all 4 coordinates (`X0`, `Y0`, `X1`, `Y1`) are now guaranteed 100% visible with directional guidance.
+  - Humanized document references: replaced raw database identifiers (`pg-...`) with intuitive `Estimate Page X` labels.
+- **Validation evidence:**
+  - Production frontend image built cleanly via `docker build -f infra/Dockerfile.web -t claim-cmev-cmev-web .` (`tsc -b && vite build` completed in 2.13s with zero errors, transforming 1,597 modules).
+  - Web container `claim-cmev-cmev-web-1` recreated and verified healthy (`wget -q -O - http://127.0.0.1/healthz` returned `ok`).
+- **Next concrete step:**
+  - Refresh the workbench in browser (`http://127.0.0.1:8080`) to inspect the polished modal windows and full 4-coordinate grid.
+
+## Review Notes History Folding & Scrollable Capped View (2026-10-19)
+
+- **Changed paths:**
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Added total actions count badge (`review-notes-count-badge`) to the "Review notes" panel heading.
+    - Added folding state (`expandReviewHistory`) displaying the **3 most recent actions** by default when total actions exceed 3.
+    - Added a toggle bar (`review-history-toggle-bar`) showing action count context (`Showing latest 3 of N actions` vs `Showing all N recorded actions`) with a toggle button (`[▾ Show earlier history (N-3 more)]` / `[▴ Show recent only]`).
+    - Added `.review-history-expanded` class applying a capped scrollable view (`max-height: 320px; overflow-y: auto`) when expanded, keeping the panel compact regardless of total actions.
+  - `src/workbench/src/styles.css`:
+    - Added styles for `.review-history-expanded`, `.review-history-toggle-bar`, `.review-history-toggle-btn`, `.review-notes-count-badge`, and custom modern scrollbar styles for `.review-history-expanded`.
+- **Decisions and status:**
+  - Implemented the Hybrid approach (folding by default + capped scrollbar when expanded): ensures the most recent 3 actions and the "Add note" form are immediately visible without stretching the page height, while allowing surveyors to inspect the full audit trail when needed.
+- **Validation evidence:**
+  - Production frontend image built cleanly via `docker build -f infra/Dockerfile.web -t claim-cmev-cmev-web .` (`tsc -b && vite build` completed in 2.14s with zero errors, transforming 1,597 modules).
+  - Web container `claim-cmev-cmev-web-1` recreated and verified healthy (`wget -q -O - http://127.0.0.1/healthz` returned `ok`).
+- **Next concrete step:**
+  - Refresh the workbench in browser (`http://127.0.0.1:8080`) to inspect the folded review notes section.
+
+## Card-Level Identity & Coverage Confirmation & UI Streamlining (2026-10-19)
+
+- **Changed paths:**
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Removed redundant "Add Photos" button from the Damage summary section header (surveyors already have "Add Evidence" in the top header and "Upload supplementary evidence" in the Evidence sidebar panel).
+    - Passed `onConfirm={async (actions) => { await reviewAction(actions); }}` to `<DamageSummary>`.
+  - `src/workbench/src/DamageSummary.tsx`:
+    - Consolidated to a single, clean confirmation action per detected damage card: kept the `[✓ Confirm Identity & Coverage]` (or `[✓ Edit Confirmation]`) button in the card header next to `View evidence`, and removed the duplicate bottom banner.
+    - Improved `QuickConfirmModal` form structure: wrapped inputs in `.quick-confirm-field` with explicit `.quick-confirm-label` spans, enhanced `.quick-confirm-helper-tip` callout, and aligned the optional Surveyor Note textarea to stack vertically with full width.
+  - `src/workbench/src/styles.css`:
+    - Added dedicated styling for `.quick-confirm-field`, `.quick-confirm-label`, `.quick-confirm-field select`, `.quick-confirm-field textarea`, `.quick-confirm-helper-tip`, and modal `.coverage-reason-box` to ensure crisp typography, vertical stacking, and 100% width alignment.
+  - `src/workbench/src/ReviewControls.tsx`:
+    - Rebranded bottom section to `<summary>Manual Part Grounding • For parts not auto-detected by AI</summary>` with a surveyor guidance tip.
+    - Replaced the two bulky explanatory text paragraphs with an interactive `(i)` Info popover badge next to the section title, showing instructions on hover or click without pushing down the form.
+    - Preserved native `<summary>` disclosure triangle marker (`▶`/`▼`) by nesting items inside `.manual-grounding-summary-inner` instead of applying `display: flex` to `<summary>`.
+  - `src/workbench/src/styles.css`:
+    - Added dedicated styling for `.quick-confirm-field`, `.quick-confirm-label`, `.quick-confirm-field select`, `.quick-confirm-field textarea`, `.quick-confirm-helper-tip`, modal `.coverage-reason-box`, and `.manual-grounding-summary` / `.info-popover-*` floating tooltip card.
+- **Decisions and status:**
+  - Consolidated single button per card in the card header next to `View evidence` to avoid visual clutter and maintain clean card geometry.
+  - Removed redundant upload trigger to streamline surveyor workflow.
+  - Fixed modal alignment issues where inline elements and default browser widths caused misaligned labels and tiny floating textareas.
+  - Compacted manual grounding controls: conceptual explanation is now neatly tucked behind a hover/click info popover, while keeping the standard expandable disclosure triangle visible so users know the section is expandable.
+- **Validation evidence:**
+  - Built frontend image with `docker build -f infra/Dockerfile.web -t claim-cmev-cmev-web .` (`tsc -b && vite build` succeeded with zero errors, transforming 1,597 modules).
+  - Deployed updated web container `claim-cmev-cmev-web-1` and verified health check (`wget -q -O - http://127.0.0.1/healthz` returned `ok`).
+- **Next concrete step:**
+  - Refresh the workbench in browser (`http://127.0.0.1:8080`) to inspect the streamlined damage cards, the polished modal, and the info tooltip beside the manual grounding header.
+
+## Retract Confirmation UI Enhancement & Audit Revocation (2026-10-19)
+
+- **Changed paths:**
+  - `src/workbench/src/DamageSummary.tsx`:
+    - Updated `DamageRow` interface to receive confirmation provenance: `coverage_confirmation_id`, `identity_confirmation_ids`, and `covering_photo_ids`.
+    - Added `surveyor_retracted` explanation to `reasons` mapping ("The reviewer retracted the previous coverage confirmation for this part (marked inadequate)").
+    - Added `[⤶ Retract Confirmation]` button to damage card header actions (`damage-title-actions`) on confirmed parts/coverage slots when not locked.
+    - Added accessible confirmation dialog (`retract-modal-overlay` / `retract-modal-card`) explaining the audit compliance invariant (superseding revocation with `covers_enough: false` and `surveyor_retracted`).
+    - Added visual status indication (`damage-retracted-badge` and `result-info-retracted`) for retracted cards.
+  - `src/workbench/src/ReviewControls.tsx`:
+    - Updated `UnifiedIdentityCoverageForm` to accept `existingCoverage` slot data and track physical `side` in state.
+    - Added prominent status banner (`existing-confirmation-notice`) when selecting a part and side with existing confirmed coverage, with an inline `[⤶ Retract Confirmation]` button.
+    - Added `<option value="surveyor_retracted">Confirmation retracted by surveyor</option>` to the insufficient coverage reason dropdown.
+    - Updated `IdentityControls` to forward `existingCoverage` to the form.
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Wired `onRetract` callback on `<DamageSummary>` calling `reviewAction` with `confirm_coverage`, `covers_enough: false`, and `reason_code: "surveyor_retracted"`.
+    - Forwarded `existingCoverage={assessment.coverage ?? assessment.damage_summary}` to `<IdentityControls>`.
+  - `src/claim_cmev/api/views.py`:
+    - Enhanced `_damage_summary` to include `coverage_confirmation_id`, `identity_confirmation_ids`, and `covering_photo_ids` on each damage summary row.
+  - `src/workbench/src/styles.css`:
+    - Added styles for `.damage-title-heading`, `.damage-title-actions`, `.damage-retract-button`, `.damage-retracted-badge`, `.result-info-retracted`, `.retract-modal-overlay`, `.retract-modal-card`, `.button-danger`, `.button-danger-outline`, and `.existing-confirmation-notice`.
+  - `tests/unit/m9/test_m9_actions.py`:
+    - Added unit test `test_retract_confirmation_records_revocation_with_surveyor_retracted` verifying that retracting an adequate coverage confirmation applies cleanly, creates a superseding review event with reason `surveyor_retracted`, and triggers summary and consolidation reruns.
+- **Decisions and status:**
+  - Strict preservation of audit invariants: hard deletes are prohibited; the retraction feature cleanly records an audit-compliant superseding revocation event (`confirm_coverage` with `covers_enough=False` and `reason_code='surveyor_retracted'`), which moves the previous confirmation into `superseded_confirmation_ids` and updates M8 photographic checks without destroying historical records.
+- **Validation evidence:**
+  - Unit test `test_retract_confirmation_records_revocation_with_surveyor_retracted` passed deterministically.
+  - Built frontend image with `docker build -f infra/Dockerfile.web -t claim-cmev-cmev-web .` (`tsc -b && vite build` passed with zero errors, transforming 1,597 modules).
+  - Deployed `claim-cmev-cmev-web-1` and verified health check (`wget -q -O - http://127.0.0.1/healthz` returned `ok`).
+  - Tested `ReviewActionRequest` and `_v_confirm_coverage` with `reason_code="surveyor_retracted"` in container.
+- **Next concrete step:**
+  - Test clicking "Retract Confirmation" on a confirmed damage card in the browser workbench to verify that the confirmation dialog appears and updates the claim to a new review revision.
+
+## Declaration Completeness Status Display & Amendment Workflow (2026-10-19)
+
+- **Changed paths:**
+  - `src/workbench/src/ReviewControls.tsx`:
+    - Redesigned `CompletenessControl` from an opaque, collapsed details element into a permanent, status-aware component.
+    - Added dedicated status bar displaying current completeness state (`complete`, `partial`, `unreadable`, `explicitly_empty`) with distinct color-coded badges, provenance text (e.g. `Confirmed by Surveyor · Date (Review Rev X)` vs `Machine detected (parser)`), and unparsed/model reason tags.
+    - Added an interactive amendment panel toggleable via "Amend Status" (when already confirmed) or "Confirm Scope" (when unconfirmed).
+    - Provided selectable cards matching workbench styling for all 4 states, alongside preset reason code selectors (`missing_pages`, `table_truncated`, `continuation_missing`, `subtotal_mismatch`, `blurry_scan`, `unsupported_layout`, `surveyor_confirmed_empty`) plus custom snake_case input.
+    - Added client-side validation guard to prevent submitting identical confirmed state (preventing HTTP 422 `no_change` errors).
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Updated `Assessment` interface to include `declaration?: DeclarationData` matching backend API response.
+    - Passed `declaration={assessment.declaration}` and `completenessState={assessment.declaration_completeness}` into `CompletenessControl`.
+  - `src/workbench/src/styles.css`:
+    - Added CSS classes for `.completeness-container`, `.completeness-status-bar`, `.completeness-badge-*`, `.completeness-status-text`, `.completeness-rev-tag`, `.completeness-amendment-card`, `.completeness-options-grid`, `.completeness-reason-box`, and `.completeness-actions`.
+- **Decisions and status:**
+  - Solved status visibility: surveyors now immediately see whether declaration completeness is complete, partial, or unreadable, and whether it was machine-detected or human-confirmed.
+  - Enabled intuitive amendment workflow: surveyors can amend a previously confirmed state (e.g. changing from `complete` to `partial` if pages were found missing) with a single click, advancing the claim input revision and triggering M8 Rule A1 re-gating.
+- **Validation evidence:**
+  - Built frontend production image `claim-cmev-cmev-web:latest` with `tsc -b && vite build` (1,597 modules transformed with zero errors).
+  - Verified container `claim-cmev-cmev-web-1` running healthy (`wget http://127.0.0.1/healthz` returned `ok`).
+  - Verified bundle contains `Amend Declaration Completeness`.
+- **Next concrete step:**
+  - Inspect the updated Estimate line items panel in the workbench to confirm status and test amending the declaration completeness.
+
+## Supplementary Evidence Upload & Claim Amendment Workflow (2026-10-19)
+
+- **Changed paths:**
+  - `src/workbench/src/SupplementaryEvidenceModal.tsx`:
+    - Implemented a modal dialog for uploading supplementary damage photographs and/or estimate pages directly to an existing claim.
+    - Integrated with backend endpoints `POST /api/v1/claims/{cid}/files` and `POST /api/v1/claims/{cid}/input-revisions` to create a new input revision according to FR-06.
+    - Preserves unchanged branches (e.g. estimate line items), verifies quota limits (40 photos, 10 pages), filters out fixture placeholders, and automatically advances the claim input revision ($N \to N+1$).
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Added "Add Evidence" button to the top review header actions bar (`review-header-actions`).
+    - Added "Upload evidence to this claim" button to the `awaiting_upload` empty state view.
+    - Added "Upload supplementary evidence" button to the Evidence sidebar panel (`evidence-panel`).
+    - Wired `SupplementaryEvidenceModal` with automatic claim reloading and background processing polling.
+  - `src/workbench/src/styles.css`:
+    - Added styles for `.supplementary-modal-container`, `.supplementary-overview`, `.supplementary-stat`, `.supplementary-stat-label`, `.supplementary-stat-value`, `.supplementary-info-card`, `.supplementary-actions`, and `.upload-zone-disabled`.
+- **Decisions and status:**
+  - Clarified domain semantics for cost below range: photographic evidence remains `damage_supported` (passed), but unsupervised cost check flags `cost_outlier` with direction `below` to alert surveyors of possible substandard parts or clerical omissions without blocking claim approval.
+  - Resolved procedure for "More information needed": first resolve via HITL review confirmations (confirm identity/coverage) within existing photos; if evidence is genuinely missing, amend the claim by uploading supplementary photos.
+  - Added dedicated UI for claim amendments directly on the review page, honoring immutable input revision lineage and reuse of unchanged branches.
+- **Validation evidence:**
+  - Built frontend image with `docker build -f infra/Dockerfile.web -t claim-cmev-cmev-web .` (`tsc -b && vite build` succeeded with zero errors, transforming 1,597 modules).
+  - Deployed and recreated `claim-cmev-cmev-web-1`. Verified health check (`wget -q -O - http://127.0.0.1/healthz` returned `ok`).
+  - Confirmed the served bundle includes the supplementary evidence workflow components.
+- **Limitations:**
+  - Finalized claims remain frozen and cannot be amended (as required by system invariants).
+- **Next concrete step:**
+  - Test adding supplementary photos to an active claim in the browser workbench.
+
+## Pipeline Dead Letter Resolution & Overlay Alignment (2026-10-19)
+
+- **Changed paths:**
+  - `infra/compose/docker-compose.yml`, `infra/compose/docker-compose.image.yml`, `infra/compose/docker-compose.document.yml`: Reinforced compose overlay requirement for all container restarts.
+- **Decisions and status:**
+  - Diagnosed `parts: dead lettered model_version_unsupported`: An earlier restart of `cmev-api` omitted the vision and document compose overlays (`docker-compose.image.yml` and `docker-compose.document.yml`), causing `cmev-api` to default to `CMEV_PARTS_PRODUCER=fixture` producing tasks pinned to `fixture-parts/0.0.0`. `cmev-worker-image-1` (running the real SegFormer-B3 model) rejected this version mismatch and dead-lettered the job with reason `model_version_unsupported`.
+  - Restarted the full Compose stack using all required overlay files and `--profile lean`.
+  - Re-triggered processing for claim `CLM-24036` (input revision 2).
+- **Validation evidence:**
+  - Verified `claim-cmev-cmev-api-1` has `CMEV_PARTS_PRODUCER=real` and `CMEV_DAMAGE_PRODUCER=real`.
+  - Queried `ops.jobs` in PostgreSQL for claim `CLM-24036` revision 2: all jobs (`intake`, 4 `parts` jobs, `page_read` OCR, 4 `damage` CarDD SegFormer-B3 jobs, `line_items`, `pen_marks`, `summary` M3, `consolidate` M8) succeeded with zero dead letters.
+  - Web UI rebuilt and verified healthy (`claim-cmev-cmev-web-1` serving latest assets at port 8080).
+- **Limitations:**
+  - Any future `docker compose` invocation must always include all overlays (`-f infra/compose/docker-compose.yml -f infra/compose/docker-compose.image.yml -f infra/compose/docker-compose.document.yml`) to prevent producers from falling back to fixture mode.
+- **Next concrete step:**
+  - Surveyor review on the workbench UI using the unified Identity & Coverage form.
+
+## Unified Identity & Coverage Confirmation Workflow (2026-10-19)
+
+- **Changed paths:**
+  - `src/claim_cmev/review/actions.py`:
+    - Added `ok` and `replayed` convenience boolean properties to `BatchOutcome` for consistent outcome checking.
+    - Fixed `apply_review_batch` revision tracking: for subsequent actions in a batch (`index > 0`), updated `expected_input_revision` alongside `expected_review_revision` from `current.current_input_revision`. When earlier batch actions are decision-changing and increment `current_input_revision`, subsequent actions now validate against the advanced intermediate input revision rather than failing with `409 Conflict: stale_input_revision`.
+  - `tests/unit/m9/test_m9_actions.py`:
+    - Added test case verifying batch execution with multiple sequential decision-changing actions (`confirm_identity` + `confirm_coverage`).
+  - `src/claim_cmev/api/main.py`:
+    - Imported `apply_review_batch` from `claim_cmev.review`.
+    - Added `perform_review_batch` to atomically apply a list of review actions, save all actions to the review record, aggregate rerun/reused stages across all action plans, and commit a single new input revision.
+    - Added `POST /api/v1/claims/{cid}/assessments/{rev}/review-actions/batch` route and updated `/review-actions` to seamlessly accept either a single `ReviewActionRequest` or a `list[ReviewActionRequest]`.
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Updated `reviewAction` to inspect whether `values` is an array or object, dispatching to `/review-actions/batch` for batch actions with uniform input/review revision headers.
+    - Restored missing closing tags for `ReviewOverview` component before `cleanPinnedVersions`.
+  - `src/workbench/src/ReviewControls.tsx`:
+    - Updated `SubmitAction` type definition to accept `Record<string, unknown> | Record<string, unknown>[]`.
+    - Replaced the two redundant forms (`IdentityForm` mapped twice) with a single `UnifiedIdentityCoverageForm` and updated `IdentityControls` to render it.
+    - Unified form provides simultaneous part identity selection, vehicle side selection, photograph multi-selection, and integrated photographic coverage evaluation (Adequate / Inadequate with reason dropdown / Identity only) with a single submit action.
+    - Added styled card layouts (`confirmation-card`, `confirmation-option`, `coverage-subpanel`, `coverage-radio-option`) and primary dark action buttons.
+  - `src/workbench/src/DamageSummary.tsx`:
+    - Updated damage observation cards to dynamically apply coverage status color classes (`result-info-adequate`, `result-info-inadequate`, `result-info-warning`, `result-info-neutral`) to the `Coverage: {coverageLabel}` badge.
+  - `src/workbench/src/styles.css`:
+    - Fixed checkbox and radio alignment regression: scoped `.review-controls input`'s `width: 100%` and `padding: 10px` to exclude checkboxes and radio buttons (`:not([type="checkbox"]):not([type="radio"])`), and scoped label grid layouts to non-choice labels.
+    - Added bespoke CSS rules for `.confirmation-card`, `.confirmation-option` with active states, `.coverage-subpanel`, `.coverage-radio-option`, `.coverage-badge-recommended`, and `.field-error-banner` matching workbench design standards.
+    - Added color-coded variants for `.result-info`: green dashed border and soft green tint for `adequate` (`#ecfdf5`, `#065f46`, border `#10b981`), red dashed for `inadequate` (`#fef2f2`, `#991b1b`, border `#ef4444`), warm amber for `needs confirmation` (`#fffbeb`, `#92400e`, border `#f59e0b`), and muted slate for unestablished.
+- **Decisions and status:**
+  - Preserved separate domain contracts and audit event streams: `IdentityConfirmation` and `CoverageConfirmation` records remain distinct and immutable in the database and audit trail, but surveyors no longer have to enter identical Part/Side/Photos twice.
+  - Eliminated the `HTTP 409 Conflict: reassessment_pending` race condition by applying both confirmations in a single atomic batch and queuing only one M3/M8 reassessment run.
+  - Fixed form layout and visual alignment to seamlessly match the workbench styling: checkboxes and radio buttons are aligned with descriptive headings, subtle card borders, teal accents, and clear recommendation badges.
+  - Rebuilt and verified `cmev-api` and `cmev-web` containers; all compose services are healthy.
+- **Validation evidence:**
+  - Fast-API route check confirmed both `/review-actions/batch` and `/review-actions` are active and registered.
+  - Verified `BatchOutcome.ok` and `replayed` unit properties via `claim-cmev-cmev-api-1`.
+  - Frontend built cleanly without TypeScript or Vite errors (`npm run build` completed with zero errors).
+  - Web container rebuilt and verified serving new CSS/JS assets at port 8080.
+- **Limitations:**
+  - Stale edits or revision conflicts still prompt a reload as required by invariant rules.
+- **Next concrete step:**
+  - Test the unified form in the UI by reviewing a claim, selecting a part, side, and photos, and confirming both identity and coverage in a single click.
+
 ## Final Review Report & Surveyor Name Extraction Updates (2026-10-19)
 
 - **Changed paths:**

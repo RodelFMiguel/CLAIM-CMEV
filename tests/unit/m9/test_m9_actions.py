@@ -109,6 +109,30 @@ def test_coverage_confirmation_reruns_summary_and_chained_corrections_accumulate
     assert plan.rerun_stages == ("summary", "consolidate"), "the new input still needs the earlier summary rerun"
 
 
+def test_retract_confirmation_records_revocation_with_surveyor_retracted():
+    s = state()
+    # Confirm coverage as adequate first
+    confirmed = apply(s, request("confirm_coverage", part_code="fender", side="left", photo_ids=("ph2",),
+                                 covers_enough=True), 1)
+    assert confirmed.kind == "applied"
+    assert confirmed.plan.rerun_stages == ("summary", "consolidate")
+
+    # Retract confirmation: superseding action with covers_enough=False and reason_code="surveyor_retracted"
+    retracted = apply(confirmed.state, request("confirm_coverage", 1, part_code="fender", side="left",
+                                               photo_ids=("ph2",), covers_enough=False,
+                                               reason_code="surveyor_retracted",
+                                               note="Confirmation retracted by surveyor"), 2)
+    assert retracted.kind == "applied"
+    assert retracted.event.new_values == {
+        "part_code": "fender",
+        "side": "left",
+        "photo_ids": ["ph2"],
+        "covers_enough": False,
+        "reason": "surveyor_retracted",
+    }
+    assert retracted.plan.rerun_stages == ("summary", "consolidate")
+
+
 def test_stale_review_revision_is_a_conflict_that_overwrites_nothing():
     s1 = apply(state(), request("dismiss_finding", finding_id="f4", reason_code="parts_price_change")).state
     out = apply(s1, request("dismiss_finding", 0, finding_id="f5", reason_code="inadequate_photograph"), 2)
@@ -328,6 +352,16 @@ def test_batch_is_atomic_and_replays_as_a_whole():
                                 action_ids=["c-1", "c-2"])
     assert (failed.kind, failed.failed_index, failed.reason_code) == ("invalid", 1, "dismissal_reason_invalid")
     assert failed.state == s and not failed.state.actions
+
+    # Test batch with multiple decision-changing actions
+    decisions = [
+        request("confirm_identity", 0, part_code="windshield", side="not_applicable", photo_ids=["p1"]),
+        request("confirm_coverage", 0, part_code="windshield", side="not_applicable", photo_ids=["p1"], covers_enough=True),
+    ]
+    out_dec = apply_review_batch(s, decisions, actor="surveyor:rm", recorded_at=LATER,
+                                 idempotency_key="batch-key-0003", action_ids=["d-1", "d-2"])
+    assert out_dec.kind == "applied" and out_dec.http_status == 202 and out_dec.review_revision == 2
+    assert out_dec.state.current_input_revision == 3
 
 
 def test_dismissal_carries_only_to_an_unchanged_finding():

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { EvidenceDialog, EvidenceImage } from "./EvidenceDialog";
+import { Undo2, AlertTriangle, X, CheckCircle2, Image as ImageIcon } from "lucide-react";
+import partOptions from "./partOptions.json";
 
 // Display only: identity, coverage and assignment decisions remain owned by M2/M3.
 export interface DamageRow {
@@ -13,6 +15,9 @@ export interface DamageRow {
   reason_codes?: string[];
   photo_count: number;
   source_kind?: string;
+  coverage_confirmation_id?: string | null;
+  identity_confirmation_ids?: string[];
+  covering_photo_ids?: string[];
 }
 export interface DamageObservation {
   observation_id: string;
@@ -37,6 +42,11 @@ interface Props {
   files: { file_id: string; original_name: string; url?: string }[];
   onPhoto?: (id: string) => void;
   print?: boolean;
+  locked?: boolean;
+  onRetract?: (partCode: string, side: string, photoIds?: string[]) => void | Promise<void>;
+  onConfirm?: (
+    actions: Record<string, unknown> | Record<string, unknown>[],
+  ) => void | Promise<boolean | void>;
 }
 interface ViewPhoto {
   id: string;
@@ -80,6 +90,8 @@ const reasons: Record<string, string> = {
     "The reviewer confirmed that these photographs do not show enough of the part.",
   coverage_confirmation_views_mismatch:
     "The confirmed photographs do not include a view that passes the coverage checks.",
+  surveyor_retracted:
+    "The reviewer retracted the previous coverage confirmation for this part (marked inadequate).",
 };
 export const reasonText = (code: string) =>
   reasons[code] ?? `Review reason: ${label(code)}.`;
@@ -149,6 +161,14 @@ function defectColor(code: string): DefectColorDef {
   }
 }
 
+export interface ConfirmingCardData {
+  row: DamageRow;
+  defaultPart: string;
+  defaultSide: string;
+  defaultPhotos: string[];
+  canRetract?: boolean;
+}
+
 export function DamageSummary({
   rows,
   groups = [],
@@ -156,6 +176,9 @@ export function DamageSummary({
   files,
   onPhoto,
   print = false,
+  locked = false,
+  onRetract,
+  onConfirm,
 }: Props) {
   const observationsById = new Map(
     observations.map((o) => [o.observation_id, o]),
@@ -166,6 +189,7 @@ export function DamageSummary({
     files.flatMap((f) => (f.url ? [[f.file_id, f.url]] : [])),
   );
   const [viewing, setViewing] = useState<Viewing | null>(null);
+  const [confirmingCard, setConfirmingCard] = useState<ConfirmingCardData | null>(null);
   const unresolved = (row: DamageRow) =>
     row.identity_status === "unresolved" || row.part_code === "unresolved";
 
@@ -177,14 +201,66 @@ export function DamageSummary({
       return observation ? [observation] : [];
     });
     const codes = row.damage_codes;
+    const isRetracted = row.reason_codes?.includes("surveyor_retracted");
+    const canRetract =
+      !print &&
+      !locked &&
+      Boolean(onRetract) &&
+      row.part_code !== "unresolved" &&
+      row.side !== "unknown" &&
+      (row.coverage === "adequate" ||
+        Boolean(row.coverage_confirmation_id) ||
+        Boolean(
+          row.identity_confirmation_ids &&
+            row.identity_confirmation_ids.length > 0,
+        )) &&
+      !isRetracted;
+
+    const canConfirm = !print && !locked && Boolean(onConfirm);
+    const isAdequate = row.coverage === "adequate";
+
+    const rawPart =
+      row.part_code && row.part_code !== "unresolved"
+        ? row.part_code
+        : members[0]?.candidates?.[0]?.part_code || "";
+    const defaultPart = rawPart ? rawPart.replace(/_/g, "-") : "";
+    const partMeta = partOptions.parts.find(
+      (p) => p.code === defaultPart || p.code === defaultPart.replace(/-/g, "_"),
+    );
+    const isSided = partMeta ? partMeta.sided : true;
+    const defaultSide = !isSided
+      ? "not_applicable"
+      : row.side && row.side !== "unknown"
+        ? row.side
+        : "left";
+
+    const cardMemberPhotoIds = members.map((o) => o.photo_id);
+    const cardCoveringPhotoIds = row.covering_photo_ids ?? [];
+    const defaultPhotos = [
+      ...new Set([...cardMemberPhotoIds, ...cardCoveringPhotoIds]),
+    ];
+
     const coverageLabel =
       row.coverage === "unresolved"
         ? row.reason_codes?.includes("identity_not_resolved")
           ? "Needs confirmation"
           : "Not established"
         : row.coverage === "inadequate"
-          ? "Not adequate"
+          ? isRetracted
+            ? "Retracted (Inadequate)"
+            : "Not adequate"
           : label(row.coverage);
+    const coverageClass =
+      row.coverage === "adequate"
+        ? "result-info-adequate"
+        : row.coverage === "inadequate" || row.coverage === "not_visible"
+          ? isRetracted
+            ? "result-info-retracted"
+            : "result-info-inadequate"
+          : row.coverage === "unresolved" &&
+              row.reason_codes?.includes("identity_not_resolved")
+            ? "result-info-warning"
+            : "result-info-neutral";
     const source =
       row.source_kind === "real"
         ? "Based on model analysis of uploaded photographs."
@@ -274,32 +350,71 @@ export function DamageSummary({
     return (
       <article className="damage-item" key={row.summary_id ?? index}>
         <div className="damage-title">
-          <strong>{heading}</strong>
-          {showSide && <span className="muted">{sideText}</span>}
-          {photos.length > 0 && (
-            <button
-              type="button"
-              className="button button-outline button-small damage-evidence-button"
-              aria-haspopup="dialog"
-              aria-label={`View evidence for ${heading}${codes?.length ? `, ${codes.map(label).join(", ")}` : ""}`}
-              onClick={() =>
-                setViewing({
-                  title: `${heading.replace(/\b\w/g, (c) => c.toUpperCase())}: photographic evidence`,
-                  subtitle: [
-                    codes?.length
-                      ? `Predicted damage: ${codes.map(label).join(", ")}`
-                      : "",
-                    showSide ? sideText : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" · "),
-                  photos,
-                })
-              }
-            >
-              View evidence
-            </button>
-          )}
+          <div className="damage-title-heading">
+            <strong>{heading}</strong>
+            {showSide && <span className="muted">{sideText}</span>}
+          </div>
+          <div className="damage-title-actions">
+            {isRetracted && (
+              <span className="damage-retracted-badge">
+                <Undo2 size={12} style={{ marginRight: "3px" }} /> Retracted by Surveyor
+              </span>
+            )}
+            {canConfirm && (
+              <button
+                type="button"
+                className={`button button-small damage-confirm-button ${
+                  isAdequate
+                    ? "damage-confirm-button-confirmed"
+                    : "damage-confirm-button-action"
+                }`}
+                title={
+                  isAdequate
+                    ? "Coverage is confirmed adequate. Click to update identity, side, or coverage, or retract confirmation."
+                    : "Confirm the physical identity, side, and photographic coverage for this part"
+                }
+                onClick={() => {
+                  setConfirmingCard({
+                    row,
+                    defaultPart,
+                    defaultSide,
+                    defaultPhotos:
+                      defaultPhotos.length > 0
+                        ? defaultPhotos
+                        : files.map((f) => f.file_id),
+                    canRetract,
+                  });
+                }}
+              >
+                <CheckCircle2 size={13} style={{ marginRight: "4px" }} />
+                {isAdequate ? "Edit Confirmation" : "Confirm Identity & Coverage"}
+              </button>
+            )}
+            {photos.length > 0 && (
+              <button
+                type="button"
+                className="button button-outline button-small damage-evidence-button"
+                aria-haspopup="dialog"
+                aria-label={`View evidence for ${heading}${codes?.length ? `, ${codes.map(label).join(", ")}` : ""}`}
+                onClick={() =>
+                  setViewing({
+                    title: `${heading.replace(/\b\w/g, (c) => c.toUpperCase())}: photographic evidence`,
+                    subtitle: [
+                      codes?.length
+                        ? `Predicted damage: ${codes.map(label).join(", ")}`
+                        : "",
+                      showSide ? sideText : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                    photos,
+                  })
+                }
+              >
+                View evidence
+              </button>
+            )}
+          </div>
         </div>
         <p className="damage-types">
           <strong>
@@ -314,7 +429,9 @@ export function DamageSummary({
               ? codes.map(label).join(", ")
               : "No damage observation recorded"}
         </p>
-        <span className="result-info">Coverage: {coverageLabel}</span>
+        <span className={`result-info ${coverageClass}`}>
+          Coverage: {coverageLabel}
+        </span>
         {row.reason_codes?.length ? (
           [...new Set(row.reason_codes)].map((code) => (
             <p key={code}>{reasonText(code)}</p>
@@ -370,6 +487,17 @@ export function DamageSummary({
         <DamageEvidenceView
           viewing={viewing}
           onClose={() => setViewing(null)}
+        />
+      )}
+      {confirmingCard && (
+        <QuickConfirmModal
+          cardData={confirmingCard}
+          files={files}
+          onClose={() => setConfirmingCard(null)}
+          onSave={async (actions) => {
+            await onConfirm?.(actions);
+          }}
+          onRetract={onRetract}
         />
       )}
     </>
@@ -610,5 +738,467 @@ function DamageEvidenceView({
           : "Photographs are shown in original unprocessed form. Check 'Show defect overlay' to view predicted defect regions."}
       </p>
     </EvidenceDialog>
+  );
+}
+
+function QuickConfirmModal({
+  cardData,
+  files,
+  onClose,
+  onSave,
+  onRetract,
+}: {
+  cardData: ConfirmingCardData;
+  files: { file_id: string; original_name: string; url?: string }[];
+  onClose: () => void;
+  onSave: (actions: Record<string, unknown>[]) => Promise<void>;
+  onRetract?: (partCode: string, side: string, photoIds?: string[]) => void | Promise<void>;
+}) {
+  const [selectedPart, setSelectedPart] = useState(
+    cardData.defaultPart || "front-bumper",
+  );
+  const [selectedSide, setSelectedSide] = useState(
+    cardData.defaultSide || "not_applicable",
+  );
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>(
+    cardData.defaultPhotos.length > 0
+      ? cardData.defaultPhotos
+      : files.map((f) => f.file_id),
+  );
+  const [coverageState, setCoverageState] = useState<"adequate" | "inadequate">(
+    cardData.row.coverage === "inadequate" ? "inadequate" : "adequate",
+  );
+  const [insufficientReason, setInsufficientReason] = useState<string>("");
+  const [note, setNote] = useState<string>("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [showRetractConfirm, setShowRetractConfirm] = useState(false);
+  const [isRetracting, setIsRetracting] = useState(false);
+  const [error, setError] = useState("");
+
+  const currentPartMeta = partOptions.parts.find((p) => p.code === selectedPart);
+  const isSided = currentPartMeta ? currentPartMeta.sided : true;
+
+  const handlePartChange = (newPart: string) => {
+    setSelectedPart(newPart);
+    const meta = partOptions.parts.find((p) => p.code === newPart);
+    if (meta && !meta.sided) {
+      setSelectedSide("not_applicable");
+    } else if (meta && meta.sided && selectedSide === "not_applicable") {
+      setSelectedSide("left");
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!selectedPart) {
+      setError("Please select a vehicle part.");
+      return;
+    }
+    if (!selectedSide) {
+      setError("Please choose the physical side.");
+      return;
+    }
+    if (selectedPhotoIds.length === 0) {
+      setError("Please select at least one photograph showing this part.");
+      return;
+    }
+    if (coverageState === "inadequate" && !insufficientReason) {
+      setError("Please choose a reason why coverage is insufficient.");
+      return;
+    }
+
+    const trimmedNote = note.trim() || null;
+    const actions: Record<string, unknown>[] = [
+      {
+        action_type: "confirm_identity",
+        part_code: selectedPart,
+        side: selectedSide,
+        photo_ids: selectedPhotoIds,
+        note: trimmedNote,
+      },
+      {
+        action_type: "confirm_coverage",
+        part_code: selectedPart,
+        side: selectedSide,
+        photo_ids: selectedPhotoIds,
+        covers_enough: coverageState === "adequate",
+        reason_code: coverageState === "inadequate" ? insufficientReason : null,
+        note: trimmedNote,
+      },
+    ];
+
+    setIsSaving(true);
+    try {
+      await onSave(actions);
+      onClose();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to record confirmations.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const titleHeading =
+    cardData.row.part_code && cardData.row.part_code !== "unresolved"
+      ? label(cardData.row.part_code)
+      : "Unresolved Part";
+
+  return (
+    <div
+      className="retract-modal-overlay quick-confirm-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="retract-modal-card quick-confirm-modal-card">
+        <div className="retract-modal-header quick-confirm-modal-header">
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <CheckCircle2 size={18} color="#0284c7" />
+            <div>
+              <span className="retract-modal-title">
+                {cardData.canRetract
+                  ? "Edit Identity & Coverage"
+                  : "Confirm Identity & Coverage"}
+              </span>
+              <span className="quick-confirm-modal-subtitle">
+                Target: <strong>{titleHeading}</strong>
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="retract-modal-close"
+            onClick={onClose}
+            disabled={isSaving}
+            aria-label="Close dialog"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSave} className="quick-confirm-modal-form">
+          <div className="retract-modal-body quick-confirm-modal-body">
+            <div className="quick-confirm-grid-2">
+              <label className="quick-confirm-field">
+                <span className="quick-confirm-label">Vehicle Part</span>
+                <select
+                  required
+                  value={selectedPart}
+                  onChange={(e) => handlePartChange(e.target.value)}
+                >
+                  {partOptions.parts.map((p) => (
+                    <option key={p.code} value={p.code}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="quick-confirm-field">
+                <span className="quick-confirm-label">Physical Side</span>
+                <select
+                  required
+                  value={selectedSide}
+                  onChange={(e) => setSelectedSide(e.target.value)}
+                >
+                  {isSided ? (
+                    <>
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                    </>
+                  ) : (
+                    <option value="not_applicable">
+                      Not applicable (unsided part)
+                    </option>
+                  )}
+                </select>
+              </label>
+            </div>
+
+            <div className="quick-confirm-helper-tip">
+              Left and right are from the driver / vehicle&rsquo;s perspective.
+              Unsided parts (windshield, bumpers, hood, roof) use &ldquo;not
+              applicable&rdquo;.
+            </div>
+
+            <div className="quick-confirm-photos">
+              <div className="quick-confirm-photos-header">
+                <span className="quick-confirm-section-label">
+                  Supporting Photographs ({selectedPhotoIds.length} selected):
+                </span>
+                <div className="quick-confirm-photo-actions">
+                  <button
+                    type="button"
+                    className="button-link-small"
+                    onClick={() =>
+                      setSelectedPhotoIds(files.map((f) => f.file_id))
+                    }
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    className="button-link-small"
+                    onClick={() => setSelectedPhotoIds([])}
+                  >
+                    Deselect all
+                  </button>
+                </div>
+              </div>
+
+              <div className="quick-confirm-photo-grid">
+                {files.map((file) => {
+                  const isChecked = selectedPhotoIds.includes(file.file_id);
+                  const isAutoDetected = cardData.defaultPhotos.includes(
+                    file.file_id,
+                  );
+                  return (
+                    <label
+                      key={file.file_id}
+                      className={`quick-confirm-photo-item ${
+                        isChecked ? "is-selected" : ""
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedPhotoIds([
+                              ...selectedPhotoIds,
+                              file.file_id,
+                            ]);
+                          } else {
+                            setSelectedPhotoIds(
+                              selectedPhotoIds.filter(
+                                (id) => id !== file.file_id,
+                              ),
+                            );
+                          }
+                        }}
+                      />
+                      {file.url ? (
+                        <img
+                          src={file.url}
+                          alt={file.original_name}
+                          className="quick-confirm-photo-thumb"
+                        />
+                      ) : (
+                        <div className="quick-confirm-photo-placeholder">
+                          <ImageIcon size={18} />
+                        </div>
+                      )}
+                      <div className="quick-confirm-photo-info">
+                        <span
+                          className="quick-confirm-photo-name"
+                          title={file.original_name}
+                        >
+                          {file.original_name}
+                        </span>
+                        {isAutoDetected && (
+                          <span className="quick-confirm-photo-tag">
+                            Auto-detected
+                          </span>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="confirmation-card" style={{ marginTop: "14px" }}>
+              <span className="confirmation-heading">
+                Photographic Coverage
+              </span>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
+                <label
+                  className={`coverage-radio-option ${
+                    coverageState === "adequate" ? "is-selected" : ""
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="qc_coverage"
+                    value="adequate"
+                    checked={coverageState === "adequate"}
+                    onChange={() => setCoverageState("adequate")}
+                  />
+                  <div className="confirmation-option-body">
+                    <div className="coverage-radio-header">
+                      <span className="confirmation-option-title">Adequate</span>
+                      <span className="coverage-badge-recommended">
+                        Recommended
+                      </span>
+                    </div>
+                    <span className="confirmation-option-desc">
+                      These views show enough of this part to assess damage
+                    </span>
+                  </div>
+                </label>
+
+                <label
+                  className={`coverage-radio-option ${
+                    coverageState === "inadequate" ? "is-selected" : ""
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="qc_coverage"
+                    value="inadequate"
+                    checked={coverageState === "inadequate"}
+                    onChange={() => setCoverageState("inadequate")}
+                  />
+                  <div className="confirmation-option-body">
+                    <span className="confirmation-option-title">Inadequate</span>
+                    <span className="confirmation-option-desc">
+                      Coverage is insufficient or obscured
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {coverageState === "inadequate" && (
+                <div className="coverage-reason-box">
+                  <label>
+                    Why is coverage insufficient?
+                    <select
+                      value={insufficientReason}
+                      onChange={(e) => setInsufficientReason(e.target.value)}
+                      required
+                    >
+                      <option value="" disabled>
+                        Choose a reason...
+                      </option>
+                      <option value="partially_visible">
+                        The part is only partially visible
+                      </option>
+                      <option value="part_obscured">
+                        The part is obscured
+                      </option>
+                      <option value="image_unclear">
+                        The photographs are too unclear
+                      </option>
+                      <option value="part_not_visible">
+                        The part is not visible in these photographs
+                      </option>
+                      <option value="surveyor_retracted">
+                        Confirmation retracted by surveyor
+                      </option>
+                      <option value="other">Other visibility limitation</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <label className="quick-confirm-field" style={{ marginTop: "14px" }}>
+              <span className="quick-confirm-label">Surveyor Note (optional)</span>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                maxLength={2000}
+                rows={2}
+                placeholder="Optional explanation or observation notes..."
+              />
+            </label>
+
+            {error && (
+              <div
+                className="field-error-banner"
+                role="alert"
+                style={{ marginTop: "12px" }}
+              >
+                <span>{error}</span>
+              </div>
+            )}
+
+            {showRetractConfirm && (
+              <div className="modal-retract-confirm-box">
+                <div className="modal-retract-header">
+                  <AlertTriangle size={18} color="#d97706" />
+                  <span className="modal-retract-title">Revoke Surveyor Confirmation?</span>
+                </div>
+                <p className="modal-retract-text">
+                  This action records an audit-compliant revocation setting photographic coverage for <strong>{label(selectedPart)}</strong> ({selectedSide === "not_applicable" ? "unsided" : `side: ${label(selectedSide)}`}) to <code>inadequate</code> with reason <code>surveyor_retracted</code>.
+                </p>
+                <div className="modal-retract-actions">
+                  <button
+                    type="button"
+                    className="button button-outline button-small"
+                    onClick={() => setShowRetractConfirm(false)}
+                    disabled={isRetracting}
+                  >
+                    Keep Confirmation
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-danger button-small"
+                    onClick={async () => {
+                      setIsRetracting(true);
+                      setError("");
+                      try {
+                        await onRetract?.(
+                          selectedPart,
+                          selectedSide,
+                          selectedPhotoIds.length > 0 ? selectedPhotoIds : cardData.row.covering_photo_ids,
+                        );
+                        onClose();
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Failed to record retraction.");
+                        setIsRetracting(false);
+                      }
+                    }}
+                    disabled={isRetracting}
+                  >
+                    {isRetracting ? "Revoking..." : "Confirm Retraction"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="retract-modal-actions quick-confirm-modal-actions">
+            {cardData.canRetract && !showRetractConfirm && (
+              <button
+                type="button"
+                className="button button-outline button-small button-modal-retract"
+                onClick={() => setShowRetractConfirm(true)}
+                disabled={isSaving || isRetracting}
+                title="Revoke earlier surveyor confirmation (marks coverage as inadequate with reason surveyor_retracted)"
+              >
+                <Undo2 size={13} style={{ marginRight: "4px" }} />
+                Retract Confirmation
+              </button>
+            )}
+            <div className="quick-confirm-footer-right">
+              <button
+                type="button"
+                className="button button-outline"
+                onClick={onClose}
+                disabled={isSaving || isRetracting}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="button button-dark"
+                disabled={isSaving || isRetracting || showRetractConfirm}
+              >
+                {isSaving ? "Saving..." : "Save Identity & Coverage"}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }

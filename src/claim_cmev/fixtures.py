@@ -185,7 +185,7 @@ class FixtureProducers:
             from .orchestration import state
             from .orchestration.review_summary import corrected_summary
             jobs = state.effective_jobs(ctx.session, ctx.envelope.claim_id, ctx.envelope.input_revision, "parts")
-            source_revision = min(j["input_revision"] for j in jobs)
+            source_revision = min((j["input_revision"] for j in jobs), default=ctx.envelope.input_revision)
             baseline = _bundle(scenario, ctx.envelope.claim_id, source_revision)
             outcome, identities, coverage = corrected_summary(ctx, claim_input, baseline)
             records = ([("part_summary", s) for s in outcome.summaries] +
