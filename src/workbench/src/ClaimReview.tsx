@@ -51,6 +51,7 @@ import {
 import { ErrorBanner, Loading, Status } from "./App";
 import {
   DamageSummary,
+  reasonText,
   type DamageRow,
   type DamageGroup,
   type DamageObservation,
@@ -139,6 +140,7 @@ interface Assessment {
   files: Evidence[];
   damage_summary: DamageRow[];
   part_summaries?: DamageGroup[];
+  coverage?: { part_code: string; side: string; state: string; reasons?: string[]; covering_photo_ids?: string[] }[];
   observations?: DamageObservation[];
   // "real" when trained models or parsers read the uploaded evidence; an older API omits it.
   evidence_sources?: { image: string; document: string };
@@ -1547,6 +1549,192 @@ function ReviewOverview({ id }: { id: string }) {
   );
 }
 
+function cleanPinnedVersions(
+  versions: Record<string, string> = {},
+): [string, string][] {
+  const keyMap: Record<string, string> = {
+    "parts.parts_model": "Parts model",
+    "damage.damage_model": "Damage model",
+    "page_read.ocr": "OCR engine",
+    "page_read.ocr_engine": "OCR engine",
+    "line_items.line_items_model": "Line items model",
+    "pen_marks.penmark_model": "Pen marks model",
+    cost_table: "Cost table",
+    rules_config: "Rules config",
+    "damage.taxonomy": "Damage taxonomy",
+    "parts.taxonomy": "Parts taxonomy",
+  };
+
+  const seenLabels = new Set<string>();
+  const pairs: [string, string][] = [];
+
+  for (const [k, label] of Object.entries(keyMap)) {
+    if (versions[k] && !seenLabels.has(label)) {
+      seenLabels.add(label);
+      const val = versions[k].includes("/")
+        ? versions[k].split("/").pop()!
+        : versions[k];
+      pairs.push([label, val]);
+    }
+  }
+
+  for (const [k, v] of Object.entries(versions)) {
+    if (
+      !k.includes("sha256") &&
+      !k.endsWith(".code") &&
+      !k.endsWith("_config") &&
+      !/^[a-f0-9]{32,64}$/i.test(v) &&
+      !Object.keys(keyMap).includes(k) &&
+      !["cost_basis", "cost_reference", "reason_catalogue"].includes(k)
+    ) {
+      const label = k.replace(/^[a-z_]+\./, "").replace(/_/g, " ");
+      const capitalized = label.charAt(0).toUpperCase() + label.slice(1);
+      if (!seenLabels.has(capitalized)) {
+        seenLabels.add(capitalized);
+        pairs.push([capitalized, v]);
+      }
+    }
+  }
+
+  return pairs;
+}
+
+function formatPinnedVersions(versions: Record<string, string> = {}): string {
+  return cleanPinnedVersions(versions)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(" / ");
+}
+
+interface PartSummaryEntry {
+  partCode: string;
+  side: string;
+  displayName: string;
+  lineItems: LineItem[];
+  damageCodes: string[];
+  photoCount: number;
+  coverageState: string;
+  coverageReasons: string[];
+  approvalStatus: "approved" | "rejected" | "action_required" | "unclaimed" | "not_evaluated";
+  statusText: string;
+}
+
+function computePartCategorySummaries(
+  damageRows: DamageRow[] = [],
+  lineItems: LineItem[] = [],
+  coverageList: { part_code: string; side: string; state: string; reasons?: string[]; covering_photo_ids?: string[] }[] = []
+): PartSummaryEntry[] {
+  const map = new Map<string, PartSummaryEntry>();
+
+  for (const item of lineItems) {
+    const pCode = item.part_code || item.description || "unspecified";
+    const side = item.side || "unknown";
+    const key = `${pCode}::${side}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        partCode: pCode,
+        side,
+        displayName: label(pCode),
+        lineItems: [],
+        damageCodes: [],
+        photoCount: 0,
+        coverageState: "not_photographed",
+        coverageReasons: [],
+        approvalStatus: "not_evaluated",
+        statusText: "Pending evaluation",
+      });
+    }
+    map.get(key)!.lineItems.push(item);
+  }
+
+  for (const row of damageRows) {
+    const pCode = row.part_code || "unresolved";
+    const side = row.side || "unknown";
+    const key = `${pCode}::${side}`;
+    let entry = map.get(key);
+    if (!entry) {
+      const altKey = Array.from(map.keys()).find((k) => k.startsWith(`${pCode}::`));
+      if (altKey) entry = map.get(altKey);
+    }
+    if (!entry) {
+      entry = {
+        partCode: pCode,
+        side,
+        displayName: label(pCode),
+        lineItems: [],
+        damageCodes: [],
+        photoCount: 0,
+        coverageState: row.coverage || "unresolved",
+        coverageReasons: [],
+        approvalStatus: "unclaimed",
+        statusText: "Unclaimed damage",
+      };
+      map.set(key, entry);
+    }
+    if (row.damage_codes?.length) {
+      entry.damageCodes = Array.from(new Set([...entry.damageCodes, ...row.damage_codes]));
+    }
+    entry.photoCount = Math.max(entry.photoCount, row.photo_count || 0);
+    if (row.coverage && row.coverage !== "unresolved") {
+      entry.coverageState = row.coverage;
+    }
+    if (row.reason_codes?.length) {
+      entry.coverageReasons = Array.from(new Set([...entry.coverageReasons, ...row.reason_codes]));
+    }
+  }
+
+  for (const cov of coverageList) {
+    const key = `${cov.part_code}::${cov.side}`;
+    let entry = map.get(key);
+    if (!entry) {
+      const altKey = Array.from(map.keys()).find((k) => k.startsWith(`${cov.part_code}::`));
+      if (altKey) entry = map.get(altKey);
+    }
+    if (entry) {
+      if (cov.state && (entry.coverageState === "not_photographed" || entry.coverageState === "unresolved")) {
+        entry.coverageState = cov.state;
+      }
+      if (cov.reasons?.length) {
+        entry.coverageReasons = Array.from(new Set([...entry.coverageReasons, ...cov.reasons]));
+      }
+      if (cov.covering_photo_ids?.length) {
+        entry.photoCount = Math.max(entry.photoCount, cov.covering_photo_ids.length);
+      }
+    }
+  }
+
+  for (const entry of map.values()) {
+    if (entry.lineItems.length > 0) {
+      const results = entry.lineItems.map((i) => i.overall_result);
+      if (results.includes("ok")) {
+        entry.approvalStatus = "approved";
+        entry.statusText = "Approved / Supported";
+      } else if (results.includes("unsupported")) {
+        entry.approvalStatus = "rejected";
+        entry.statusText = "Rejected (Unsupported)";
+      } else if (results.includes("insufficient_evidence")) {
+        entry.approvalStatus = "action_required";
+        entry.statusText = "Action Required (Missing Evidence)";
+      } else if (results.includes("cost_outlier")) {
+        entry.approvalStatus = "rejected";
+        entry.statusText = "Cost Outlier";
+      } else {
+        entry.approvalStatus = "not_evaluated";
+        entry.statusText = "Not Evaluated";
+      }
+    } else {
+      if (entry.damageCodes.length > 0) {
+        entry.approvalStatus = "unclaimed";
+        entry.statusText = "Unclaimed Damage (Potential Addition)";
+      } else {
+        entry.approvalStatus = "not_evaluated";
+        entry.statusText = "Intact (No Claim)";
+      }
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 function PrintReport({ id }: { id: string }) {
   const [params] = useSearchParams();
   const assessmentRev = params.get("assessment");
@@ -1585,6 +1773,7 @@ function PrintReport({ id }: { id: string }) {
     );
   if (!snapshot) return <Loading />;
   const { claim, assessment, review } = snapshot;
+  const meaningfulVersions = cleanPinnedVersions(assessment.versions);
   const footerText = [
     claim.reference,
     "Input " + assessment.input_revision,
@@ -1593,11 +1782,22 @@ function PrintReport({ id }: { id: string }) {
     assessment.evidence_sources?.image === "real"
       ? "Model results for photographs; demonstration fixtures for documents. Reference costs are synthetic."
       : "Demonstration fixtures. Reference costs are synthetic.",
-    ...Object.entries(assessment.versions).map(
-      ([key, value]) => key + ": " + value,
-    ),
+    ...meaningfulVersions.map(([key, value]) => key + ": " + value),
   ].join(" / ");
   const footerCssString = JSON.stringify(footerText);
+  const partSummaries = computePartCategorySummaries(
+    assessment.damage_summary,
+    assessment.line_items,
+    assessment.coverage,
+  );
+  const totalPrintedAmount = assessment.line_items.reduce(
+    (sum, item) => sum + (Number(item.printed_amount) || 0),
+    0,
+  );
+  const totalEffectiveAmount = assessment.line_items.reduce(
+    (sum, item) => sum + (Number(item.effective_amount) || 0),
+    0,
+  );
   return (
     <div className="print-report">
       <style>
@@ -1646,9 +1846,7 @@ function PrintReport({ id }: { id: string }) {
           </dd>
           <dt>Pinned versions</dt>
           <dd className="report-pinned-versions">
-            {Object.entries(assessment.versions)
-              .map(([key, value]) => `${key}: ${value}`)
-              .join(" / ")}
+            {formatPinnedVersions(assessment.versions)}
           </dd>
         </dl>
         <div className="fixture-banner">
@@ -1697,9 +1895,124 @@ function PrintReport({ id }: { id: string }) {
               </tr>
             ))}
           </tbody>
+          {assessment.line_items.length > 0 && (
+            <tfoot>
+              <tr className="report-table-total">
+                <td>
+                  <strong>Total</strong>
+                  <small>
+                    {
+                      assessment.line_items.filter(
+                        (i) => i.overall_result === "ok",
+                      ).length
+                    }{" "}
+                    of {assessment.line_items.length} items supported
+                  </small>
+                </td>
+                <td>
+                  <strong>{money(totalPrintedAmount, claim.currency)}</strong>
+                </td>
+                <td>
+                  <strong>{money(totalEffectiveAmount, claim.currency)}</strong>
+                </td>
+                <td>
+                  <small>Single-part basis &middot; Pre-tax</small>
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
         {!assessment.line_items.length && <p>No estimate rows available.</p>}
         <h2>Photographic coverage</h2>
+        <p className="report-basis">
+          Summary of evaluated vehicle part categories, photographic coverage, and
+          review determinations.
+        </p>
+        <table className="report-table" style={{ marginBottom: "24px" }}>
+          <thead>
+            <tr>
+              <th>Part Category</th>
+              <th>Photographic Coverage</th>
+              <th>Observed Damage</th>
+              <th>Review Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {partSummaries.map((p) => {
+              const isMissing =
+                p.coverageState === "not_photographed" ||
+                p.coverageState === "unresolved" ||
+                p.coverageState === "inadequate" ||
+                p.photoCount === 0 ||
+                p.approvalStatus === "action_required";
+              return (
+                <tr
+                  key={`${p.partCode}-${p.side}`}
+                  className={isMissing ? "row-missing-evidence" : undefined}
+                >
+                  <td>
+                    <strong>{p.displayName}</strong>
+                    <small>
+                      Side: {p.side !== "unknown" ? label(p.side) : "Not established"}
+                    </small>
+                  </td>
+                  <td>
+                    {isMissing ? (
+                      <span className="report-badge report-badge-missing">
+                        Missing Evidence ({p.photoCount} photos)
+                      </span>
+                    ) : (
+                      <span className="report-badge report-badge-approved">
+                        Adequate ({p.photoCount} photos)
+                      </span>
+                    )}
+                    {p.coverageReasons.length > 0 && (
+                      <small>
+                        {p.coverageReasons.map(reasonText).join("; ")}
+                      </small>
+                    )}
+                  </td>
+                  <td>
+                    {p.damageCodes.length > 0 ? (
+                      <strong>{p.damageCodes.map(label).join(", ")}</strong>
+                    ) : (
+                      <span className="muted">No damage detected</span>
+                    )}
+                  </td>
+                  <td>
+                    <span
+                      className={`report-badge report-badge-${
+                        p.approvalStatus === "approved"
+                          ? "approved"
+                          : p.approvalStatus === "rejected"
+                            ? "rejected"
+                            : p.approvalStatus === "action_required"
+                              ? "missing"
+                              : p.approvalStatus === "unclaimed"
+                                ? "unclaimed"
+                                : "neutral"
+                      }`}
+                    >
+                      {p.statusText}
+                    </span>
+                    {p.lineItems.length > 0 && (
+                      <small>
+                        Claimed: {p.lineItems.map((i) => i.operation).join(", ")} &middot;{" "}
+                        {money(
+                          p.lineItems.reduce(
+                            (sum, i) => sum + (Number(i.effective_amount) || 0),
+                            0,
+                          ),
+                          claim.currency,
+                        )}
+                      </small>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
         <DamageSummary
           rows={assessment.damage_summary}
           groups={assessment.part_summaries}
@@ -1734,21 +2047,32 @@ function PrintReport({ id }: { id: string }) {
         {[
           ...(snapshot.report?.open_additions ?? []),
           ...(snapshot.report?.withheld_additions ?? []),
-        ].map((a) => (
-          <p key={a.candidate_id}>
-            {a.part_code ?? "Unresolved"} / {a.side}: {a.reason.text}
-          </p>
-        ))}
+        ].length === 0 ? (
+          <p className="muted">None</p>
+        ) : (
+          [
+            ...(snapshot.report?.open_additions ?? []),
+            ...(snapshot.report?.withheld_additions ?? []),
+          ].map((a) => (
+            <p key={a.candidate_id}>
+              {a.part_code ?? "Unresolved"} / {a.side}: {a.reason.text}
+            </p>
+          ))
+        )}
         <h2>Pen-mark decisions</h2>
-        {snapshot.report?.mark_decisions.map((m) => (
-          <p key={m.mark_id}>
-            {label(m.mark_type)}: {m.state}, {label(m.origin)}.{" "}
-            {m.confirmed_amount !== null
-              ? money(m.confirmed_amount, claim.currency)
-              : ""}{" "}
-            {m.decided_by ?? "No decision recorded"}.
-          </p>
-        ))}
+        {!snapshot.report?.mark_decisions?.length ? (
+          <p className="muted">None</p>
+        ) : (
+          snapshot.report.mark_decisions.map((m) => (
+            <p key={m.mark_id}>
+              {label(m.mark_type)}: {m.state}, {label(m.origin)}.{" "}
+              {m.confirmed_amount !== null
+                ? money(m.confirmed_amount, claim.currency)
+                : ""}{" "}
+              {m.decided_by ?? "No decision recorded"}.
+            </p>
+          ))
+        )}
         <h2>Cost checks and dismissals</h2>
         {snapshot.report?.line_items.map((item) => (
           <p key={item.entry_id}>
@@ -1793,11 +2117,7 @@ function PrintReport({ id }: { id: string }) {
             &middot; Assessment {assessment.assessment_revision} &middot; Review{" "}
             {review.review_revision}
           </p>
-          <p>
-            {Object.entries(assessment.versions)
-              .map(([key, value]) => `${key}: ${value}`)
-              .join(" / ")}
-          </p>
+          <p>{formatPinnedVersions(assessment.versions)}</p>
         </div>
       </article>
     </div>

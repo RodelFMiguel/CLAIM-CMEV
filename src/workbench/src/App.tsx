@@ -847,6 +847,7 @@ function NewClaim() {
       if (!id) {
         const claim = await save<Claim>("/claims", {
           reference: form.get("reference") || reference,
+          surveyor: form.get("surveyor") || undefined,
           vehicle_make: form.get("vehicle_make"),
           vehicle_model: form.get("vehicle_model"),
           vehicle_year: Number(form.get("vehicle_year")),
@@ -939,6 +940,14 @@ function NewClaim() {
             <label>
               Policy number
               <input name="policy_number" placeholder="e.g. MOT/2026/884214" />
+            </label>
+            <label>
+              Surveyor
+              <input
+                name="surveyor"
+                placeholder="e.g. S. Kumar or Cheryl Ong"
+              />
+              <small>Auto-extracted from surveyor report if left blank</small>
             </label>
             <label>
               Vehicle make

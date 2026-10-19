@@ -69,6 +69,7 @@ class Login(StrictModel):
 
 class ClaimCreate(StrictModel):
     reference: str = Field(min_length=1, max_length=100)
+    surveyor: str | None = Field(default=None, max_length=100)
     vehicle_make: str = Field(min_length=1, max_length=80)
     vehicle_model: str = Field(min_length=1, max_length=100)
     vehicle_year: int = Field(ge=1950, le=2100)
@@ -348,8 +349,10 @@ def create_app(database_url=None, storage_path=None):
                        for r in db.scalars(select(Record).where(Record.kind == "claim"))):
                     fail(409, "reference_exists", "A claim already uses this reference.")
                 cid = uid()
+                s_name = body.surveyor.strip() if body.surveyor and body.surveyor.strip() else DEMO_USER["name"]
                 claim = {"claim_id": cid, "reference": body.reference.strip(), "policy_number": body.policy_number,
-                         "surveyor": DEMO_USER["name"], "owner_id": DEMO_USER["id"],
+                         "surveyor": s_name, "surveyor_manually_set": bool(body.surveyor and body.surveyor.strip()),
+                         "owner_id": DEMO_USER["id"],
                          "vehicle": {"make": body.vehicle_make, "model": body.vehicle_model, "year": body.vehicle_year,
                                      "plate": body.plate, "vehicle_class": body.vehicle_class},
                          "workshop": body.workshop, "loss_date": payload["loss_date"], "status": "awaiting_upload",
@@ -684,7 +687,12 @@ def create_app(database_url=None, storage_path=None):
                 fail(409, "review_revision_mismatch", "The requested frozen review does not match.")
             frozen = review_service.public(review)
             assessment = review["assessment_snapshot"]
-            return {"claim": review["claim_snapshot"], "assessment": assessment, "review": frozen, "report": review.get("report"),
+            claim_snap = dict(review["claim_snapshot"])
+            if claim_snap.get("surveyor") in (None, "", "Acery AI"):
+                current_claim = views.claim_view(db, claim_for(db, cid))
+                if current_claim.get("surveyor") and current_claim["surveyor"] != "Acery AI":
+                    claim_snap["surveyor"] = current_claim["surveyor"]
+            return {"claim": claim_snap, "assessment": assessment, "review": frozen, "report": review.get("report"),
                     "disclaimer": assessment["fixture_notice"] or "Synthetic reference costs; not a final approval."}
 
     @app.get("/api/v1/admin/dead-letters")

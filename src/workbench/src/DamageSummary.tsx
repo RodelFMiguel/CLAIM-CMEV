@@ -81,7 +81,7 @@ const reasons: Record<string, string> = {
   coverage_confirmation_views_mismatch:
     "The confirmed photographs do not include a view that passes the coverage checks.",
 };
-const reasonText = (code: string) =>
+export const reasonText = (code: string) =>
   reasons[code] ?? `Review reason: ${label(code)}.`;
 
 interface DefectColorDef {

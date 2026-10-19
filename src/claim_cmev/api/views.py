@@ -26,7 +26,7 @@ from ..messaging.outbox import backlog
 from ..orchestration import state
 from ..orchestration.plan import BRANCH_OF, STAGES
 from ..persistence.tables import assessments, current_pointer, branch_state, jobs
-from ..runtime import get, Record
+from ..runtime import get, put, Record
 
 OPEN_RESULTS = ("unsupported", "cost_outlier", "insufficient_evidence")
 _MARK_TEXT = {
@@ -136,6 +136,23 @@ def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None,
     """
     view = deepcopy(dict(claim))
     cid, rev = claim["claim_id"], claim["input_revision"]
+    if view.get("surveyor") in (None, "", "Acery AI"):
+        from ..documents.surveyor import extract_surveyor_name
+        from ..persistence.tables import stage_records
+        box_rows = db.execute(
+            select(stage_records.c.body).where(
+                stage_records.c.claim_id == cid,
+                stage_records.c.record_kind == "page_text_box",
+            )
+        ).scalars().all()
+        if box_rows:
+            extracted = extract_surveyor_name(box_rows)
+            if extracted:
+                view["surveyor"] = extracted
+                claim_rec = get(db, "claim:" + cid)
+                if claim_rec and not claim_rec.get("surveyor_manually_set"):
+                    claim_rec["surveyor"] = extracted
+                    put(db, "claim:" + cid, "claim", claim_rec, cid)
     pointer = pointer_row(db, cid) if snapshot is None else snapshot["pointers"].get(cid)
     current = pointer is not None and pointer["input_revision"] == rev
     bs = (state.branch_row(db, cid, rev) if rev else None) if snapshot is None else snapshot["branches"].get((cid, rev))

@@ -2060,6 +2060,47 @@ h3 {
 .report-table strong {
   font-weight: 600;
 }
+.report-table tfoot td {
+  border-top: 2px solid #587482;
+  font-weight: 700;
+  background: #f8fafc;
+}
+.report-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.report-badge-approved {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+.report-badge-rejected {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+.report-badge-missing {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+.report-badge-unclaimed {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+.report-badge-neutral {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+.row-missing-evidence {
+  background: #fffdf5;
+}
 .report-versions {
   font-size: 9px;
   color: #91a1a9;

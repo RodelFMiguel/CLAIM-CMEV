@@ -27,11 +27,12 @@ from ..contracts.common import ContractError, Provenance
 from ..contracts.documents import with_effective_price
 from ..costs.reference import CostTableError, PinnedCostTable, active_table_version, load_table
 from ..documents.pen_marks import MarkAction, apply_mark_action
+from ..documents.surveyor import extract_surveyor_from_pages
 from ..messaging.consumer import Context, PermanentError
 from ..messaging.outbox import build_message
 from ..persistence.store import load_records
 from ..persistence.tables import assessments, current_pointer
-from ..runtime import get
+from ..runtime import get, put
 from . import state
 from .corrections import apply_corrections, review_events
 from .intake import contract_vehicle_class
@@ -131,6 +132,12 @@ class Consolidator:
             created_at=ctx.now))
         if not superseded:
             self._advance_pointer(session, pointer, claim_id, rev, assessment_revision, body, items, ctx.now)
+        extracted_surveyor = extract_surveyor_from_pages(records.get("document_page", []))
+        if extracted_surveyor and (claim.get("surveyor") in (None, "", "Acery AI") or not claim.get("surveyor_manually_set")):
+            claim_rec = get(session, "claim:" + claim_id)
+            if claim_rec:
+                claim_rec["surveyor"] = extracted_surveyor
+                put(session, "claim:" + claim_id, "claim", claim_rec, claim_id)
         job = ctx.job or {}
         message = build_message(READY_TOPIC, claim_id=claim_id, input_revision=rev, task="consolidate",
                                 versions=env.versions, provenance=ctx.provenance(), trace_id=env.trace_id,
