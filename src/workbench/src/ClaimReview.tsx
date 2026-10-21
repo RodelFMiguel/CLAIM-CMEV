@@ -27,7 +27,6 @@ import {
   ExternalLink,
   FileText,
   Info,
-  Layers,
   Loader2,
   Maximize2,
   MinusCircle,
@@ -363,7 +362,6 @@ function ReviewOverview({ id }: { id: string }) {
   const [showEvidenceModal, setShowEvidenceModal] = useState(false);
   const [showReopeningModal, setShowReopeningModal] = useState(false);
   const [evidenceTab, setEvidenceTab] = useState<"photos" | "pages">("photos");
-  const [estimateViewMode, setEstimateViewMode] = useState<"clean" | "annotated">("clean");
   const [popupEvidence, setPopupEvidence] = useState<{
     kind: "file";
     file: Evidence;
@@ -371,7 +369,6 @@ function ReviewOverview({ id }: { id: string }) {
     kind: "page";
     page: DocumentPage;
     name: string;
-    clean?: boolean;
   } | null>(null);
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<PendingAction | null>(null);
@@ -1684,30 +1681,8 @@ function ReviewOverview({ id }: { id: string }) {
                 <>
                   {correctedPages.length > 0 ? (
                     <>
-                      <div className="evidence-mode-toggle-wrap">
-                        <div className="evidence-mode-toggle" role="group" aria-label="Estimate page display mode">
-                          <button
-                            type="button"
-                            className={`mode-toggle-btn ${estimateViewMode === "clean" ? "active" : ""}`}
-                            onClick={() => setEstimateViewMode("clean")}
-                            title="Show original estimate document without annotations"
-                          >
-                            <FileText size={12} /> Original Document
-                          </button>
-                          <button
-                            type="button"
-                            className={`mode-toggle-btn ${estimateViewMode === "annotated" ? "active" : ""}`}
-                            onClick={() => setEstimateViewMode("annotated")}
-                            title="Show AI-detected line items and pen marks"
-                          >
-                            <Layers size={12} /> AI Detections
-                          </button>
-                        </div>
-                      </div>
                       <label className="evidence-select">
-                        {estimateViewMode === "clean"
-                          ? "Estimate page (Original document)"
-                          : "Estimate page (AI Annotated)"}
+                        Estimate page
                         <select
                           value={currentPage?.page_id ?? ""}
                           onChange={(e) => {
@@ -1726,45 +1701,24 @@ function ReviewOverview({ id }: { id: string }) {
                         </select>
                       </label>
                       {currentPage?.corrected_url && (
-                        estimateViewMode === "clean" ? (
-                          <div
-                            className="evidence-preview-wrap clickable"
-                            onClick={() => {
-                              const pFile = files.find((f) => f.file_id === currentPage.file_id);
-                              const pTitle = `${pFile?.original_name ?? "Estimate"} · Page ${currentPage.page_number}`;
-                              setPopupEvidence({ kind: "page", page: currentPage, name: pTitle, clean: true });
-                            }}
-                            title="Click to inspect original document page"
-                          >
-                            <img
-                              src={currentPage.corrected_url}
-                              alt={`Estimate page ${currentPage.page_number}`}
-                              style={{ display: "block", width: "100%", borderRadius: "4px" }}
-                            />
-                          </div>
-                        ) : (
-                          <div
-                            className="evidence-preview-wrap clickable"
-                            onClick={() => {
-                              const pFile = files.find((f) => f.file_id === currentPage.file_id);
-                              const pTitle = `${pFile?.original_name ?? "Estimate"} · Page ${currentPage.page_number}`;
-                              setPopupEvidence({ kind: "page", page: currentPage, name: pTitle, clean: false });
-                            }}
-                            title="Click to inspect annotated estimate page"
-                          >
-                            <CorrectedPageView
-                              page={currentPage}
-                              rows={assessment.line_items}
-                              marks={assessment.marks}
-                              selectedRow={selectedRow}
-                            />
-                          </div>
-                        )
+                        <div
+                          className="evidence-preview-wrap clickable"
+                          onClick={() => {
+                            const pFile = files.find((f) => f.file_id === currentPage.file_id);
+                            const pTitle = `${pFile?.original_name ?? "Estimate"} · Page ${currentPage.page_number}`;
+                            setPopupEvidence({ kind: "page", page: currentPage, name: pTitle });
+                          }}
+                          title="Click to inspect original document page"
+                        >
+                          <img
+                            src={currentPage.corrected_url}
+                            alt={`Estimate page ${currentPage.page_number}`}
+                            style={{ display: "block", width: "100%", borderRadius: "4px" }}
+                          />
+                        </div>
                       )}
                       <p className="evidence-caption">
-                        {estimateViewMode === "clean"
-                          ? "Original estimate report · Untampered document without model annotations."
-                          : "Blue: extracted rows. Red: proposed or confirmed marks. Grey: rejected marks."}
+                        Original estimate document page without model annotations.
                       </p>
                       <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
                         <button
@@ -1784,12 +1738,10 @@ function ReviewOverview({ id }: { id: string }) {
                               kind: "page",
                               page: currentPage,
                               name: pTitle,
-                              clean: estimateViewMode === "clean",
                             });
                           }}
                         >
-                          <Maximize2 size={14} />
-                          {estimateViewMode === "clean" ? "Inspect full-size document" : "Inspect annotated page"}
+                          <Maximize2 size={14} /> Inspect full-size document
                         </button>
                         {rawEstimateFile && (
                           <button
@@ -1936,25 +1888,33 @@ function ReviewOverview({ id }: { id: string }) {
                       >
                         <ExternalLink size={14} /> Open in new browser tab
                       </a>
-                      <a
-                        className="button button-small"
-                        href={`${page.corrected_url}?download=1`}
-                        download={`estimate_page_${page.page_id}.png`}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-                      >
-                        <Download size={14} /> Download page
-                      </a>
-                      {rawEstimateFile && (
-                        <a
-                          className="button button-outline button-small"
-                          href={`${rawEstimateFile.url}?download=1`}
-                          download={rawEstimateFile.original_name}
-                          style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-                          title={`Download original file: ${rawEstimateFile.original_name}`}
-                        >
-                          <Download size={14} /> Download original PDF
-                        </a>
-                      )}
+                      {(() => {
+                        if (rawEstimateFile) {
+                          const isPdf =
+                            rawEstimateFile.media_type === "application/pdf" ||
+                            rawEstimateFile.original_name.toLowerCase().endsWith(".pdf");
+                          return (
+                            <a
+                              className="button button-small"
+                              href={`${rawEstimateFile.url}?download=1`}
+                              download={rawEstimateFile.original_name}
+                              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                            >
+                              <Download size={14} /> Download {isPdf ? "PDF" : "document"}
+                            </a>
+                          );
+                        }
+                        return (
+                          <a
+                            className="button button-small"
+                            href={`${page.corrected_url}?download=1`}
+                            download={`estimate_page_${page.page_id}.png`}
+                            style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                          >
+                            <Download size={14} /> Download page
+                          </a>
+                        );
+                      })()}
                     </div>
                   </>
                 ) : file ? (
@@ -1979,14 +1939,27 @@ function ReviewOverview({ id }: { id: string }) {
                       >
                         <ExternalLink size={14} /> Open in new browser tab
                       </a>
-                      <a
-                        className="button button-small"
-                        href={`${file.url}?download=1`}
-                        download={file.original_name}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-                      >
-                        <Download size={14} /> Download {file.role === "photograph" || file.media_type.startsWith("image/") ? "photo" : "document"}
-                      </a>
+                      {(() => {
+                        const isPdf =
+                          file.media_type === "application/pdf" ||
+                          file.original_name.toLowerCase().endsWith(".pdf");
+                        return (
+                          <a
+                            className="button button-small"
+                            href={`${file.url}?download=1`}
+                            download={file.original_name}
+                            style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                          >
+                            <Download size={14} /> Download{" "}
+                            {isPdf
+                              ? "PDF"
+                              : file.role === "photograph" ||
+                                file.media_type.startsWith("image/")
+                              ? "photo"
+                              : "document"}
+                          </a>
+                        );
+                      })()}
                     </div>
                   </>
                 ) : (
@@ -2010,9 +1983,7 @@ function ReviewOverview({ id }: { id: string }) {
                       popupEvidence.file.media_type.startsWith("image/")
                       ? "Vehicle Photograph · Original Evidence"
                       : "Estimate Document · Original Evidence"
-                    : popupEvidence.clean
-                    ? `Page ${popupEvidence.page.page_number} · Original Document (Unannotated)`
-                    : `Page ${popupEvidence.page.page_number} · AI Overlays & OCR Extracted Rows`
+                    : `Page ${popupEvidence.page.page_number} · Original Document`
                 }
                 onClose={() => setPopupEvidence(null)}
               >
@@ -2038,97 +2009,86 @@ function ReviewOverview({ id }: { id: string }) {
                       >
                         <ExternalLink size={14} /> Open in new browser tab
                       </a>
-                      <a
-                        className="button button-small"
-                        href={`${popupEvidence.file.url}?download=1`}
-                        download={popupEvidence.file.original_name}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-                      >
-                        <Download size={14} /> Download {popupEvidence.file.role === "photograph" || popupEvidence.file.media_type.startsWith("image/") ? "photo" : "document"}
-                      </a>
+                      {(() => {
+                        const isPdf =
+                          popupEvidence.file.media_type === "application/pdf" ||
+                          popupEvidence.file.original_name.toLowerCase().endsWith(".pdf");
+                        return (
+                          <a
+                            className="button button-small"
+                            href={`${popupEvidence.file.url}?download=1`}
+                            download={popupEvidence.file.original_name}
+                            style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                          >
+                            <Download size={14} /> Download{" "}
+                            {isPdf
+                              ? "PDF"
+                              : popupEvidence.file.role === "photograph" ||
+                                popupEvidence.file.media_type.startsWith("image/")
+                              ? "photo"
+                              : "document"}
+                          </a>
+                        );
+                      })()}
                     </div>
                   </>
                 ) : (
                   <>
-                    {popupEvidence.clean ? (
-                      popupEvidence.page.corrected_url ? (
-                        <EvidenceImage
-                          url={popupEvidence.page.corrected_url}
-                          alt={`Estimate page ${popupEvidence.page.page_number}`}
-                        />
-                      ) : null
-                    ) : (
-                      <>
-                        <CorrectedPageView
-                          page={popupEvidence.page}
-                          rows={assessment.line_items}
-                          marks={assessment.marks}
-                          selectedRow={selectedRow}
-                        />
-                        <p className="evidence-dialog-note">
-                          Blue: extracted rows. Red: proposed or confirmed marks. Grey: rejected marks.
-                        </p>
-                      </>
-                    )}
+                    {popupEvidence.page.corrected_url ? (
+                      <EvidenceImage
+                        url={popupEvidence.page.corrected_url}
+                        alt={`Estimate page ${popupEvidence.page.page_number}`}
+                      />
+                    ) : null}
                     <div
                       style={{
                         marginTop: "14px",
                         display: "flex",
-                        justifyContent: "space-between",
+                        justifyContent: "flex-end",
                         alignItems: "center",
                         gap: "10px",
                         flexWrap: "wrap",
                       }}
                     >
-                      <button
-                        type="button"
+                      <a
                         className="button button-outline button-small"
-                        onClick={() =>
-                          setPopupEvidence((prev) =>
-                            prev && prev.kind === "page"
-                              ? { ...prev, clean: !prev.clean }
-                              : prev,
-                          )
-                        }
+                        href={rawEstimateFile?.url || popupEvidence.page.corrected_url || "#"}
+                        target="_blank"
+                        rel="noreferrer"
                         style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
                       >
-                        {popupEvidence.clean ? <Layers size={14} /> : <FileText size={14} />}
-                        {popupEvidence.clean ? "Switch to AI Detections" : "Switch to Original Document"}
-                      </button>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                        {popupEvidence.page.corrected_url && (
-                          <>
+                        <ExternalLink size={14} /> Open in new browser tab
+                      </a>
+                      {(() => {
+                        if (rawEstimateFile) {
+                          const isPdf =
+                            rawEstimateFile.media_type === "application/pdf" ||
+                            rawEstimateFile.original_name.toLowerCase().endsWith(".pdf");
+                          return (
                             <a
-                              className="button button-outline button-small"
-                              href={popupEvidence.page.corrected_url}
-                              target="_blank"
-                              rel="noreferrer"
+                              className="button button-small"
+                              href={`${rawEstimateFile.url}?download=1`}
+                              download={rawEstimateFile.original_name}
                               style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
                             >
-                              <ExternalLink size={14} /> Open in new browser tab
+                              <Download size={14} /> Download {isPdf ? "PDF" : "document"}
                             </a>
+                          );
+                        }
+                        if (popupEvidence.page.corrected_url) {
+                          return (
                             <a
                               className="button button-small"
                               href={`${popupEvidence.page.corrected_url}?download=1`}
                               download={`estimate_page_${popupEvidence.page.page_id}.png`}
                               style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
                             >
-                              <Download size={14} /> Download page image
+                              <Download size={14} /> Download image
                             </a>
-                          </>
-                        )}
-                        {rawEstimateFile && (
-                          <a
-                            className="button button-outline button-small"
-                            href={`${rawEstimateFile.url}?download=1`}
-                            download={rawEstimateFile.original_name}
-                            style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-                            title={`Download original file: ${rawEstimateFile.original_name}`}
-                          >
-                            <Download size={14} /> Download original PDF
-                          </a>
-                        )}
-                      </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </>
                 )}
