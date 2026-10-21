@@ -117,7 +117,12 @@ def test_upload_decode_dedup_cross_claim_and_outbox(setup):
     assert result.status_code == 201
     fid = result.json()["files"][0]["file_id"]
     assert upload(client, cid).json()["files"][0]["file_id"] == fid
-    assert client.get(f"/api/v1/claims/{cid}/evidence/{fid}").content == png()
+    res_inline = client.get(f"/api/v1/claims/{cid}/evidence/{fid}")
+    assert res_inline.content == png()
+    assert res_inline.headers.get("content-disposition") == "inline"
+    res_download = client.get(f"/api/v1/claims/{cid}/evidence/{fid}?download=1")
+    assert res_download.content == png()
+    assert "attachment" in res_download.headers.get("content-disposition", "")
     other = sample(client)["claim_id"]
     assert client.get(f"/api/v1/claims/{other}/evidence/{fid}").status_code == 403
     assert post(client, f"/claims/{other}/input-revisions", {"file_ids": [fid]}).status_code == 409

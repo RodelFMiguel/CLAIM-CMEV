@@ -438,7 +438,7 @@ def create_app(database_url=None, storage_path=None):
                               if not r.data.get("fixture_placeholder")]}
 
     @app.get("/api/v1/claims/{cid}/evidence/{fid}")
-    def evidence(cid: str, fid: str):
+    def evidence(cid: str, fid: str, request: Request):
         with database.session() as db:
             claim_for(db, cid)
             item = get(db, "file:" + fid)
@@ -448,11 +448,14 @@ def create_app(database_url=None, storage_path=None):
                 fail(403, "evidence_claim_mismatch", "Evidence belongs to another claim.")
             if item.get("fixture_placeholder"):
                 fail(404, "fixture_original_absent", "This fixture reference has no stored original.")
+        download = request.query_params.get("download") == "1"
+        filename = (item.get("original_name") or fid).replace('"', '')
+        disposition = f'attachment; filename="{filename}"' if download else "inline"
         return Response(storage.read(fid), media_type=item["media_type"],
-                        headers={"ETag": '"' + item["sha256"] + '"', "Content-Disposition": "inline"})
+                        headers={"ETag": '"' + item["sha256"] + '"', "Content-Disposition": disposition})
 
     @app.get("/api/v1/claims/{cid}/assessments/{revision}/pages/{pid}/corrected")
-    def corrected_page(cid: str, revision: int, pid: str):
+    def corrected_page(cid: str, revision: int, pid: str, request: Request):
         from ..contracts.common import ArtifactRef
         from ..documents.worker_common import read_verified
         from ..messaging.consumer import PermanentError, TransientError
@@ -469,8 +472,10 @@ def create_app(database_url=None, storage_path=None):
             fail(409, "evidence_unavailable", "The corrected page is missing or its integrity check failed.")
         except TransientError:
             fail(503, "evidence_unavailable", "The evidence store is unavailable.")
+        download = request.query_params.get("download") == "1"
+        disposition = f'attachment; filename="estimate_page_{pid}.png"' if download else "inline"
         return Response(data, media_type=ref.media_type, headers={"ETag": '"' + ref.sha256 + '"',
-                        "Content-Disposition": "inline", "Cache-Control": "private, no-cache"})
+                        "Content-Disposition": disposition, "Cache-Control": "private, no-cache"})
 
     @app.post("/api/v1/claims/{cid}/input-revisions", status_code=202)
     def commit_input(cid: str, body: InputCreate, request: Request):

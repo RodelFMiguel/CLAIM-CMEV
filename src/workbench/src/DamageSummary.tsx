@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { EvidenceDialog, EvidenceImage } from "./EvidenceDialog";
-import { Undo2, AlertTriangle, X, CheckCircle2, Image as ImageIcon } from "lucide-react";
+import {
+  Undo2,
+  AlertTriangle,
+  X,
+  CheckCircle2,
+  Image as ImageIcon,
+  Download,
+  ExternalLink,
+} from "lucide-react";
 import partOptions from "./partOptions.json";
 
 // Display only: identity, coverage and assignment decisions remain owned by M2/M3.
@@ -675,7 +683,49 @@ function DamageEvidenceView({
             onHover={setHoveredId}
           />
           <figcaption className="damage-photo-figcaption">
-            <strong>{photo.name}</strong>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "8px",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}
+            >
+              <strong>{photo.name}</strong>
+              <div style={{ display: "inline-flex", gap: "8px" }}>
+                <a
+                  className="button button-outline button-small"
+                  href={photo.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    padding: "3px 8px",
+                    fontSize: "11px",
+                  }}
+                >
+                  <ExternalLink size={12} /> Open tab
+                </a>
+                <a
+                  className="button button-small"
+                  href={`${photo.url}?download=1`}
+                  download={photo.name}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    padding: "3px 8px",
+                    fontSize: "11px",
+                  }}
+                >
+                  <Download size={12} /> Download photo
+                </a>
+              </div>
+            </div>
             {photo.observations.length > 0 ? (
               <div className="damage-photo-obs-list">
                 {photo.observations.map((o) => {

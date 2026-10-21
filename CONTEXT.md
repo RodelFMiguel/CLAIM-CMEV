@@ -2,6 +2,32 @@
 
 Latest M2 damage model status (2026-10-19): Retrained and deployed SegFormer-B3 on **CarDD** (`damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`). Validation foreground mIoU on CarDD is **0.7283** (72.83%) with dent precision **73.79%** and background IoU **92.71%**. Model is verified active in `configs/models/damage.yaml`, mounted into containers, and verified live in end-to-end claim reviews.
 
+## Clean vs. Annotated Estimate Page Toggle & Evidence Download Buttons (2026-10-22)
+
+- **Changed paths:**
+  - `src/claim_cmev/api/main.py`:
+    - Updated `/api/v1/claims/{cid}/evidence/{fid}` and `/api/v1/claims/{cid}/assessments/{revision}/pages/{pid}/corrected` to accept `request: Request` and inspect `?download=1`. When requested, returns `Content-Disposition: attachment; filename="..."` to trigger browser download for any file or page image.
+  - `src/workbench/src/styles.css`:
+    - Added CSS rules for `.evidence-mode-toggle-wrap`, `.evidence-mode-toggle`, and `.mode-toggle-btn` (.active, hover, icons) for the clean document vs AI detections toggle pill.
+  - `src/workbench/src/ClaimReview.tsx`:
+    - Under `activeEvidenceTab === "pages"` in the Evidence sidebar, defaulted to showing the clean untampered document image without AI bounding boxes, matching `Damage Photos`.
+    - Added segmented control toggle (`[ 📄 Original Document ]` vs `[ 🏷️ AI Detections ]`) to switch between clean document and AI model overlays on demand.
+    - Added dedicated `[ ⬇ Download ... ]` buttons in all enlarged modal popups (`popupEvidence` and `rowPopup`) beside `[ ↗ Open in new browser tab ]`.
+    - In `popupEvidence` lightbox for pages, added an in-dialog toggle (`[ Switch to AI Detections ]` / `[ Switch to Original Document ]`) along with `[ ⬇ Download page image ]` and `[ ⬇ Download original PDF ]`.
+  - `src/workbench/src/DamageSummary.tsx`:
+    - In `DamageEvidenceView` lightbox, added an action header bar to each photo figure with `[ ↗ Open tab ]` and `[ ⬇ Download photo ]`.
+  - `tests/backend/test_baseline.py`:
+    - Added test assertions verifying `Content-Disposition: inline` for standard evidence viewing and `attachment` when `?download=1` is provided.
+- **Decisions and status:**
+  - Solved inconsistency between damage photos and estimate pages: the estimate page tab no longer forces AI bounding boxes onto the reviewer by default, avoiding visual clutter while preserving full access to model annotations via the toggle and row-level `[ View evidence ]` buttons.
+  - Reviewers can now directly download photos and documents from any lightbox popup with one click.
+- **Validation evidence:**
+  - Docker container web build (`tsc -b && vite build`) passed with zero errors.
+  - Docker container api build passed and container healthchecks are green.
+  - Backend integration test suite `tests/backend/test_baseline.py` passed 100% (17/17 passed).
+- **Next concrete step:**
+  - Review live UI on `http://127.0.0.1:8080` and commit changes to git.
+
 ## Fixed Assessment Reassessment Pipeline Errors (Summary & Consolidate) for CLM-24041 (2026-10-20)
 
 - **Changed paths:**
