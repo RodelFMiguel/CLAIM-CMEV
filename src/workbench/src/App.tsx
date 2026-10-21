@@ -1062,12 +1062,12 @@ function NewClaim() {
               <input name="policy_number" placeholder="e.g. MOT/2026/884214" />
             </label>
             <label>
-              Surveyor
+              Field Surveyor
               <input
                 name="surveyor"
                 placeholder="e.g. S. Kumar or Cheryl Ong"
               />
-              <small>Auto-extracted from surveyor report if left blank</small>
+              <small>Auto-extracted from survey report if left blank</small>
             </label>
             <label>
               Vehicle make
