@@ -2,6 +2,21 @@
 
 Latest M2 damage model status (2026-10-19): Retrained and deployed SegFormer-B3 on **CarDD** (`damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`). Validation foreground mIoU on CarDD is **0.7283** (72.83%) with dent precision **73.79%** and background IoU **92.71%**. Model is verified active in `configs/models/damage.yaml`, mounted into containers, and verified live in end-to-end claim reviews.
 
+## Auto-Positioning for Missed Pen Mark Actions (2026-10-22)
+
+- **Changed paths:**
+  - `src/workbench/src/ReviewControls.tsx`:
+    - In `MissedMarkModal` ("Add Missed Pen Mark"), removed the 4 mandatory normalized floating-point coordinate inputs (`X0`, `Y0`, `X1`, `Y1`).
+    - Mark location now automatically defaults to the line item's existing bounding box (`row.row_box_norm`) and page ID, aligning with backend behavior in `_v_add_mark`.
+    - Added an auto-detected document position indicator and kept an optional collapsed `<details>` section for advanced coordinate overrides if ever required.
+- **Decisions and status:**
+  - Solved major surveyor friction: eliminated unrealistic requirement for surveyors to type raw floating-point coordinates (e.g. 0.12, 0.45) when recording undetected pen marks. Surveyors now only select mark type (exclusion vs. price change) and amount.
+- **Validation evidence:**
+  - Docker container web build (`tsc -b && vite build`) passed with zero errors.
+  - Container `claim-cmev-cmev-web-1` recreated and verified healthy (`wget /healthz` -> `ok`).
+- **Next concrete step:**
+  - Verify "Add Missed Pen Mark" modal in workbench at `http://127.0.0.1:8080`.
+
 ## Pure Original Document in Evidence Panel & Format-Aware Single Download Button (2026-10-22)
 
 - **Changed paths:**

@@ -593,16 +593,47 @@ function MissedMarkModal({
     setError("");
     const f = new FormData(e.currentTarget);
 
-    const x0 = Number(f.get("x0"));
-    const y0 = Number(f.get("y0"));
-    const x1 = Number(f.get("x1"));
-    const y1 = Number(f.get("y1"));
+    const rawX0 = f.get("x0");
+    const rawY0 = f.get("y0");
+    const rawX1 = f.get("x1");
+    const rawY1 = f.get("y1");
 
-    if (x0 >= x1 || y0 >= y1) {
-      setError(
-        "Invalid coordinates: X0 must be less than X1 and Y0 must be less than Y1.",
-      );
-      return;
+    let boxNorm: number[] | undefined = undefined;
+    if (
+      rawX0 !== null &&
+      rawX0 !== "" &&
+      rawY0 !== null &&
+      rawY0 !== "" &&
+      rawX1 !== null &&
+      rawX1 !== "" &&
+      rawY1 !== null &&
+      rawY1 !== ""
+    ) {
+      const x0 = Number(rawX0);
+      const y0 = Number(rawY0);
+      const x1 = Number(rawX1);
+      const y1 = Number(rawY1);
+
+      if (
+        isNaN(x0) ||
+        isNaN(y0) ||
+        isNaN(x1) ||
+        isNaN(y1) ||
+        x0 >= x1 ||
+        y0 >= y1 ||
+        x0 < 0 ||
+        y0 < 0 ||
+        x1 > 1 ||
+        y1 > 1
+      ) {
+        setError(
+          "Invalid coordinates: X0 must be less than X1, Y0 must be less than Y1, and all must be between 0.0 and 1.0.",
+        );
+        return;
+      }
+      boxNorm = [x0, y0, x1, y1];
+    } else if (row.row_box_norm && row.row_box_norm.length === 4) {
+      boxNorm = row.row_box_norm;
     }
 
     setIsSubmitting(true);
@@ -612,7 +643,7 @@ function MissedMarkModal({
         entry_id: row.entry_id,
         page_id: row.page_id,
         mark_type: kind,
-        box_norm: [x0, y0, x1, y1],
+        ...(boxNorm ? { box_norm: boxNorm } : {}),
         ...(kind === "price_change" ? { amount: f.get("amount") } : {}),
         note: String(f.get("note") || "") || null,
       });
@@ -670,7 +701,8 @@ function MissedMarkModal({
             <div className="modal-guidance-banner banner-info">
               <Info size={16} className="banner-icon" />
               <div className="banner-content">
-                <strong>Pen Mark Entry:</strong> Record an un-detected surveyor pen stroke (strike-through exclusion or handwritten price revision) on <strong>{displayPage}</strong>. Coordinates are normalized bounds (0.0 to 1.0).
+                <strong>Pen Mark Entry:</strong> Record an un-detected surveyor pen stroke (strike-through exclusion or handwritten price revision) on <strong>{displayPage}</strong>.
+                The mark will be automatically linked to this line item on the estimate document.
               </div>
             </div>
 
@@ -700,14 +732,51 @@ function MissedMarkModal({
               </select>
             </label>
 
-            <div className="coordinate-section" style={{ marginBottom: "14px" }}>
-              <div className="coordinate-section-header">
-                <span className="quick-confirm-label">
-                  Bounding Box Coordinates
-                </span>
-                <span className="coordinate-hint">Normalized bounds (0.0 &ndash; 1.0)</span>
-              </div>
-              <div className="coordinate-fields-grid">
+            <div
+              style={{
+                marginBottom: "14px",
+                padding: "10px 14px",
+                background: "#f8fafc",
+                borderRadius: "6px",
+                border: "1px solid #e2e8f0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}
+            >
+              <span style={{ fontSize: "12px", color: "#475569", fontWeight: 500 }}>
+                Target Document Location:
+              </span>
+              <span
+                style={{
+                  fontSize: "12px",
+                  color: "#0284c7",
+                  fontWeight: 600,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                }}
+              >
+                <CheckCircle2 size={14} /> Auto-linked to {displayPage} row
+              </span>
+            </div>
+
+            <details style={{ marginBottom: "14px", fontSize: "12px", color: "#64748b" }}>
+              <summary
+                style={{
+                  cursor: "pointer",
+                  userSelect: "none",
+                  color: "#64748b",
+                  fontWeight: 500,
+                  fontSize: "12px",
+                  padding: "4px 0",
+                }}
+              >
+                ⚙ Custom bounding box coordinates (optional)
+              </summary>
+              <div className="coordinate-fields-grid" style={{ marginTop: "8px" }}>
                 <div className="coordinate-card">
                   <div className="coordinate-card-label">
                     <span className="coord-name">X0</span>
@@ -719,7 +788,7 @@ function MissedMarkModal({
                     min="0"
                     max="1"
                     step="any"
-                    required
+                    defaultValue={row.row_box_norm?.[0] !== undefined ? Number(row.row_box_norm[0].toFixed(3)) : ""}
                     placeholder="0.10"
                     disabled={locked || isSubmitting}
                     className="coord-input"
@@ -737,7 +806,7 @@ function MissedMarkModal({
                     min="0"
                     max="1"
                     step="any"
-                    required
+                    defaultValue={row.row_box_norm?.[1] !== undefined ? Number(row.row_box_norm[1].toFixed(3)) : ""}
                     placeholder="0.20"
                     disabled={locked || isSubmitting}
                     className="coord-input"
@@ -755,7 +824,7 @@ function MissedMarkModal({
                     min="0"
                     max="1"
                     step="any"
-                    required
+                    defaultValue={row.row_box_norm?.[2] !== undefined ? Number(row.row_box_norm[2].toFixed(3)) : ""}
                     placeholder="0.80"
                     disabled={locked || isSubmitting}
                     className="coord-input"
@@ -773,17 +842,17 @@ function MissedMarkModal({
                     min="0"
                     max="1"
                     step="any"
-                    required
+                    defaultValue={row.row_box_norm?.[3] !== undefined ? Number(row.row_box_norm[3].toFixed(3)) : ""}
                     placeholder="0.30"
                     disabled={locked || isSubmitting}
                     className="coord-input"
                   />
                 </div>
               </div>
-              <div className="coordinate-footer-tip">
-                Bounds specify the box rectangle on the estimate page (where 0.0, 0.0 is top-left and 1.0, 1.0 is bottom-right).
+              <div className="coordinate-footer-tip" style={{ marginTop: "6px" }}>
+                By default, the mark is automatically positioned around this line item. You only need to edit these numbers if you want to pin a custom box.
               </div>
-            </div>
+            </details>
 
             {kind === "price_change" && (
               <label
