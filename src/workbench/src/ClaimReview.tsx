@@ -335,6 +335,33 @@ const actionText = (a: Action) =>
 const label = (value: string) =>
   value.replaceAll("_", " ").replaceAll("-", " ");
 
+// Mark states that leave a row's amount undecided (WITHHOLDING_STATES in documents/pen_marks/rows.py).
+const UNDECIDED_MARK_STATES = new Set(["pending", "conflicting", "unlinked_candidate"]);
+
+/** The agreed total, or null while any amount is undecided: a withheld amount never counts as
+ *  zero and a pending price change never falls back to the printed amount. Confirmed
+ *  exclusions count as zero. Mirrors `_compute_effective_total` in api/views.py. */
+function agreedTotal(items: LineItem[], marks: Mark[] = []) {
+  let total = 0;
+  let undecidedRows = 0;
+  for (const item of items) {
+    if (item.row_state === "excluded") continue;
+    if (UNDECIDED_MARK_STATES.has(item.mark_state) || item.effective_amount == null) undecidedRows += 1;
+    else total += Number(item.effective_amount);
+  }
+  const unlinkedMarks = marks.filter((m) => m.entry_id == null && m.state !== "rejected").length;
+  return { total: undecidedRows || unlinkedMarks ? null : total, undecidedRows, unlinkedMarks };
+}
+
+function undecidedText({ undecidedRows, unlinkedMarks }: ReturnType<typeof agreedTotal>) {
+  return [
+    undecidedRows && `${undecidedRows} row${undecidedRows === 1 ? "" : "s"} awaiting a decision`,
+    unlinkedMarks && `${unlinkedMarks} unlinked mark${unlinkedMarks === 1 ? "" : "s"}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export default function ClaimReview() {
   const { id } = useParams();
   const location = useLocation();
@@ -1331,15 +1358,9 @@ function ReviewOverview({ id }: { id: string }) {
                     (sum, item) => sum + (Number(item.printed_amount) || 0),
                     0,
                   );
-                  const totalAgreed = assessment.line_items.reduce(
-                    (sum, item) =>
-                      sum +
-                      (item.row_state === "excluded"
-                        ? 0
-                        : Number(item.effective_amount) || 0),
-                    0,
-                  );
-                  const netDiff = totalAgreed - totalPrinted;
+                  const agreed = agreedTotal(assessment.line_items, assessment.marks);
+                  const totalAgreed = agreed.total;
+                  const netDiff = totalAgreed === null ? 0 : totalAgreed - totalPrinted;
                   const pct =
                     totalPrinted > 0
                       ? ((netDiff / totalPrinted) * 100).toFixed(1)
@@ -1365,7 +1386,12 @@ function ReviewOverview({ id }: { id: string }) {
                             </span>
                           </div>
                         </div>
-                        {Math.abs(netDiff) >= 0.01 ? (
+                        {totalAgreed === null ? (
+                          <div className="summary-variance-pill neutral">
+                            <span>Net Adjustment:</span>
+                            <strong>Pending</strong>
+                          </div>
+                        ) : Math.abs(netDiff) >= 0.01 ? (
                           <div
                             className={`summary-variance-pill ${
                               netDiff < 0 ? "negative" : "positive"
@@ -1398,9 +1424,13 @@ function ReviewOverview({ id }: { id: string }) {
                         <div className="summary-metric-card highlight">
                           <span className="metric-label">Effective Agreed Total</span>
                           <strong className="metric-value agreed">
-                            {money(totalAgreed, claim.currency)}
+                            {totalAgreed === null ? "Pending" : money(totalAgreed, claim.currency)}
                           </strong>
-                          <span className="metric-sub">Single-part basis &middot; Pre-tax</span>
+                          <span className="metric-sub">
+                            {totalAgreed === null
+                              ? undecidedText(agreed)
+                              : "Single-part basis · Pre-tax"}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -2464,14 +2494,7 @@ function PrintReport({ id }: { id: string }) {
     (sum, item) => sum + (Number(item.printed_amount) || 0),
     0,
   );
-  const totalEffectiveAmount = assessment.line_items.reduce(
-    (sum, item) =>
-      sum +
-      (item.row_state === "excluded"
-        ? 0
-        : Number(item.effective_amount) || 0),
-    0,
-  );
+  const effectiveTotal = agreedTotal(assessment.line_items, assessment.marks);
   return (
     <div className="print-report">
       <style>
@@ -2595,7 +2618,14 @@ function PrintReport({ id }: { id: string }) {
                   <strong>{money(totalPrintedAmount, claim.currency)}</strong>
                 </td>
                 <td>
-                  <strong>{money(totalEffectiveAmount, claim.currency)}</strong>
+                  {effectiveTotal.total === null ? (
+                    <>
+                      <strong>Pending</strong>
+                      <small>{undecidedText(effectiveTotal)}</small>
+                    </>
+                  ) : (
+                    <strong>{money(effectiveTotal.total, claim.currency)}</strong>
+                  )}
                 </td>
                 <td>
                   <small>Single-part basis &middot; Pre-tax</small>
@@ -2680,13 +2710,12 @@ function PrintReport({ id }: { id: string }) {
                     {p.lineItems.length > 0 && (
                       <small>
                         Claimed: {p.lineItems.map((i) => i.operation).join(", ")} &middot;{" "}
-                        {money(
-                          p.lineItems.reduce(
-                            (sum, i) => sum + (Number(i.effective_amount) || 0),
-                            0,
-                          ),
-                          claim.currency,
-                        )}
+                        {(() => {
+                          const partTotal = agreedTotal(p.lineItems).total;
+                          return partTotal === null
+                            ? "amount pending"
+                            : money(partTotal, claim.currency);
+                        })()}
                       </small>
                     )}
                   </td>

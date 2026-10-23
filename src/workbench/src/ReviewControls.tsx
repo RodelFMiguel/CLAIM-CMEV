@@ -1550,7 +1550,7 @@ function UnifiedIdentityCoverageForm({
   const [side, setSide] = useState("");
   const [confirmIdentity, setConfirmIdentity] = useState(true);
   const [evaluateCoverage, setEvaluateCoverage] = useState(true);
-  const [coverageState, setCoverageState] = useState<"adequate" | "inadequate">("adequate");
+  const [coverageState, setCoverageState] = useState<"adequate" | "inadequate" | "">("");
   const [insufficientReason, setInsufficientReason] = useState("");
   const [formError, setFormError] = useState("");
 
@@ -1622,6 +1622,10 @@ function UnifiedIdentityCoverageForm({
     }
 
     if (evaluateCoverage) {
+      if (!coverageState) {
+        setFormError("Choose whether these photographs show enough of this part.");
+        return;
+      }
       if (coverageState === "inadequate" && !insufficientReason) {
         setFormError("Choose a reason when coverage is insufficient.");
         return;
@@ -1816,7 +1820,6 @@ function UnifiedIdentityCoverageForm({
                   <div className="confirmation-option-body">
                     <div className="coverage-radio-header">
                       <span className="confirmation-option-title">Adequate</span>
-                      <span className="coverage-badge-recommended">Recommended</span>
                     </div>
                     <span className="confirmation-option-desc">
                       These views show enough of this part to assess damage

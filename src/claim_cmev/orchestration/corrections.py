@@ -121,14 +121,14 @@ def _match_line_item(old_data: dict, current_items: Sequence[LineItem]) -> LineI
                 return by_amount[0]
             candidates = exact
 
-    # 2. Box IoU / vertical overlap
+    # 2. Box IoU / vertical overlap. Boxes are BoxNorm: [x_min, y_min, x_max, y_max].
     old_box = old_data.get("row_box_norm")
     if old_box and len(old_box) == 4:
-        oymin, oxmin, oymax, oxmax = old_box
+        oxmin, oymin, oxmax, oymax = old_box
         best_iou = 0.0
         best_cand = None
         for c in candidates:
-            cymin, cxmin, cymax, cxmax = c.row_box_norm
+            cxmin, cymin, cxmax, cymax = c.row_box_norm
             iy1 = max(oymin, cymin)
             ix1 = max(oxmin, cxmin)
             iy2 = min(oymax, cymax)
@@ -148,7 +148,7 @@ def _match_line_item(old_data: dict, current_items: Sequence[LineItem]) -> LineI
         best_y_iou = 0.0
         best_y_cand = None
         for c in candidates:
-            cy1, cy2 = c.row_box_norm[0], c.row_box_norm[2]
+            cy1, cy2 = c.row_box_norm[1], c.row_box_norm[3]
             inter = max(0.0, min(oymax, cy2) - max(oymin, cy1))
             union = max(oymax, cy2) - min(oymin, cy1)
             y_iou = inter / union if union > 0 else 0.0
@@ -163,7 +163,8 @@ def _match_line_item(old_data: dict, current_items: Sequence[LineItem]) -> LineI
     if len(part_matches) == 1:
         return part_matches[0]
 
-    return candidates[0] if candidates else None
+    # No counterpart: never guess. The correction stays on its old ID and fails closed.
+    return None
 
 
 def map_line_item_ids(session, claim_id: str | None, current_items: Sequence[LineItem],
@@ -194,13 +195,19 @@ def map_line_item_ids(session, claim_id: str | None, current_items: Sequence[Lin
         return mapping
 
     old_items_by_id = _find_old_line_items(session, claim_id, missing_ids)
-    for old_id in missing_ids:
+    matches: dict[str, list[str]] = {}
+    for old_id in sorted(missing_ids):
         old_data = old_items_by_id.get(old_id)
         if not old_data:
             continue
         matched_item = _match_line_item(old_data, current_items)
         if matched_item:
-            mapping[old_id] = matched_item.entry_id
+            matches.setdefault(matched_item.entry_id, []).append(old_id)
+    # One-to-one only: a row that already carries its own correction, or that two old rows
+    # both match, is ambiguous, so none of those old rows is moved onto it.
+    for new_id, old_ids in matches.items():
+        if len(old_ids) == 1 and new_id not in referenced_ids:
+            mapping[old_ids[0]] = new_id
 
     return mapping
 

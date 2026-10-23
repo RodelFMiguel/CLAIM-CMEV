@@ -227,20 +227,20 @@ export function DamageSummary({
     const canConfirm = !print && !locked && Boolean(onConfirm);
     const isAdequate = row.coverage === "adequate";
 
+    // Pre-fill only what the record already establishes. An unresolved part, an unknown
+    // side and a coverage decision are the surveyor's to choose, never a model guess.
     const rawPart =
-      row.part_code && row.part_code !== "unresolved"
-        ? row.part_code
-        : members[0]?.candidates?.[0]?.part_code || "";
+      row.part_code && row.part_code !== "unresolved" ? row.part_code : "";
     const defaultPart = rawPart ? rawPart.replace(/_/g, "-") : "";
     const partMeta = partOptions.parts.find(
       (p) => p.code === defaultPart || p.code === defaultPart.replace(/-/g, "_"),
     );
-    const isSided = partMeta ? partMeta.sided : true;
-    const defaultSide = !isSided
-      ? "not_applicable"
-      : row.side && row.side !== "unknown"
-        ? row.side
-        : "left";
+    const defaultSide =
+      partMeta && !partMeta.sided
+        ? "not_applicable"
+        : row.side && row.side !== "unknown" && row.side !== "not_applicable"
+          ? row.side
+          : "";
 
     const cardMemberPhotoIds = members.map((o) => o.photo_id);
     const cardCoveringPhotoIds = row.covering_photo_ids ?? [];
@@ -804,19 +804,16 @@ function QuickConfirmModal({
   onSave: (actions: Record<string, unknown>[]) => Promise<void>;
   onRetract?: (partCode: string, side: string, photoIds?: string[]) => void | Promise<void>;
 }) {
-  const [selectedPart, setSelectedPart] = useState(
-    cardData.defaultPart || "front-bumper",
-  );
-  const [selectedSide, setSelectedSide] = useState(
-    cardData.defaultSide || "not_applicable",
-  );
+  const [selectedPart, setSelectedPart] = useState(cardData.defaultPart || "");
+  const [selectedSide, setSelectedSide] = useState(cardData.defaultSide || "");
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>(
     cardData.defaultPhotos.length > 0
       ? cardData.defaultPhotos
       : files.map((f) => f.file_id),
   );
-  const [coverageState, setCoverageState] = useState<"adequate" | "inadequate">(
-    cardData.row.coverage === "inadequate" ? "inadequate" : "adequate",
+  // Only an already-confirmed adequate coverage is shown as chosen; otherwise no default.
+  const [coverageState, setCoverageState] = useState<"adequate" | "inadequate" | "">(
+    cardData.row.coverage === "adequate" ? "adequate" : "",
   );
   const [insufficientReason, setInsufficientReason] = useState<string>("");
   const [note, setNote] = useState<string>("");
@@ -834,7 +831,7 @@ function QuickConfirmModal({
     if (meta && !meta.sided) {
       setSelectedSide("not_applicable");
     } else if (meta && meta.sided && selectedSide === "not_applicable") {
-      setSelectedSide("left");
+      setSelectedSide("");
     }
   };
 
@@ -851,6 +848,10 @@ function QuickConfirmModal({
     }
     if (selectedPhotoIds.length === 0) {
       setError("Please select at least one photograph showing this part.");
+      return;
+    }
+    if (!coverageState) {
+      setError("Please choose whether these photographs show enough of this part.");
       return;
     }
     if (coverageState === "inadequate" && !insufficientReason) {
@@ -938,6 +939,9 @@ function QuickConfirmModal({
                   value={selectedPart}
                   onChange={(e) => handlePartChange(e.target.value)}
                 >
+                  <option value="" disabled>
+                    Choose a part...
+                  </option>
                   {partOptions.parts.map((p) => (
                     <option key={p.code} value={p.code}>
                       {p.label}
@@ -955,6 +959,9 @@ function QuickConfirmModal({
                 >
                   {isSided ? (
                     <>
+                      <option value="" disabled>
+                        Choose a side...
+                      </option>
                       <option value="left">Left</option>
                       <option value="right">Right</option>
                     </>
@@ -1085,9 +1092,6 @@ function QuickConfirmModal({
                   <div className="confirmation-option-body">
                     <div className="coverage-radio-header">
                       <span className="confirmation-option-title">Adequate</span>
-                      <span className="coverage-badge-recommended">
-                        Recommended
-                      </span>
                     </div>
                     <span className="confirmation-option-desc">
                       These views show enough of this part to assess damage

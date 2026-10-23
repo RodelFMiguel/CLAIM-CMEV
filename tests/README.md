@@ -27,7 +27,7 @@ node tests/e2e/review-controls.mjs
 node tests/e2e/print-report.mjs
 ```
 
-Some scripts need no backend: they answer every API call with synthetic responses and write nothing. `damage-summary.mjs`, `identity-controls.mjs` and `evidence-popup.mjs` only need a running workbench (for example `npx vite --host 127.0.0.1 --port 4175` from src/workbench, which also exercises React StrictMode) and `CMEV_E2E_URL`. `CMEV_BROWSER_CHANNEL=chrome` uses the installed Chrome instead of the Playwright browser.
+Some scripts need no backend: they answer every API call with synthetic responses and write nothing. `damage-summary.mjs`, `identity-controls.mjs`, `evidence-popup.mjs` and `review-safety.mjs` only need a running workbench (for example `npx vite --host 127.0.0.1 --port 4175` from src/workbench, which also exercises React StrictMode) and `CMEV_E2E_URL`. `CMEV_BROWSER_CHANNEL=chrome` uses the installed Chrome instead of the Playwright browser.
 
 The default URL is http://127.0.0.1:5173; set CMEV_E2E_URL for Docker. CMEV_DEMO_EMAIL and CMEV_DEMO_PASSWORD override demonstration credentials. Linux needs the Playwright browser system libraries. A nonstandard browser installation can use PLAYWRIGHT_BROWSERS_PATH and LD_LIBRARY_PATH.
 

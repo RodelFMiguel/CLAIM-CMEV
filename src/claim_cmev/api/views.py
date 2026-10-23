@@ -126,28 +126,36 @@ def result_counts(body: Mapping[str, Any]) -> dict[str, int]:
 
 
 def _compute_effective_total(inputs: Mapping[str, Any] | None, body: Mapping[str, Any] | None = None) -> str | None:
-    """Sum effective price across line items, skipping confirmed exclusions."""
+    """Sum of effective prices, skipping confirmed exclusions; ``None`` while any amount is undecided.
+
+    A pending, conflicting or unlinked mark, or a row without an effective price, leaves the
+    total undetermined: a withheld amount is never counted as zero, and a pending price change
+    never falls back to the printed amount (data contracts 7.2).
+    """
     if not inputs:
         return None
     items = inputs.get("line_items", [])
     if not items:
         return None
+    marks = [PenMark.model_validate(m) for m in inputs.get("pen_marks", [])]
+    if any(m.entry_id is None and m.state != "rejected" for m in marks):
+        return None
+    states = row_mark_states(items, marks)
     excluded = set()
     if body and "findings" in body:
         excluded = {f["entry_id"] for f in body.get("findings", []) if f.get("row_state") == "excluded"}
     total = Decimal("0.00")
-    has_any = False
     for item in items:
-        if item.get("entry_id") in excluded:
+        state = states[item["entry_id"]]
+        if state.withholds_decision:
+            return None
+        if item["entry_id"] in excluded or state.state == "confirmed_exclusion":
             continue
         price = item.get("effective_price")
-        if price is not None:
-            try:
-                total += Decimal(str(price))
-                has_any = True
-            except (ValueError, ArithmeticError):
-                pass
-    return f"{total:.2f}" if has_any else None
+        if price is None:
+            return None
+        total += Decimal(str(price))
+    return f"{total:.2f}"
 
 
 def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None,

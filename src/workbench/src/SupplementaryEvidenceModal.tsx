@@ -24,30 +24,57 @@ export function SupplementaryEvidenceModal({
 }: SupplementaryEvidenceModalProps) {
   const [photos, setPhotos] = useState<File[]>([]);
   const [pages, setPages] = useState<File[]>([]);
-  const [existingFiles, setExistingFiles] = useState<EvidenceItem[]>([]);
-  const [loadingFiles, setLoadingFiles] = useState(true);
+  // The claim's current evidence. A new revision lists every file it keeps, so nothing can be
+  // committed until both the file list and the current revision have loaded.
+  const [existing, setExisting] = useState<
+    | { state: "loading" }
+    | { state: "failed" }
+    | { state: "ready"; files: EvidenceItem[]; fileIds: string[] }
+  >({ state: "loading" });
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  // One key set per selection: a retry of the same upload replays instead of duplicating it.
+  const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
 
   const nextRevision = (claim.input_revision || 0) + 1;
+  const loadingFiles = existing.state === "loading";
+  const existingFiles = existing.state === "ready" ? existing.files : [];
 
   useEffect(() => {
     let active = true;
-    api<{ files: EvidenceItem[] }>(`/claims/${claim.claim_id}/files`)
-      .then((res) => {
-        if (active) {
-          setExistingFiles(res.files || []);
-          setLoadingFiles(false);
-        }
+    setExisting({ state: "loading" });
+    Promise.all([
+      api<{ files: EvidenceItem[] }>(`/claims/${claim.claim_id}/files`),
+      claim.input_revision && claim.input_revision > 0
+        ? api<{ file_ids: string[] }>(
+            `/claims/${claim.claim_id}/input-revisions/${claim.input_revision}`,
+          )
+        : Promise.resolve({ file_ids: [] as string[] }),
+    ])
+      .then(([listed, revision]) => {
+        if (!active) return;
+        const files = (listed.files || []).filter((f) => !f.fixture_placeholder);
+        const real = new Set(files.map((f) => f.file_id));
+        setExisting({
+          state: "ready",
+          files,
+          fileIds: (revision.file_ids || []).filter((fid) => real.has(fid)),
+        });
       })
       .catch(() => {
-        if (active) setLoadingFiles(false);
+        if (active) setExisting({ state: "failed" });
       });
     return () => {
       active = false;
     };
-  }, [claim.claim_id]);
+  }, [claim.claim_id, claim.input_revision, loadAttempt]);
+
+  const choose = (set: (files: File[]) => void) => (files: File[]) => {
+    set(files);
+    setAttemptKey(crypto.randomUUID());
+  };
 
   const existingPhotos = existingFiles.filter(
     (f) => f.role === "photograph" && !f.fixture_placeholder,
@@ -65,29 +92,12 @@ export function SupplementaryEvidenceModal({
       setError("Please select at least one supplementary photograph or estimate page to upload.");
       return;
     }
+    if (existing.state !== "ready") return;
+    const existingFileIds = existing.fileIds;
     setError("");
     setBusy(true);
 
     try {
-      // 1. Retrieve file IDs from current input revision if one already exists
-      let existingFileIds: string[] = [];
-      if (claim.input_revision && claim.input_revision > 0) {
-        setProgress("Verifying existing evidence revision...");
-        try {
-          const revData = await api<{ file_ids?: string[] }>(
-            `/claims/${claim.claim_id}/input-revisions/${claim.input_revision}`,
-          );
-          if (revData?.file_ids) {
-            const realFileIds = new Set(
-              existingFiles.filter((f) => !f.fixture_placeholder).map((f) => f.file_id),
-            );
-            existingFileIds = revData.file_ids.filter((fid) => realFileIds.has(fid));
-          }
-        } catch {
-          existingFileIds = [];
-        }
-      }
-
       const newUploadedIds: string[] = [];
 
       // 2. Upload supplementary damage photographs
@@ -104,7 +114,7 @@ export function SupplementaryEvidenceModal({
         }>(`/claims/${claim.claim_id}/files`, {
           method: "POST",
           body: photoFormData,
-          headers: { "Idempotency-Key": crypto.randomUUID() },
+          headers: { "Idempotency-Key": `${attemptKey}.photos` },
         });
         const uploadedIds = photoRes.file_ids ?? photoRes.files?.map((f) => f.file_id) ?? [];
         newUploadedIds.push(...uploadedIds);
@@ -124,7 +134,7 @@ export function SupplementaryEvidenceModal({
         }>(`/claims/${claim.claim_id}/files`, {
           method: "POST",
           body: pageFormData,
-          headers: { "Idempotency-Key": crypto.randomUUID() },
+          headers: { "Idempotency-Key": `${attemptKey}.pages` },
         });
         const uploadedIds = pageRes.file_ids ?? pageRes.files?.map((f) => f.file_id) ?? [];
         newUploadedIds.push(...uploadedIds);
@@ -136,7 +146,7 @@ export function SupplementaryEvidenceModal({
       await api(`/claims/${claim.claim_id}/input-revisions`, {
         method: "POST",
         body: JSON.stringify({ file_ids: allFileIds }),
-        headers: { "Idempotency-Key": crypto.randomUUID() },
+        headers: { "Idempotency-Key": `${attemptKey}.commit` },
       });
 
       // 5. Complete & reload claim review
@@ -166,13 +176,13 @@ export function SupplementaryEvidenceModal({
           <div className="supplementary-stat">
             <span className="supplementary-stat-label">Attached Photos</span>
             <span className="supplementary-stat-value">
-              {loadingFiles ? "..." : `${existingPhotos.length} / 40`}
+              {existing.state === "ready" ? `${existingPhotos.length} / 40` : loadingFiles ? "..." : "—"}
             </span>
           </div>
           <div className="supplementary-stat">
             <span className="supplementary-stat-label">Estimate Pages</span>
             <span className="supplementary-stat-value">
-              {loadingFiles ? "..." : `${existingPages.length} / 10`}
+              {existing.state === "ready" ? `${existingPages.length} / 10` : loadingFiles ? "..." : "—"}
             </span>
           </div>
           <div className="supplementary-stat">
@@ -194,6 +204,20 @@ export function SupplementaryEvidenceModal({
           </div>
         </div>
 
+        {existing.state === "failed" && (
+          <div className="field-error-banner" role="alert">
+            The claim&rsquo;s current evidence could not be loaded, so nothing can be added
+            yet. Nothing was uploaded.{" "}
+            <button
+              type="button"
+              className="button-link-small"
+              onClick={() => setLoadAttempt((n) => n + 1)}
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
         {error && (
           <div className="field-error-banner" role="alert">
             {error}
@@ -205,7 +229,7 @@ export function SupplementaryEvidenceModal({
             title="Supplementary Photographs"
             detail={`JPEG or PNG · up to ${remainingPhotos} additional`}
             files={photos}
-            setFiles={setPhotos}
+            setFiles={choose(setPhotos)}
             accept="image/jpeg,image/png"
             limit={remainingPhotos}
             disabled={busy || remainingPhotos === 0}
@@ -214,7 +238,7 @@ export function SupplementaryEvidenceModal({
             title="Supplementary Estimate Pages"
             detail={`JPEG, PNG or PDF · up to ${remainingPages} additional`}
             files={pages}
-            setFiles={setPages}
+            setFiles={choose(setPages)}
             accept="image/jpeg,image/png,application/pdf"
             limit={remainingPages}
             disabled={busy || remainingPages === 0}
@@ -233,7 +257,7 @@ export function SupplementaryEvidenceModal({
           <button
             type="submit"
             className="button button-dark"
-            disabled={busy || (!photos.length && !pages.length)}
+            disabled={busy || existing.state !== "ready" || (!photos.length && !pages.length)}
           >
             {busy ? (
               <>

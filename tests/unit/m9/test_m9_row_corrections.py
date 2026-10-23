@@ -57,6 +57,77 @@ def test_apply_corrections_with_mapped_entry_id():
     assert res_items[0].printed_amount_corrected is True
 
 
+def reextracted_rows():
+    """The fixture page's three full-width rows, re-extracted under new IDs with new OCR text."""
+    items = fixture_bundle("exclusion_and_supported", CLAIM, 1).line_items
+    texts = {"back-door": "REAR DR L/H", "front-bumper": "FRNT BUMPR", "fender": "FNDR L/H"}
+    return [i.model_copy(update={"entry_id": f"li-new{n:020d}", "original_part_text": texts[i.part_code]})
+            for n, i in enumerate(items)]
+
+
+def old_row(rows, of_part, /, **changes):
+    old = next(r for r in rows if r.part_code == of_part).model_dump(mode="json")
+    return {**old, "entry_id": "li-old" + of_part, **changes}
+
+
+def test_a_row_is_matched_by_its_vertical_band_not_its_horizontal_extent():
+    from claim_cmev.orchestration.corrections import _match_line_item
+    rows = reextracted_rows()
+    # Only the left part of the bumper row was boxed before, and its amount and part were misread:
+    # box IoU is below 0.3, so only the row band (y 0.266-0.280) identifies it.
+    old = old_row(rows, "front-bumper", original_part_text="FRT BUMPER", printed_line_amount="1105.00",
+                  part_code=None, row_box_norm=[0.08, 0.266, 0.30, 0.280])
+    assert _match_line_item(old, rows).part_code == "front-bumper"
+
+
+def test_a_row_with_no_counterpart_is_not_matched_to_another_row():
+    from claim_cmev.orchestration.corrections import _match_line_item
+    rows = reextracted_rows()
+    old = old_row(rows, "fender", original_part_text="BONNET", part_code="hood", printed_line_amount="700.00",
+                  row_box_norm=[0.08, 0.60, 0.92, 0.62])
+    assert _match_line_item(old, rows) is None
+
+
+def _event_on(entry_id):
+    return {"kind": "review_event", "event": {"action_type": "correct_line_item", "entry_id": entry_id}}
+
+
+def test_two_old_rows_matching_one_new_row_are_both_left_unmapped(monkeypatch):
+    from claim_cmev.orchestration import corrections
+    rows = reextracted_rows()
+    bumper_row = next(r for r in rows if r.part_code == "front-bumper")
+    old = {f"li-old{n}": old_row(rows, "front-bumper", entry_id=f"li-old{n}",
+                                 original_part_text=bumper_row.original_part_text) for n in (1, 2)}
+    monkeypatch.setattr(corrections, "_find_old_line_items", lambda _s, _c, ids: {i: old[i] for i in ids})
+    mapping = corrections.map_line_item_ids(object(), CLAIM, rows,
+                                            {"corrections": [_event_on("li-old1"), _event_on("li-old2")]})
+    assert "li-old1" not in mapping and "li-old2" not in mapping
+
+
+def test_an_old_row_is_not_mapped_onto_a_row_that_already_has_its_own_correction(monkeypatch):
+    from claim_cmev.orchestration import corrections
+    rows = reextracted_rows()
+    bumper_row = next(r for r in rows if r.part_code == "front-bumper")
+    old = {"li-old1": old_row(rows, "front-bumper", entry_id="li-old1",
+                              original_part_text=bumper_row.original_part_text)}
+    monkeypatch.setattr(corrections, "_find_old_line_items", lambda _s, _c, ids: {i: old[i] for i in ids})
+    mapping = corrections.map_line_item_ids(object(), CLAIM, rows, {"corrections": [
+        _event_on("li-old1"), _event_on(bumper_row.entry_id)]})
+    assert "li-old1" not in mapping
+    assert mapping[bumper_row.entry_id] == bumper_row.entry_id
+
+
+def test_a_matched_old_row_is_mapped(monkeypatch):
+    from claim_cmev.orchestration import corrections
+    rows = reextracted_rows()
+    bumper_row = next(r for r in rows if r.part_code == "front-bumper")
+    old = {"li-old1": old_row(rows, "front-bumper", entry_id="li-old1",
+                              original_part_text=bumper_row.original_part_text)}
+    monkeypatch.setattr(corrections, "_find_old_line_items", lambda _s, _c, ids: {i: old[i] for i in ids})
+    mapping = corrections.map_line_item_ids(object(), CLAIM, rows, {"corrections": [_event_on("li-old1")]})
+    assert mapping["li-old1"] == bumper_row.entry_id
+
+
 def test_apply_corrections_with_mapped_add_mark():
     from datetime import datetime, timezone
     from claim_cmev.contracts.review import ReviewEvent
