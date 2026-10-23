@@ -1,5 +1,7 @@
 # CLAIM-CMEV shared development context
 
+Latest live-stack build fix (2026-10-21): MinIO Go dependency downloads now use persistent BuildKit caches and up to five attempts after interrupted downloads (`unexpected EOF`). The patched `claim-cmev-minio:2025-10-15` image built successfully locally and its binary ran; full-stack startup was not exercised in this task. Resume with `sh scripts/live-stack.sh up --build -d`.
+
 Latest M2 damage model status (2026-10-19): Retrained and deployed SegFormer-B3 on **CarDD** (`damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`). Validation foreground mIoU on CarDD is **0.7283** (72.83%) with dent precision **73.79%** and background IoU **92.71%**. Model is verified active in `configs/models/damage.yaml`, mounted into containers, and verified live in end-to-end claim reviews.
 
 ## Auto-Positioning for Missed Pen Mark Actions (2026-10-22)
@@ -3626,3 +3628,23 @@ Next concrete step and agreed owner (or unassigned): Submit a new test claim via
 
 
 
+
+## MinIO build download recovery (2026-10-21)
+
+Date/time and timezone: 2026-10-21, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request.
+Task and relevant module: Diagnose live-stack build failure in shared object-store infrastructure.
+Branch / baseline commit / resulting commit or PR (if one exists): `test-m1-m2-improvements`, baseline `167de5f`; changes remain uncommitted.
+Changed paths and completed behaviour:
+- `infra/Dockerfile.objectstore`: cache Go modules and compilation artifacts with BuildKit; explicitly download dependencies with at most five attempts and increasing delays, then compile. Downloads and compilation share a RUN step so cache eviction cannot strand a cached download layer. Preserve existing source commit and runtime configuration.
+- `infra/README.md`: document interrupted-download symptoms, rebuilding only `cmev-objectstore`, and resuming the live stack.
+- `CONTEXT.md`: current status and handoff.
+Decisions (accepted/proposed) and references: Treat the supplied `storage.googleapis.com/...: unexpected EOF` messages as interrupted Go dependency downloads. The log does not identify the underlying network/proxy cause. No storage or model contract changes. BuildKit cache behaviour follows https://docs.docker.com/build/cache/optimize/.
+Checks actually run, results and artifact locations:
+- `docker build --progress=plain -f infra/Dockerfile.objectstore -t claim-cmev-minio:2025-10-15 .`: passed; dependency download and compilation step completed in 72 seconds. No retry was required in this actual build.
+- `docker run --rm --network none --read-only claim-cmev-minio:2025-10-15 --version`: passed, Go 1.24.8 linux/arm64; direct source build reports DEVELOPMENT.GOGET metadata.
+- Combined base/image/document Compose configuration validation with local env and lean profile (`config --quiet`): passed without printing credentials.
+- Shell syntax and ephemeral mocked-command checks: immediate success, recovery after two failures, stopping after five failed downloads, and propagation of compilation failure all passed. These simulate retry control flow, not an actual network interruption.
+- `sh -n scripts/live-stack.sh` and `git diff --check`: passed.
+Uncommitted work, limitations and missing prerequisites: Full-stack startup, MinIO health/S3 operations, and model workers were not exercised. Persistent network/proxy restrictions still require connectivity repair; retries do not guarantee success. Initial sandbox Docker access was denied; the build and binary smoke check succeeded with approved escalated tool access.
+Next concrete step and agreed owner (or unassigned): User reruns `sh scripts/live-stack.sh up --build -d`, then `sh scripts/live-stack.sh ps`; inspect any subsequent service error independently.
