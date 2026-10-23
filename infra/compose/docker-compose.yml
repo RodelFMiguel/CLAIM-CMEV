@@ -46,6 +46,7 @@ x-worker: &worker
       condition: service_completed_successfully
   volumes:
     - cost-tables:/srv/artifacts/cost_tables:ro
+    - ../../configs:/srv/configs:ro
   healthcheck:
     test: [CMD, python, -m, claim_cmev.worker, healthcheck]
     interval: 15s
@@ -96,6 +97,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - cost-tables:/srv/artifacts/cost_tables:ro
+      - ../../configs:/srv/configs:ro
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/readyz', timeout=4)"]
       interval: 10s
@@ -156,6 +158,7 @@ services:
     volumes:
       # The model registry: <host path>/parts/<version>/ with weights and manifest.json.
       - ${CMEV_MODEL_REGISTRY_HOST_PATH:-../../artifacts/models}:/srv/artifacts/models:ro
+      - ../../configs:/srv/configs:ro
     healthcheck:
       test: [CMD, python, -m, claim_cmev.worker, healthcheck]
       interval: 15s
@@ -186,6 +189,7 @@ services:
       # The model registry: <host path>/<model_version>/ with weights, manifest.json and preprocessing.json,
       # for the versions named by configs/models/parts.yaml and configs/models/damage.yaml.
       - ${CMEV_MODEL_REGISTRY_HOST_PATH:-../../artifacts/models}:/srv/artifacts/models:ro
+      - ../../configs:/srv/configs:ro
     healthcheck:
       test: [CMD, python, -m, claim_cmev.worker, healthcheck]
       interval: 15s

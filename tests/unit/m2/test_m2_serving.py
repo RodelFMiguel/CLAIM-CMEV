@@ -266,16 +266,25 @@ def test_damage_on_one_part_becomes_an_assigned_observation_in_the_models_vocabu
     assert observation.part_mask_ref.artifact_id == "pm_test"
 
 
-def test_damage_that_straddles_two_parts_stays_one_unresolved_observation(segmenter, config):
-    result = _run(segmenter, _request(config, _photo(), _part_mask()))
+def test_damage_that_straddles_two_parts_stays_one_unresolved_observation_when_split_disabled(segmenter, config):
+    result = _run(segmenter, _request(config, _photo(), _part_mask()), assignment={"split_components": False})
     [observation] = result.observations
     assert (observation.part_code, observation.part_reason) == (None, "ambiguous_between_parts")
     assert [c.part_code for c in observation.candidates] == ["front-door", "fender"]
 
 
+def test_damage_that_straddles_two_parts_splits_under_default_dual_gate(segmenter, config):
+    result = _run(segmenter, _request(config, _photo(), _part_mask()))
+    assert len(result.observations) == 2
+    assert [(o.part_code, o.assignment_status) for o in result.observations] == [
+        ("front-door", "assigned"),
+        ("fender", "assigned"),
+    ]
+
+
 def test_padding_is_never_damage(segmenter, config):
     """The checkpoint calls every pixel corrosion; the 32 padding rows below a 4:3 photograph are not the vehicle."""
-    result = _run(segmenter, _request(config, _photo(), _part_mask()))
+    result = _run(segmenter, _request(config, _photo(), _part_mask()), assignment={"split_components": False})
     mask = np.array(Image.open(io.BytesIO(result.artifact("mask.png").data)))
     assert mask.shape == (128, 128)
     assert np.all(mask[:96] == DAMAGE_ID["corrosion"]) and np.all(mask[96:] == 0)
@@ -284,7 +293,7 @@ def test_padding_is_never_damage(segmenter, config):
 
 def test_artifacts_are_the_class_mask_and_the_component_raster_under_the_version_signature(segmenter, config):
     request = _request(config, _photo(), _part_mask())
-    result = _run(segmenter, request)
+    result = _run(segmenter, request, assignment={"split_components": False})
     folder = f"claims/{CLAIM_ID}/1/damage/{PHOTO_ID}/{version_signature(request.versions)}"
     assert [a.key for a in result.artifacts] == [f"{folder}/mask.png", f"{folder}/components.png"]
     components = np.array(Image.open(io.BytesIO(result.artifact("components.png").data)))

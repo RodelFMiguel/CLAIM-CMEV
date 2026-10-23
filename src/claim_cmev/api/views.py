@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select, tuple_
@@ -26,7 +27,7 @@ from ..messaging.outbox import backlog
 from ..orchestration import state
 from ..orchestration.plan import BRANCH_OF, STAGES
 from ..persistence.tables import assessments, current_pointer, branch_state, jobs
-from ..runtime import get, Record
+from ..runtime import get, put, Record
 
 OPEN_RESULTS = ("unsupported", "cost_outlier", "insufficient_evidence")
 _MARK_TEXT = {
@@ -124,6 +125,39 @@ def result_counts(body: Mapping[str, Any]) -> dict[str, int]:
             "information_needed_count": sum(r in INFORMATION_NEEDED_RESULTS for r in results)}
 
 
+def _compute_effective_total(inputs: Mapping[str, Any] | None, body: Mapping[str, Any] | None = None) -> str | None:
+    """Sum of effective prices, skipping confirmed exclusions; ``None`` while any amount is undecided.
+
+    A pending, conflicting or unlinked mark, or a row without an effective price, leaves the
+    total undetermined: a withheld amount is never counted as zero, and a pending price change
+    never falls back to the printed amount (data contracts 7.2).
+    """
+    if not inputs:
+        return None
+    items = inputs.get("line_items", [])
+    if not items:
+        return None
+    marks = [PenMark.model_validate(m) for m in inputs.get("pen_marks", [])]
+    if any(m.entry_id is None and m.state != "rejected" for m in marks):
+        return None
+    states = row_mark_states(items, marks)
+    excluded = set()
+    if body and "findings" in body:
+        excluded = {f["entry_id"] for f in body.get("findings", []) if f.get("row_state") == "excluded"}
+    total = Decimal("0.00")
+    for item in items:
+        state = states[item["entry_id"]]
+        if state.withholds_decision:
+            return None
+        if item["entry_id"] in excluded or state.state == "confirmed_exclusion":
+            continue
+        price = item.get("effective_price")
+        if price is None:
+            return None
+        total += Decimal(str(price))
+    return f"{total:.2f}"
+
+
 def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None,
                current_row: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """The stored claim plus derived status, current assessment and counts.
@@ -136,6 +170,23 @@ def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None,
     """
     view = deepcopy(dict(claim))
     cid, rev = claim["claim_id"], claim["input_revision"]
+    if view.get("surveyor") in (None, "", "Acery AI"):
+        from ..documents.surveyor import extract_surveyor_name
+        from ..persistence.tables import stage_records
+        box_rows = db.execute(
+            select(stage_records.c.body).where(
+                stage_records.c.claim_id == cid,
+                stage_records.c.record_kind == "page_text_box",
+            )
+        ).scalars().all()
+        if box_rows:
+            extracted = extract_surveyor_name(box_rows)
+            if extracted:
+                view["surveyor"] = extracted
+                claim_rec = get(db, "claim:" + cid)
+                if claim_rec and not claim_rec.get("surveyor_manually_set"):
+                    claim_rec["surveyor"] = extracted
+                    put(db, "claim:" + cid, "claim", claim_rec, cid)
     pointer = pointer_row(db, cid) if snapshot is None else snapshot["pointers"].get(cid)
     current = pointer is not None and pointer["input_revision"] == rev
     bs = (state.branch_row(db, cid, rev) if rev else None) if snapshot is None else snapshot["branches"].get((cid, rev))
@@ -145,6 +196,8 @@ def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None,
                 assessment_revision=pointer["assessment_revision"] if current else None,
                 finding_count=pointer["finding_count"] if current else 0,
                 discrepancy_count=None, information_needed_count=None,
+                effective_total=None,
+                reviewer=claim.get("reviewer") or "Acery AI",
                 estimate_row_count=pointer["estimate_row_count"] if current else 0,
                 declared_total=pointer["declared_total"] if current else None,
                 photograph_count=len(claim_input.get("photo_ids", [])) if claim_input else 0)
@@ -156,6 +209,16 @@ def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None,
         review_key = f"review:{cid}:{pointer['assessment_revision']}"
         review = (get(db, review_key) if records is None else records.get(review_key)) or {}
         status = "ready_to_print" if review.get("finalized") else "in_review"
+        rev_reviewer = None
+        if review:
+            if review.get("report") and review["report"].get("header"):
+                rev_reviewer = review["report"]["header"].get("reviewed_by")
+            if not rev_reviewer and review.get("actions"):
+                actors = [a.get("actor") for a in review["actions"] if a.get("actor")]
+                if actors:
+                    rev_reviewer = actors[-1]
+        if rev_reviewer:
+            view["reviewer"] = rev_reviewer
         if snapshot is not None:
             row = snapshot["assessments"].get((cid, pointer["assessment_revision"]))
         elif current_row is not None and current_row["assessment_revision"] == pointer["assessment_revision"]:
@@ -164,6 +227,10 @@ def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None,
             row = assessment_row(db, cid, pointer["assessment_revision"])
         if row is not None:
             view.update(result_counts(row["body"]) if "body" in row else row["counts"])
+            if "effective_total" in row:
+                view["effective_total"] = row["effective_total"]
+            else:
+                view["effective_total"] = _compute_effective_total(row.get("inputs"), row.get("body"))
         documents = bool(claim_input and claim_input.get("page_targets"))
         processing = "ready" if documents else "awaiting_declared_entries"
         if row is not None and row["state"] == "incomplete" and documents:
@@ -197,9 +264,12 @@ def claim_views(db: Session, claims: list[Mapping[str, Any]]) -> list[dict[str, 
         f"review:{cid}:{p['assessment_revision']}" for cid, p in pointers.items()]
     records = {r.key: r.data for r in db.scalars(select(Record).where(Record.key.in_(keys)))}
     assessment_keys = [(cid, p["assessment_revision"]) for cid, p in pointers.items()]
-    current_states = {(r.claim_id, r.assessment_revision): {"state": r.state, "counts": result_counts(r.body)}
-                      for r in db.execute(select(assessments.c.claim_id, assessments.c.assessment_revision,
-                                                 assessments.c.state, assessments.c.body).where(
+    current_states = {(r.claim_id, r.assessment_revision): {
+        "state": r.state,
+        "counts": result_counts(r.body),
+        "effective_total": _compute_effective_total(r.inputs, r.body),
+    } for r in db.execute(select(assessments.c.claim_id, assessments.c.assessment_revision,
+                                 assessments.c.state, assessments.c.body, assessments.c.inputs).where(
             tuple_(assessments.c.claim_id, assessments.c.assessment_revision).in_(assessment_keys)))}
     snapshot = {"pointers": pointers, "branches": branches, "jobs": grouped_jobs,
                 "records": records, "assessments": current_states}
@@ -324,6 +394,9 @@ def _damage_summary(inputs: Mapping[str, Any]) -> list[dict[str, Any]]:
                      "damage_codes": summary["damage_codes"], "observation_count": summary["observation_count"],
                      "photo_count": len(summary["supporting_photo_ids"]), "reason_codes": reasons,
                      "source_kind": source,
+                     "coverage_confirmation_id": slot.get("coverage_confirmation_id") if slot else None,
+                     "identity_confirmation_ids": list(slot.get("identity_confirmation_ids", [])) if slot else [],
+                     "covering_photo_ids": list(slot.get("covering_photo_ids", [])) if slot else [],
                      "reason": f"{_OBSERVATION_ORIGIN[source]} Coverage {state_code.replace('_', ' ')}"
                                + (f" ({', '.join(reasons)})." if reasons else ".")})
         listed.add((summary["part_code"], summary["side"]))
@@ -333,6 +406,9 @@ def _damage_summary(inputs: Mapping[str, Any]) -> list[dict[str, Any]]:
                          "coverage": slot["state"], "damage_codes": [], "observation_count": 0,
                          "photo_count": len(slot["covering_photo_ids"]), "reason_codes": list(slot["reasons"]),
                          "source_kind": _source([slot]),
+                         "coverage_confirmation_id": slot.get("coverage_confirmation_id"),
+                         "identity_confirmation_ids": list(slot.get("identity_confirmation_ids", [])),
+                         "covering_photo_ids": list(slot.get("covering_photo_ids", [])),
                          "reason": f"No damage observation. Coverage {slot['state'].replace('_', ' ')}."})
     return rows
 

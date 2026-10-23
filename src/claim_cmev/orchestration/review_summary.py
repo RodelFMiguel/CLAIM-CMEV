@@ -44,15 +44,38 @@ def corrected_summary(ctx, claim_input, baseline):
             records.setdefault(kind, []).extend(rows)
     predictions = records.get("part_prediction", [])
     observations = records.get("damage_observation", [])
+    known_photos = {p.photo_id for p in predictions} | {o.photo_id for o in observations}
+
+    # Map human confirmations if upstream records use fixture photo IDs (ph-...)
+    # while the surveyor's review actions named uploaded photo IDs.
+    claim_photos = claim_input.get("photo_ids", [])
+    bundle_photos = [f.file_id for f in baseline.files if f.kind == "photo"]
+    photo_map = {cp: bundle_photos[i % len(bundle_photos)] for i, cp in enumerate(claim_photos)} if claim_photos and bundle_photos else {}
+
     def materialize(record):
         return record.model_copy(update={
             "confirmation_id": deterministic_id("hc", ctx.envelope.job_key, record.confirmation_id),
             "input_revision": ctx.envelope.input_revision,
             "provenance": record.provenance.model_copy(update={"derivation_refs":
                 [*record.provenance.derivation_refs, record.confirmation_id]})})
-    identities = [materialize(c) for c in baseline.identity_confirmations]
-    coverage = [materialize(c) for c in baseline.coverage_confirmations]
+    identities = [materialize(c) for c in baseline.identity_confirmations
+                  if not known_photos or c.photo_id in known_photos]
+    coverage = [materialize(c) for c in baseline.coverage_confirmations
+                if not known_photos or set(c.covering_photo_ids).issubset(known_photos)]
+
     human_identities, human_coverage = human_confirmations(ctx, claim_input)
+    if photo_map and known_photos:
+        human_identities = [
+            c.model_copy(update={"photo_id": photo_map.get(c.photo_id, c.photo_id)})
+            if c.photo_id not in known_photos else c
+            for c in human_identities
+        ]
+        human_coverage = [
+            c.model_copy(update={"covering_photo_ids": [photo_map.get(p, p) for p in c.covering_photo_ids]})
+            if not set(c.covering_photo_ids).issubset(known_photos) else c
+            for c in human_coverage
+        ]
+
     identities += human_identities
     coverage += human_coverage
     config = load_summary_config()
@@ -69,5 +92,6 @@ def corrected_summary(ctx, claim_input, baseline):
     view_signals = {(view.photo_id, slot.part_code): dict(view.signals)
                     for slot in baseline.coverage for view in slot.views}
     outcome = summarise_parts(observations, predictions, identities, coverage, context=context, config=config, view_signals=view_signals,
-                              photo_ids={p.photo_id for p in predictions} | {o.photo_id for o in observations})
+                              photo_ids=known_photos)
     return outcome, identities, coverage
+

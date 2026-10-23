@@ -41,6 +41,7 @@ import {
   Info,
   Clock,
   CircleAlert,
+  Printer,
 } from "lucide-react";
 import {
   api,
@@ -51,6 +52,8 @@ import {
   type ClaimList,
 } from "./api";
 import ClaimReview from "./ClaimReview";
+import { SupplementaryReopeningModal } from "./SupplementaryReopeningModal";
+import { SupplementaryEvidenceModal } from "./SupplementaryEvidenceModal";
 const Auth = createContext<{
   user: User | null;
   setUser: (user: User | null) => void;
@@ -92,9 +95,10 @@ export function Loading() {
   );
 }
 export function Status({ value }: { value: string }) {
+  const norm = (value || "").toLowerCase().trim();
   return (
-    <span className={`status status-${value}`}>
-      {value.replaceAll("_", " ")}
+    <span className={`status status-${norm}`}>
+      {(value || "").replaceAll("_", " ")}
     </span>
   );
 }
@@ -469,7 +473,9 @@ function Dashboard() {
   const [data, setData] = useState<ClaimList | null>(null),
     [error, setError] = useState(""),
     [query, setQuery] = useState(""),
-    [filter, setFilter] = useState("all");
+    [filter, setFilter] = useState("all"),
+    [reopeningClaim, setReopeningClaim] = useState<Claim | null>(null),
+    [evidenceClaim, setEvidenceClaim] = useState<Claim | null>(null);
   const navigate = useNavigate();
   const load = () => {
     setError("");
@@ -602,9 +608,9 @@ function Dashboard() {
                 <th>Claim</th>
                 <th>Vehicle &amp; workshop</th>
                 <th>Inputs</th>
-                <th>Estimate</th>
-                <th>
-                  <span className="sr-only">Open claim</span>
+                <th>Estimate &amp; Agreed</th>
+                <th className="claim-table-action-th">
+                  <span>Actions</span>
                 </th>
               </tr>
             </thead>
@@ -621,9 +627,15 @@ function Dashboard() {
                     >
                       {c.reference}
                     </Link>
-                    <p className="claim-subline">
-                      {c.surveyor} <span>&middot;</span> {c.policy_number}
-                    </p>
+                    <div className="claim-surveyors-wrap">
+                      <span className="surveyor-pill field" title="Field / Estimating Surveyor from report evidence">
+                        <span className="surveyor-role">Field:</span> {c.surveyor || "Unspecified"}
+                      </span>
+                      <span className="surveyor-pill reviewer" title="System / Desk Reviewing Surveyor">
+                        <span className="surveyor-role">Reviewer:</span> {c.reviewer || "Acery AI"}
+                      </span>
+                    </div>
+                    <p className="claim-policy-subline">{c.policy_number}</p>
                     <Status
                       value={
                         c.status === "processing" &&
@@ -653,13 +665,98 @@ function Dashboard() {
                     <p className="loss-date">Loss {c.loss_date}</p>
                   </td>
                   <td>
-                    <strong className="estimate-value">
-                      {money(c.declared_total)}
-                    </strong>
-                    <QueueState claim={c} />
+                    <div className="queue-estimate-block">
+                      {c.effective_total != null ? (
+                        <>
+                          <div className="queue-agreed-row">
+                            <span className="queue-amount-label">Agreed:</span>
+                            <strong className="estimate-value agreed">
+                              {money(c.effective_total, c.currency)}
+                            </strong>
+                          </div>
+                          {c.declared_total != null && (
+                            <div className="queue-declared-row">
+                              <span className="queue-amount-label">Est:</span>
+                              <span className="queue-declared-value">
+                                {money(c.declared_total, c.currency)}
+                              </span>
+                              {(() => {
+                                const eff = Number(c.effective_total);
+                                const decl = Number(c.declared_total);
+                                if (isNaN(eff) || isNaN(decl)) return null;
+                                const diff = eff - decl;
+                                if (Math.abs(diff) < 0.01) {
+                                  return (
+                                    <span className="queue-variance-badge equal">
+                                      Agreed in full
+                                    </span>
+                                  );
+                                }
+                                const pct =
+                                  decl > 0
+                                    ? ((diff / decl) * 100).toFixed(1)
+                                    : "0.0";
+                                return (
+                                  <span
+                                    className={`queue-variance-badge ${
+                                      diff < 0 ? "negative" : "positive"
+                                    }`}
+                                  >
+                                    {diff < 0 ? "-" : "+"}
+                                    {money(Math.abs(diff), c.currency)} ({pct}%)
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="queue-declared-row-single">
+                          <span className="queue-amount-label">Est:</span>
+                          <strong className="estimate-value">
+                            {money(c.declared_total, c.currency)}
+                          </strong>
+                        </div>
+                      )}
+                      <QueueState claim={c} />
+                    </div>
                   </td>
-                  <td>
-                    <ArrowRight size={20} className="row-arrow" />
+                  <td className="claim-table-action-td">
+                    {c.status === "ready_to_print" ? (
+                      <div
+                        className="queue-row-actions"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          className="queue-action-btn print"
+                          title="Open frozen report to print PDF"
+                          onClick={() => {
+                            navigate(
+                              `/claims/${c.claim_id}/print?assessment=${c.assessment_revision}&review=${c.review_revision}`,
+                            );
+                          }}
+                        >
+                          <Printer size={13} />
+                          <span>Print Report</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="queue-action-btn supplementary"
+                          title="File supplementary post-dismantling damage or estimates"
+                          onClick={() => {
+                            setReopeningClaim(c);
+                          }}
+                        >
+                          <UploadCloud size={13} />
+                          <span>+ Supplementary</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="queue-row-arrow-wrap">
+                        <ArrowRight size={18} className="row-arrow" />
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -698,6 +795,30 @@ function Dashboard() {
           approval.
         </p>
       </div>
+      {reopeningClaim && (
+        <SupplementaryReopeningModal
+          claim={reopeningClaim}
+          assessmentRevision={reopeningClaim.assessment_revision || 1}
+          reviewRevision={reopeningClaim.review_revision}
+          inputRevision={reopeningClaim.input_revision || 0}
+          onClose={() => setReopeningClaim(null)}
+          onProceed={() => {
+            const target = reopeningClaim;
+            setReopeningClaim(null);
+            setEvidenceClaim(target);
+          }}
+        />
+      )}
+      {evidenceClaim && (
+        <SupplementaryEvidenceModal
+          claim={evidenceClaim}
+          onClose={() => setEvidenceClaim(null)}
+          onSuccess={async () => {
+            setEvidenceClaim(null);
+            load();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -787,6 +908,17 @@ function Stat({
     </article>
   );
 }
+function nextClaimReference(items: { reference: string }[]): string {
+  const taken = new Set(items.map((c) => c.reference.trim().toUpperCase()));
+  let seq = items.reduce((max, item) => {
+    const match = /^CLM-(\d+)$/i.exec(item.reference.trim());
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 24021);
+  do {
+    seq += 1;
+  } while (taken.has(`CLM-${seq}`));
+  return `CLM-${seq}`;
+}
 function NewClaim() {
   const navigate = useNavigate();
   // Keep the same keys when an acknowledged response is lost and intake is retried.
@@ -809,8 +941,15 @@ function NewClaim() {
     [error, setError] = useState(""),
     [progress, setProgress] = useState(""),
     [photos, setPhotos] = useState<File[]>([]),
-    [estimates, setEstimates] = useState<File[]>([]);
+    [estimates, setEstimates] = useState<File[]>([]),
+    [reference, setReference] = useState("CLM-24022");
   const [createdId, setCreatedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (createdId) return;
+    api<ClaimList>("/claims")
+      .then((list) => setReference(nextClaimReference(list.items)))
+      .catch(() => {});
+  }, [createdId]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -827,7 +966,8 @@ function NewClaim() {
       let id = createdId;
       if (!id) {
         const claim = await save<Claim>("/claims", {
-          reference: form.get("reference"),
+          reference: form.get("reference") || reference,
+          surveyor: form.get("surveyor") || undefined,
           vehicle_make: form.get("vehicle_make"),
           vehicle_model: form.get("vehicle_model"),
           vehicle_year: Number(form.get("vehicle_year")),
@@ -912,14 +1052,22 @@ function NewClaim() {
               Claim reference{" "}
               <input
                 name="reference"
-                required
-                placeholder="e.g. CLM-24022"
-                disabled={!!createdId}
+                value={reference}
+                readOnly
               />
+              <small>Auto-generated running number</small>
             </label>
             <label>
               Policy number
               <input name="policy_number" placeholder="e.g. MOT/2026/884214" />
+            </label>
+            <label>
+              Field Surveyor
+              <input
+                name="surveyor"
+                placeholder="e.g. S. Kumar or Cheryl Ong"
+              />
+              <small>Auto-extracted from survey report if left blank</small>
             </label>
             <label>
               Vehicle make

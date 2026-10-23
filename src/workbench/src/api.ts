@@ -1,4 +1,4 @@
-﻿export interface User {
+export interface User {
   id: string;
   name: string;
   email: string;
@@ -10,6 +10,7 @@ export interface Claim {
   reference: string;
   policy_number: string;
   surveyor: string;
+  reviewer?: string | null;
   vehicle: {
     make: string;
     model: string;
@@ -23,6 +24,7 @@ export interface Claim {
   photograph_count: number;
   estimate_row_count: number;
   declared_total: string | null;
+  effective_total?: string | null;
   currency: string;
   finding_count: number;
   // Discrepancy flags (unsupported plus cost_outlier) and "more information

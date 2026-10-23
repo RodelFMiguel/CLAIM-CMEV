@@ -247,6 +247,46 @@ def _artifact(artifact_id: str, key: str, uri_prefix: str, data: bytes) -> PartA
                         sha256=hashlib.sha256(data).hexdigest(), byte_count=len(data), data=data)
 
 
+def apply_view_consistency(preds: np.ndarray, id_to_part: Mapping[int, str]) -> np.ndarray:
+    """Enforce macro view-consistency for opposing exterior facades on single-view photos.
+
+    In automotive photography, a single camera view cannot simultaneously face the rear
+    fascia (trunk lid, licence-plate, rear bumper) and an opposing front-bumper valance.
+    When one end overwhelmingly dominates the photo, any isolated sliver of the opposite
+    bumper (< 10% of dominant bumper or < 4,000 px) is remapped to the dominant bumper.
+
+    Side panels (doors, fenders, quarter-panels, rocker-panels) are never touched,
+    preserving multi-door side-swipes and lateral impact observations.
+    """
+    part_to_id = {name: cid for cid, name in id_to_part.items()}
+    fb_id = part_to_id.get("front-bumper")
+    bb_id = part_to_id.get("back-bumper")
+    trunk_id = part_to_id.get("trunk")
+    hood_id = part_to_id.get("hood")
+
+    if fb_id is None or bb_id is None:
+        return preds
+
+    fb_count = int(np.count_nonzero(preds == fb_id))
+    bb_count = int(np.count_nonzero(preds == bb_id))
+    trunk_count = int(np.count_nonzero(preds == trunk_id)) if trunk_id is not None else 0
+    hood_count = int(np.count_nonzero(preds == hood_id)) if hood_id is not None else 0
+
+    # Rear-dominant view with an accidental front-bumper sliver (e.g. rear diffuser lip)
+    if (trunk_count >= 20000 or (trunk_count + bb_count >= 25000)) and fb_count > 0:
+        if fb_count < 4000 or (bb_count > 0 and fb_count * 10 < bb_count):
+            preds = preds.copy()
+            preds[preds == fb_id] = bb_id
+
+    # Front-dominant view with an accidental back-bumper sliver
+    elif (hood_count >= 20000 or (hood_count + fb_count >= 25000)) and bb_count > 0:
+        if bb_count < 4000 or (fb_count > 0 and bb_count * 10 < fb_count):
+            preds = preds.copy()
+            preds[preds == bb_id] = fb_id
+
+    return preds
+
+
 def run_parts_segmentation(
     request: PartsSegmentRequest,
     segmenter: PartsSegmenter,
@@ -323,6 +363,9 @@ def run_parts_segmentation(
         padding = np.ones(preds.shape, dtype=bool)
         padding[y0:y1, x0:x1] = False
         preds[padding] = 0
+
+        # Enforce macro view-consistency for opposing exterior facades
+        preds = apply_view_consistency(preds, segmenter.id_to_part_code)
 
         # Paletted mask PNG, stored under the version signature so a rerun with another
         # checkpoint never overwrites the mask that earlier rows point at.

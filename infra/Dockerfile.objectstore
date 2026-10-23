@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # MinIO community is source-only. Build the official release at its exact commit.
 FROM golang:1.24.8-bookworm AS build
 ARG MINIO_COMMIT=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
@@ -5,7 +6,22 @@ WORKDIR /source
 RUN git init . && git remote add origin https://github.com/minio/minio.git \
     && git fetch --depth 1 origin ${MINIO_COMMIT} && git checkout --detach FETCH_HEAD \
     && test "$(git rev-parse HEAD)" = "${MINIO_COMMIT}"
-RUN CGO_ENABLED=0 go build -trimpath -o /out/minio .
+# Retain completed downloads across attempts and rebuilds after a transient EOF.
+# Keep download and compilation together so an evicted cache is repopulated.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    set -eu; \
+    attempt=1; \
+    until go mod download; do \
+        if [ "$attempt" -ge 5 ]; then \
+            echo "Go dependency download failed after $attempt attempts" >&2; \
+            exit 1; \
+        fi; \
+        echo "Go dependency download failed; retrying (attempt $((attempt + 1))/5)" >&2; \
+        sleep "$((attempt * 5))"; \
+        attempt=$((attempt + 1)); \
+    done; \
+    CGO_ENABLED=0 go build -trimpath -o /out/minio .
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \

@@ -141,13 +141,14 @@ def test_f6_stale_presented_review_revision_is_a_conflict():
     assert ok.kind == "finalized" and ok.finalization.review_revision == 1
 
 
-def test_p1_and_p2_are_advisory_until_the_team_adopts_them():
+def test_p1_is_advisory_and_p2_completeness_is_enforced():
     s = state("clean", assessment=assessment(findings("clean"), superseded=True),
               completeness=completeness("partial"))
     default = gate(s)
-    assert default.allowed and failing(default) == {"P1", "P2"}
-    assert {b.code for b in default.advisories} == {"assessment_superseded", "completeness_unconfirmed"}
-    assert not default.condition("P1").enforced and not default.condition("P2").enforced
+    assert not default.allowed and failing(default) == {"P1", "P2"}
+    assert {b.code for b in default.advisories} == {"assessment_superseded"}
+    assert {b.code for b in default.blockers} == {"completeness_unconfirmed"}
+    assert not default.condition("P1").enforced and default.condition("P2").enforced
     strict = gate(s, config=enforce(p1=True, p2=True))
     assert not strict.allowed and {b.code for b in strict.blockers} == {"assessment_superseded",
                                                                         "completeness_unconfirmed"}

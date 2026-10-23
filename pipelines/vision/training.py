@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 IGNORE_INDEX = 255
 # Task -> (artifact folder under artifacts/models, dataset name). damage = HITL damage taxonomy.
@@ -65,6 +65,8 @@ class TrainingConfig:
     # e.g. (0.5, 2.0) rescales relative to that fit, then takes a random image_size crop.
     scale_range: tuple = (1.0, 1.0)
     rotation_degrees: float = 0.0
+    # Specular reflection / glare augmentation probability for clearcoat reflection resistance
+    specular_reflection: float = 0.0
     # Opt-in M2 crop mixture: full-image, random native-detail, target-centred.
     crop_mode: str = "legacy"
     full_image_probability: float = 0.25
@@ -124,6 +126,8 @@ class TrainingConfig:
             raise ValueError("scale_range must be (low, high) with 0 < low <= high")
         if not 0 <= self.rotation_degrees <= 45:
             raise ValueError("rotation_degrees must lie between 0 and 45")
+        if not 0 <= self.specular_reflection <= 1:
+            raise ValueError("specular_reflection must lie between 0 and 1")
         if self.crop_mode not in {"legacy", "damage_aware"}:
             raise ValueError("crop_mode must be legacy or damage_aware")
         if not (0 <= self.full_image_probability <= 1 and 0 <= self.focused_crop_probability <= 1
@@ -346,6 +350,44 @@ def damage_aware_crop(image, mask, config, rng=random):
     return pixels.resize(size, Image.Resampling.BILINEAR), target.resize(size, Image.Resampling.NEAREST)
 
 
+def add_specular_reflection(image: Image.Image, rng=random) -> Image.Image:
+    """Simulate car body specular glare, reflection bands and solar hotspots.
+
+    Teaches the model that clearcoat surface reflection gradients on glossy
+    sheet metal are background (class 0) rather than physical surface depressions (dents).
+    """
+    w, h = image.size
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    # 1. Specular reflection streak / glare band across panel
+    if rng.random() < 0.7:
+        num_bands = rng.randint(1, 3)
+        for _ in range(num_bands):
+            x0 = rng.randint(-w // 2, w + w // 2)
+            y0 = 0 if rng.random() < 0.5 else rng.randint(0, h)
+            x1 = rng.randint(0, w)
+            y1 = h
+            width = rng.randint(15, 60)
+            alpha = rng.randint(60, 160)
+            color = (255, 255, 255, alpha)
+            draw.line([(x0, y0), (x1, y1)], fill=color, width=width)
+        overlay = overlay.filter(ImageFilter.GaussianBlur(radius=rng.randint(8, 20)))
+
+    # 2. Specular hotspot / sunlight flare
+    if rng.random() < 0.5:
+        cx, cy = rng.randint(w // 4, 3 * w // 4), rng.randint(h // 4, 3 * h // 4)
+        rx, ry = rng.randint(30, 100), rng.randint(20, 60)
+        flare = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        flare_draw = ImageDraw.Draw(flare)
+        alpha = rng.randint(100, 200)
+        flare_draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=(255, 255, 255, alpha))
+        flare = flare.filter(ImageFilter.GaussianBlur(radius=rng.randint(15, 30)))
+        overlay = Image.alpha_composite(overlay, flare)
+
+    return Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
+
+
 class SegmentationDataset:
     """Map-style torch dataset; augmentation never modifies source evidence."""
     def __init__(self, records, config, training=False, num_classes=None):
@@ -388,6 +430,8 @@ class SegmentationDataset:
             image = ImageEnhance.Contrast(image).enhance(random.uniform(1-self.config.contrast, 1+self.config.contrast))
             if self.config.saturation:
                 image = ImageEnhance.Color(image).enhance(random.uniform(1-self.config.saturation, 1+self.config.saturation))
+            if getattr(self.config, "specular_reflection", 0.0) and random.random() < self.config.specular_reflection:
+                image = add_specular_reflection(image)
         pixels = np.asarray(image, dtype=np.float32) / 255.0
         pixels = (pixels - np.asarray(self.config.mean, dtype=np.float32)) / np.asarray(self.config.std, dtype=np.float32)
         return {"pixel_values": torch.from_numpy(pixels.transpose(2, 0, 1).copy()),

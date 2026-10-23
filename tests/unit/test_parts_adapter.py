@@ -729,3 +729,53 @@ def test_completion_event_continues_the_command_chain_and_carries_the_retry_epoc
     assert event["job_key"] == context.envelope.job_key
     assert event["causation_id"] == context.envelope.dedup_key
     assert event["dedup_key"] == dedup_key(topic, context.envelope.job_key, 2)
+
+
+# ---------------------------------------------------------------------------
+# View consistency tests
+# ---------------------------------------------------------------------------
+
+def test_apply_view_consistency_remaps_opposing_sliver_on_rear_dominant_view():
+    fb_id = PART_CODE_TO_ID["front-bumper"]
+    bb_id = PART_CODE_TO_ID["back-bumper"]
+    trunk_id = PART_CODE_TO_ID["trunk"]
+
+    preds = np.zeros((512, 512), dtype=np.uint8)
+    preds[:150, :200] = trunk_id       # 30,000 px
+    preds[150:200, :200] = bb_id       # 10,000 px
+    preds[200:210, :50] = fb_id        # 500 px sliver
+
+    sanitized = parts_adapter.apply_view_consistency(preds, ID_TO_PART_CODE)
+    assert int(np.count_nonzero(sanitized == fb_id)) == 0
+    assert int(np.count_nonzero(sanitized == bb_id)) == 10500
+
+
+def test_apply_view_consistency_remaps_opposing_sliver_on_front_dominant_view():
+    fb_id = PART_CODE_TO_ID["front-bumper"]
+    bb_id = PART_CODE_TO_ID["back-bumper"]
+    hood_id = PART_CODE_TO_ID["hood"]
+
+    preds = np.zeros((512, 512), dtype=np.uint8)
+    preds[:150, :200] = hood_id        # 30,000 px
+    preds[150:200, :200] = fb_id       # 10,000 px
+    preds[200:210, :50] = bb_id        # 500 px sliver
+
+    sanitized = parts_adapter.apply_view_consistency(preds, ID_TO_PART_CODE)
+    assert int(np.count_nonzero(sanitized == bb_id)) == 0
+    assert int(np.count_nonzero(sanitized == fb_id)) == 10500
+
+
+def test_apply_view_consistency_never_modifies_side_panels_or_multi_door_damage():
+    fd_id = PART_CODE_TO_ID["front-door"]
+    bd_id = PART_CODE_TO_ID["back-door"]
+    fender_id = PART_CODE_TO_ID["fender"]
+
+    preds = np.zeros((512, 512), dtype=np.uint8)
+    preds[:100, :150] = fender_id      # 15,000 px
+    preds[100:250, :150] = fd_id       # 22,500 px
+    preds[250:400, :150] = bd_id       # 22,500 px
+
+    sanitized = parts_adapter.apply_view_consistency(preds, ID_TO_PART_CODE)
+    # Side panels must remain 100% intact
+    assert np.array_equal(sanitized, preds)
+

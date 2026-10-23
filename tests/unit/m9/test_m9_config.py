@@ -24,7 +24,7 @@ def test_repository_config_loads_with_the_proposed_defaults():
     assert set(config.review.dismissal_reasons) == set(DISMISSAL_REASONS)
     assert config.review.note_required_for_reasons == ("other",)
     assert not config.finalize.enforce_p1_assessment_not_superseded
-    assert not config.finalize.enforce_p2_completeness_confirmed, "P1 and P2 await a team decision"
+    assert config.finalize.enforce_p2_completeness_confirmed, "P2 declaration completeness enforcement is adopted"
     assert not config.review.explainer_enabled and not config.review.usability_telemetry_enabled
     assert config.amounts.max_decimal_places == 2 and not config.amounts.allow_zero
 

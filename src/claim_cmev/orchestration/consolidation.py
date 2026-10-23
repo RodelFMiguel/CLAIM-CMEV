@@ -27,13 +27,14 @@ from ..contracts.common import ContractError, Provenance
 from ..contracts.documents import with_effective_price
 from ..costs.reference import CostTableError, PinnedCostTable, active_table_version, load_table
 from ..documents.pen_marks import MarkAction, apply_mark_action
+from ..documents.surveyor import extract_surveyor_from_pages
 from ..messaging.consumer import Context, PermanentError
 from ..messaging.outbox import build_message
 from ..persistence.store import load_records
 from ..persistence.tables import assessments, current_pointer
-from ..runtime import get
+from ..runtime import Record, get, put
 from . import state
-from .corrections import apply_corrections, review_events
+from .corrections import apply_corrections, map_line_item_ids, review_events
 from .intake import contract_vehicle_class
 from .plan import READY_TOPIC, SERVICE, STAGES
 
@@ -41,6 +42,23 @@ GROUP = "cmev-consolidator"
 OPEN_RESULTS = frozenset({"unsupported", "cost_outlier", "insufficient_evidence"})
 _MARK_ACTION_FIELDS = ("action_type", "action_id", "mark_id", "target_entry_id", "confirmed_amount",
                        "confirmed_currency", "confirmed_cost_basis", "reason_code", "note")
+
+
+def record_extracted_surveyor(session: Session, claim_id: str, name: str) -> None:
+    """Set only the claim's surveyor, from a fresh, locked read of the claim row.
+
+    Every other field comes from the database at write time, never from the copy read when
+    consolidation started, so a change the API commits meanwhile is kept. A surveyor the
+    user set by hand is never replaced.
+    """
+    row = session.get(Record, "claim:" + claim_id, with_for_update=True, populate_existing=True)
+    if row is None:
+        return
+    data = row.data
+    if data.get("surveyor_manually_set") and data.get("surveyor") not in (None, "", "Acery AI"):
+        return
+    if data.get("surveyor") != name:
+        row.data = {**data, "surveyor": name}
 
 
 class Consolidator:
@@ -81,8 +99,30 @@ class Consolidator:
             raise PermanentError("claim_input_missing", "claim or input revision record not found")
 
         records, lineage, inputs = self._records(session, claim_id, rev, payload)
-        marks, actions = self._decided_marks(records, claim_input, rev)
-        items, marks, declarations = apply_corrections(records, marks, claim_input, rev)
+        entry_map = map_line_item_ids(session, claim_id, records.get("line_item", []), claim_input)
+        marks, actions = self._decided_marks(records, claim_input, rev, entry_map=entry_map)
+        items, marks, declarations = apply_corrections(records, marks, claim_input, rev, entry_map=entry_map, session=session)
+        if any(eid != mapped_eid for eid, mapped_eid in entry_map.items()):
+            updated_corrections = []
+            for c in claim_input.get("corrections", []):
+                c = dict(c)
+                if c.get("kind") == "review_event":
+                    ev = dict(c["event"])
+                    if ev.get("entry_id") in entry_map:
+                        ev["entry_id"] = entry_map[ev["entry_id"]]
+                    nv = dict(ev.get("new_values", {}))
+                    if nv.get("entry_id") in entry_map:
+                        nv["entry_id"] = entry_map[nv["entry_id"]]
+                    if nv.get("target_entry_id") in entry_map:
+                        nv["target_entry_id"] = entry_map[nv["target_entry_id"]]
+                    ev["new_values"] = nv
+                    c["event"] = ev
+                elif c.get("kind") == "mark_action":
+                    if c.get("target_entry_id") in entry_map:
+                        c["target_entry_id"] = entry_map[c["target_entry_id"]]
+                updated_corrections.append(c)
+            claim_input["corrections"] = updated_corrections
+            put(session, f"input:{claim_id}:{rev}", "input", claim_input, claim_id)
         actions += [{"source": "surveyor", "action_id": e.action_id, "action_type": e.action_type, "mark_id": e.mark_id}
                     for e in review_events(claim_input)]
         inputs["declaration"] = declarations[0].model_dump(mode="json") if declarations else None
@@ -131,6 +171,9 @@ class Consolidator:
             created_at=ctx.now))
         if not superseded:
             self._advance_pointer(session, pointer, claim_id, rev, assessment_revision, body, items, ctx.now)
+        extracted_surveyor = None if superseded else extract_surveyor_from_pages(records.get("document_page", []))
+        if extracted_surveyor:
+            record_extracted_surveyor(session, claim_id, extracted_surveyor)
         job = ctx.job or {}
         message = build_message(READY_TOPIC, claim_id=claim_id, input_revision=rev, task="consolidate",
                                 versions=env.versions, provenance=ctx.provenance(), trace_id=env.trace_id,
@@ -183,7 +226,7 @@ class Consolidator:
         return records, lineage, inputs
 
     def _decided_marks(self, records: Mapping[str, list[Any]], claim_input: Mapping[str, Any],
-                       rev: int) -> tuple[list[Any], list[dict[str, Any]]]:
+                       rev: int, entry_map: Mapping[str, str] | None = None) -> tuple[list[Any], list[dict[str, Any]]]:
         marks = list(records.get("pen_mark", []))
         rows = list(records.get("line_item", []))
         fixture_actions = sorted(records.get("fixture_mark_action", []), key=lambda a: (a["review_revision"],
@@ -193,7 +236,10 @@ class Consolidator:
         for source, entry in [("fixture", a) for a in fixture_actions] + [("surveyor", c) for c in corrections]:
             if not marks:
                 break
-            action = MarkAction(**{k: entry.get(k) for k in _MARK_ACTION_FIELDS})
+            entry_dict = dict(entry)
+            if entry_map and entry_dict.get("target_entry_id") in entry_map:
+                entry_dict["target_entry_id"] = entry_map[entry_dict["target_entry_id"]]
+            action = MarkAction(**{k: entry_dict.get(k) for k in _MARK_ACTION_FIELDS})
             try:
                 marks = apply_mark_action(marks, action, actor=entry["actor"],
                                           recorded_at=datetime.fromisoformat(entry["recorded_at"]),

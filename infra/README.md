@@ -154,3 +154,13 @@ Validated on 2026-09-24 against an isolated Docker project on port 18080: both p
 Add `infra/compose/docker-compose.document.yml` to the base Compose file (and the image overlay when desired). It includes the OCR service and separate M5/M6 neural workers, switches ownership across API/orchestration, and selects the latest explicitly pinned notebook exports. Do not combine it with the OCR-only overlay. See [live document worker operations](../docs/document-worker-live.md) for commands, candidate limitations, evidence and revision behaviour.
 
 For both live branches, use `sh scripts/live-stack.sh up --build -d` from the repository root, and the same wrapper for `ps`, `logs` and `down`. Starting the base file alone while live workers remain running resets command versions to fixtures and can cause `model_version_unsupported`. Stop the complete live stack before switching to fixtures; stored volumes are retained by `down`.
+
+If the MinIO build fails with `go ... downloading` followed by `storage.googleapis.com/...: unexpected EOF`, a Go dependency download was interrupted. The object-store Dockerfile caches downloaded modules and retries downloads up to five times before failing. Retry just that image, then resume startup:
+
+```sh
+sh scripts/live-stack.sh build cmev-objectstore
+sh scripts/live-stack.sh up --build -d
+sh scripts/live-stack.sh ps
+```
+
+If every attempt fails, check the Docker Desktop proxy/VPN configuration and connectivity to `proxy.golang.org` and `storage.googleapis.com`. Preserve the build cache when retrying so completed downloads can be reused.

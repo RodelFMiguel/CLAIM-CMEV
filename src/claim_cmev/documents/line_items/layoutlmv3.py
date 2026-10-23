@@ -31,7 +31,7 @@ from claim_cmev.contracts.common import ContractError, Provenance
 from claim_cmev.contracts.documents import DeclarationCompleteness, DocumentPage, TextBox
 from .config import LayoutFamilyConfig
 from .parser import ParseResult, PageParse, UnparsedRegion, _Builder, _check_inputs
-from .table import Band, BoxAssignment, ColumnBinding, ColumnInterval, RawRow, page_boxes, union_box
+from .table import Band, BoxAssignment, ColumnBinding, ColumnInterval, RawRow, group_bands, page_boxes, union_box
 from .vocabulary import EstimateVocabulary
 
 ALIGNMENT_VERSION = "m5-layoutlmv3-slot-alignment/0.1.0"
@@ -228,8 +228,17 @@ class LocalLayoutLMv3:
                 if int(encoding["offset_mapping"][window, token, 0]) != 0:
                     continue
                 score, label_id = probabilities[token].max(-1)
+                label = self.model.config.id2label[int(label_id)]
+                match = LABEL.fullmatch(label)
+                if match and self.text_normalisation is not None:
+                    field_suffix = f"_{match[2]}"
+                    score = sum(
+                        float(probabilities[token, idx])
+                        for idx, candidate in self.model.config.id2label.items()
+                        if LABEL.fullmatch(candidate) and candidate.endswith(field_suffix)
+                    )
                 predictions[word] = WordPrediction(
-                    words.boxes[words.readable[word]].box_id, self.model.config.id2label[int(label_id)], float(score))
+                    words.boxes[words.readable[word]].box_id, label, min(1.0, float(score)))
         if len(predictions) != len(words.readable):
             raise ValueError("Tokenization did not cover every OCR word; no partial success written")
         by_box = {words.readable[word]: prediction for word, prediction in predictions.items()}
@@ -263,6 +272,7 @@ def adapt_predictions(pages, predictions, *, config: LayoutFamilyConfig,
                        currency, cost_basis, versions, provenance)
     rows, items, regions, page_results = [], [], [], []
     readable = False
+    band_tol = max(family.band_tolerance(config.parser), config.parser.max_wrap_gap_frac)
     for page_index, page in enumerate(pages):
         source = {b.box_id: b for b in page_boxes(page)}
         predicted = predictions.get(page.page_id, ())
@@ -270,16 +280,27 @@ def adapt_predictions(pages, predictions, *, config: LayoutFamilyConfig,
         if len(ids) != len(set(ids)) or set(ids) != set(source):
             if page.quality.state != "unreadable":
                 raise ContractError("prediction_alignment_mismatch", "Need one prediction per OCR box")
-        groups = defaultdict(list)
-        unparsed = []
+        matched_by_box = {}
+        unparsed_set = set()
         for prediction in predicted:
             if prediction.box_id not in source or not 0 <= prediction.confidence <= 1:
                 raise ValueError("Invalid prediction source or confidence")
             match = LABEL.fullmatch(prediction.label)
             if match and match[2] in FIELDS:
-                groups[int(match[1])].append((prediction, FIELDS[match[2]]))
+                matched_by_box[prediction.box_id] = (prediction, FIELDS[match[2]])
             else:
-                unparsed.append(prediction.box_id)
+                unparsed_set.add(prediction.box_id)
+        candidate_bands = group_bands([source[box_id] for box_id in matched_by_box], band_tol)
+        groups = {}
+        slot = 0
+        for band in candidate_bands:
+            band_fields = [matched_by_box[b.box_id] for b in band.boxes]
+            if any(field in ("description", "amount") for _, field in band_fields):
+                slot += 1
+                groups[slot] = band_fields
+            else:
+                unparsed_set.update(b.box_id for b in band.boxes)
+        unparsed = [p.box_id for p in predicted if p.box_id in unparsed_set]
         readable |= page.quality.state != "unreadable" and bool(source)
         if unparsed:
             regions.append(UnparsedRegion(page.page_id, page.page_number,

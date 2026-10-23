@@ -812,6 +812,14 @@ class BatchOutcome(_Frozen):
     input_revision: int
     state: ReviewState = Field(exclude=True)
 
+    @property
+    def ok(self) -> bool:
+        return self.kind in ("applied", "replayed")
+
+    @property
+    def replayed(self) -> bool:
+        return self.kind == "replayed"
+
 
 def apply_review_batch(
     state: ReviewState,
@@ -837,9 +845,15 @@ def apply_review_batch(
         key = f"{idempotency_key}.{index}"
         replay = current.recorded(key)
         if index and replay is None:
-            request = request.model_copy(update={"expected_review_revision": current.review_revision})
+            request = request.model_copy(update={
+                "expected_review_revision": current.review_revision,
+                "expected_input_revision": current.current_input_revision,
+            })
         elif index and replay is not None:
-            request = request.model_copy(update={"expected_review_revision": replay.event.expected_review_revision})
+            request = request.model_copy(update={
+                "expected_review_revision": replay.event.expected_review_revision,
+                "expected_input_revision": current.current_input_revision,
+            })
         outcome = apply_review_action(current, request, actor=actor, recorded_at=recorded_at, idempotency_key=key,
                                       action_id=action_id, config=config)
         outcomes.append(outcome)

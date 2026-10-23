@@ -62,6 +62,7 @@ services:
       CMEV_MODEL_REGISTRY_PATH: /srv/artifacts/models
     volumes: &id004
     - ${CMEV_MODEL_REGISTRY_HOST_PATH:-../../artifacts/models}:/srv/artifacts/models:ro
+    - ../../configs:/srv/configs:ro
     healthcheck: &id005
       test:
       - CMD

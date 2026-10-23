@@ -1,5 +1,15 @@
 import { useState } from "react";
 import { EvidenceDialog, EvidenceImage } from "./EvidenceDialog";
+import {
+  Undo2,
+  AlertTriangle,
+  X,
+  CheckCircle2,
+  Image as ImageIcon,
+  Download,
+  ExternalLink,
+} from "lucide-react";
+import partOptions from "./partOptions.json";
 
 // Display only: identity, coverage and assignment decisions remain owned by M2/M3.
 export interface DamageRow {
@@ -13,6 +23,9 @@ export interface DamageRow {
   reason_codes?: string[];
   photo_count: number;
   source_kind?: string;
+  coverage_confirmation_id?: string | null;
+  identity_confirmation_ids?: string[];
+  covering_photo_ids?: string[];
 }
 export interface DamageObservation {
   observation_id: string;
@@ -20,9 +33,11 @@ export interface DamageObservation {
   damage_code: string;
   damage_confidence: number;
   assignment_status: string;
+  part_code?: string | null;
   part_reason?: string | null;
   candidates: { part_code: string; containment: number; rank: number }[];
   background_containment: number;
+  bbox_norm?: number[];
 }
 export interface DamageGroup {
   summary_id: string;
@@ -35,6 +50,11 @@ interface Props {
   files: { file_id: string; original_name: string; url?: string }[];
   onPhoto?: (id: string) => void;
   print?: boolean;
+  locked?: boolean;
+  onRetract?: (partCode: string, side: string, photoIds?: string[]) => void | Promise<void>;
+  onConfirm?: (
+    actions: Record<string, unknown> | Record<string, unknown>[],
+  ) => void | Promise<boolean | void>;
 }
 interface ViewPhoto {
   id: string;
@@ -78,9 +98,84 @@ const reasons: Record<string, string> = {
     "The reviewer confirmed that these photographs do not show enough of the part.",
   coverage_confirmation_views_mismatch:
     "The confirmed photographs do not include a view that passes the coverage checks.",
+  surveyor_retracted:
+    "The reviewer retracted the previous coverage confirmation for this part (marked inadequate).",
 };
-const reasonText = (code: string) =>
+export const reasonText = (code: string) =>
   reasons[code] ?? `Review reason: ${label(code)}.`;
+
+interface DefectColorDef {
+  stroke: string;
+  fill: string;
+  fillHover: string;
+  fillLight: string;
+  badgeBg: string;
+}
+
+function defectColor(code: string): DefectColorDef {
+  switch (code.toLowerCase().replace(/[-_]/g, "")) {
+    case "dent":
+    case "crease":
+      return {
+        stroke: "#d97706",
+        fill: "rgba(245, 158, 11, 0.22)",
+        fillHover: "rgba(245, 158, 11, 0.38)",
+        fillLight: "rgba(254, 243, 199, 0.6)",
+        badgeBg: "#b45309",
+      };
+    case "scratch":
+      return {
+        stroke: "#0284c7",
+        fill: "rgba(14, 165, 233, 0.22)",
+        fillHover: "rgba(14, 165, 233, 0.38)",
+        fillLight: "rgba(224, 242, 254, 0.6)",
+        badgeBg: "#0369a1",
+      };
+    case "crack":
+    case "tear":
+    case "hole":
+      return {
+        stroke: "#dc2626",
+        fill: "rgba(239, 68, 68, 0.24)",
+        fillHover: "rgba(239, 68, 68, 0.40)",
+        fillLight: "rgba(254, 226, 226, 0.6)",
+        badgeBg: "#b91c1c",
+      };
+    case "glassshatter":
+    case "lampbroken":
+      return {
+        stroke: "#9333ea",
+        fill: "rgba(168, 85, 247, 0.24)",
+        fillHover: "rgba(168, 85, 247, 0.40)",
+        fillLight: "rgba(243, 232, 255, 0.6)",
+        badgeBg: "#7e22ce",
+      };
+    case "tireflat":
+      return {
+        stroke: "#059669",
+        fill: "rgba(16, 185, 129, 0.22)",
+        fillHover: "rgba(16, 185, 129, 0.38)",
+        fillLight: "rgba(209, 250, 229, 0.6)",
+        badgeBg: "#047857",
+      };
+    default:
+      return {
+        stroke: "#ea580c",
+        fill: "rgba(234, 88, 12, 0.22)",
+        fillHover: "rgba(234, 88, 12, 0.38)",
+        fillLight: "rgba(255, 237, 213, 0.6)",
+        badgeBg: "#c2410c",
+      };
+  }
+}
+
+export interface ConfirmingCardData {
+  row: DamageRow;
+  defaultPart: string;
+  defaultSide: string;
+  defaultPhotos: string[];
+  canRetract?: boolean;
+}
 
 export function DamageSummary({
   rows,
@@ -89,6 +184,9 @@ export function DamageSummary({
   files,
   onPhoto,
   print = false,
+  locked = false,
+  onRetract,
+  onConfirm,
 }: Props) {
   const observationsById = new Map(
     observations.map((o) => [o.observation_id, o]),
@@ -99,6 +197,7 @@ export function DamageSummary({
     files.flatMap((f) => (f.url ? [[f.file_id, f.url]] : [])),
   );
   const [viewing, setViewing] = useState<Viewing | null>(null);
+  const [confirmingCard, setConfirmingCard] = useState<ConfirmingCardData | null>(null);
   const unresolved = (row: DamageRow) =>
     row.identity_status === "unresolved" || row.part_code === "unresolved";
 
@@ -110,14 +209,66 @@ export function DamageSummary({
       return observation ? [observation] : [];
     });
     const codes = row.damage_codes;
+    const isRetracted = row.reason_codes?.includes("surveyor_retracted");
+    const canRetract =
+      !print &&
+      !locked &&
+      Boolean(onRetract) &&
+      row.part_code !== "unresolved" &&
+      row.side !== "unknown" &&
+      (row.coverage === "adequate" ||
+        Boolean(row.coverage_confirmation_id) ||
+        Boolean(
+          row.identity_confirmation_ids &&
+            row.identity_confirmation_ids.length > 0,
+        )) &&
+      !isRetracted;
+
+    const canConfirm = !print && !locked && Boolean(onConfirm);
+    const isAdequate = row.coverage === "adequate";
+
+    // Pre-fill only what the record already establishes. An unresolved part, an unknown
+    // side and a coverage decision are the surveyor's to choose, never a model guess.
+    const rawPart =
+      row.part_code && row.part_code !== "unresolved" ? row.part_code : "";
+    const defaultPart = rawPart ? rawPart.replace(/_/g, "-") : "";
+    const partMeta = partOptions.parts.find(
+      (p) => p.code === defaultPart || p.code === defaultPart.replace(/-/g, "_"),
+    );
+    const defaultSide =
+      partMeta && !partMeta.sided
+        ? "not_applicable"
+        : row.side && row.side !== "unknown" && row.side !== "not_applicable"
+          ? row.side
+          : "";
+
+    const cardMemberPhotoIds = members.map((o) => o.photo_id);
+    const cardCoveringPhotoIds = row.covering_photo_ids ?? [];
+    const defaultPhotos = [
+      ...new Set([...cardMemberPhotoIds, ...cardCoveringPhotoIds]),
+    ];
+
     const coverageLabel =
       row.coverage === "unresolved"
         ? row.reason_codes?.includes("identity_not_resolved")
           ? "Needs confirmation"
           : "Not established"
         : row.coverage === "inadequate"
-          ? "Not adequate"
+          ? isRetracted
+            ? "Retracted (Inadequate)"
+            : "Not adequate"
           : label(row.coverage);
+    const coverageClass =
+      row.coverage === "adequate"
+        ? "result-info-adequate"
+        : row.coverage === "inadequate" || row.coverage === "not_visible"
+          ? isRetracted
+            ? "result-info-retracted"
+            : "result-info-inadequate"
+          : row.coverage === "unresolved" &&
+              row.reason_codes?.includes("identity_not_resolved")
+            ? "result-info-warning"
+            : "result-info-neutral";
     const source =
       row.source_kind === "real"
         ? "Based on model analysis of uploaded photographs."
@@ -207,32 +358,71 @@ export function DamageSummary({
     return (
       <article className="damage-item" key={row.summary_id ?? index}>
         <div className="damage-title">
-          <strong>{heading}</strong>
-          {showSide && <span className="muted">{sideText}</span>}
-          {photos.length > 0 && (
-            <button
-              type="button"
-              className="button button-outline button-small damage-evidence-button"
-              aria-haspopup="dialog"
-              aria-label={`View evidence for ${heading}${codes?.length ? `, ${codes.map(label).join(", ")}` : ""}`}
-              onClick={() =>
-                setViewing({
-                  title: `${heading.replace(/\b\w/g, (c) => c.toUpperCase())}: photographic evidence`,
-                  subtitle: [
-                    codes?.length
-                      ? `Predicted damage: ${codes.map(label).join(", ")}`
-                      : "",
-                    showSide ? sideText : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" · "),
-                  photos,
-                })
-              }
-            >
-              View evidence
-            </button>
-          )}
+          <div className="damage-title-heading">
+            <strong>{heading}</strong>
+            {showSide && <span className="muted">{sideText}</span>}
+          </div>
+          <div className="damage-title-actions">
+            {isRetracted && (
+              <span className="damage-retracted-badge">
+                <Undo2 size={12} style={{ marginRight: "3px" }} /> Retracted by Surveyor
+              </span>
+            )}
+            {canConfirm && (
+              <button
+                type="button"
+                className={`button button-small damage-confirm-button ${
+                  isAdequate
+                    ? "damage-confirm-button-confirmed"
+                    : "damage-confirm-button-action"
+                }`}
+                title={
+                  isAdequate
+                    ? "Coverage is confirmed adequate. Click to update identity, side, or coverage, or retract confirmation."
+                    : "Confirm the physical identity, side, and photographic coverage for this part"
+                }
+                onClick={() => {
+                  setConfirmingCard({
+                    row,
+                    defaultPart,
+                    defaultSide,
+                    defaultPhotos:
+                      defaultPhotos.length > 0
+                        ? defaultPhotos
+                        : files.map((f) => f.file_id),
+                    canRetract,
+                  });
+                }}
+              >
+                <CheckCircle2 size={13} style={{ marginRight: "4px" }} />
+                {isAdequate ? "Edit Confirmation" : "Confirm Identity & Coverage"}
+              </button>
+            )}
+            {photos.length > 0 && (
+              <button
+                type="button"
+                className="button button-outline button-small damage-evidence-button"
+                aria-haspopup="dialog"
+                aria-label={`View evidence for ${heading}${codes?.length ? `, ${codes.map(label).join(", ")}` : ""}`}
+                onClick={() =>
+                  setViewing({
+                    title: `${heading.replace(/\b\w/g, (c) => c.toUpperCase())}: photographic evidence`,
+                    subtitle: [
+                      codes?.length
+                        ? `Predicted damage: ${codes.map(label).join(", ")}`
+                        : "",
+                      showSide ? sideText : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                    photos,
+                  })
+                }
+              >
+                View evidence
+              </button>
+            )}
+          </div>
         </div>
         <p className="damage-types">
           <strong>
@@ -247,7 +437,9 @@ export function DamageSummary({
               ? codes.map(label).join(", ")
               : "No damage observation recorded"}
         </p>
-        <span className="result-info">Coverage: {coverageLabel}</span>
+        <span className={`result-info ${coverageClass}`}>
+          Coverage: {coverageLabel}
+        </span>
         {row.reason_codes?.length ? (
           [...new Set(row.reason_codes)].map((code) => (
             <p key={code}>{reasonText(code)}</p>
@@ -300,32 +492,767 @@ export function DamageSummary({
           ))}
       </div>
       {viewing && (
-        <EvidenceDialog
-          title={viewing.title}
-          subtitle={viewing.subtitle}
+        <DamageEvidenceView
+          viewing={viewing}
           onClose={() => setViewing(null)}
-        >
-          {viewing.photos.map((photo) => (
-            <figure className="evidence-dialog-figure" key={photo.id}>
-              <EvidenceImage url={photo.url} alt={`Photograph ${photo.name}`} />
-              <figcaption>
-                <strong>{photo.name}</strong>
-                {": "}
-                {photo.observations
-                  .map(
-                    (o) =>
-                      `${label(o.damage_code)}, model confidence ${percent(o.damage_confidence)}`,
-                  )
-                  .join("; ")}
-              </figcaption>
-            </figure>
-          ))}
-          <p className="evidence-dialog-note">
-            Photographs are shown as uploaded. The predicted damage region is
-            not outlined here.
-          </p>
-        </EvidenceDialog>
+        />
+      )}
+      {confirmingCard && (
+        <QuickConfirmModal
+          cardData={confirmingCard}
+          files={files}
+          onClose={() => setConfirmingCard(null)}
+          onSave={async (actions) => {
+            await onConfirm?.(actions);
+          }}
+          onRetract={onRetract}
+        />
       )}
     </>
+  );
+}
+
+function DamagePhotoView({
+  photo,
+  showOverlay,
+  activeFilter,
+  hoveredId,
+  onHover,
+}: {
+  photo: ViewPhoto;
+  showOverlay: boolean;
+  activeFilter: string | null;
+  hoveredId: string | null;
+  onHover: (id: string | null) => void;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <p className="evidence-dialog-note">
+        This image could not be loaded. Close this view, then refresh or use
+        &ldquo;Open original file&rdquo; in the Evidence panel.
+      </p>
+    );
+  }
+
+  const visibleObservations = photo.observations.filter(
+    (o) => !activeFilter || o.damage_code === activeFilter,
+  );
+
+  return (
+    <div className="damage-photo-wrapper">
+      <img
+        className="evidence-dialog-image"
+        src={photo.url}
+        alt={`Photograph ${photo.name}`}
+        onError={() => setFailed(true)}
+      />
+      {showOverlay && visibleObservations.length > 0 && (
+        <div className="damage-overlay-container">
+          {visibleObservations.map((obs) => {
+            if (!obs.bbox_norm || obs.bbox_norm.length < 4) return null;
+            const [x0, y0, x1, y1] = obs.bbox_norm;
+            const color = defectColor(obs.damage_code);
+            const isHovered = hoveredId === obs.observation_id;
+            const badgeInside = y0 < 0.06;
+            const badgeAtRight = x0 > 0.75;
+
+            return (
+              <div
+                key={obs.observation_id}
+                className={`damage-defect-box ${isHovered ? "hovered" : ""}`}
+                style={{
+                  left: `${x0 * 100}%`,
+                  top: `${y0 * 100}%`,
+                  width: `${Math.max(0.6, (x1 - x0) * 100)}%`,
+                  height: `${Math.max(0.6, (y1 - y0) * 100)}%`,
+                  borderColor: color.stroke,
+                  backgroundColor: isHovered ? color.fillHover : color.fill,
+                  boxShadow: isHovered
+                    ? `0 0 0 3px ${color.stroke}, 0 4px 14px rgba(0,0,0,0.4)`
+                    : `0 0 0 1px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.2)`,
+                  zIndex: isHovered ? 15 : 5,
+                }}
+                onMouseEnter={() => onHover(obs.observation_id)}
+                onMouseLeave={() => onHover(null)}
+              >
+                <span
+                  className="damage-defect-badge"
+                  style={{
+                    backgroundColor: color.badgeBg,
+                    color: "#ffffff",
+                    top: badgeInside ? "3px" : "-24px",
+                    left: badgeAtRight ? "auto" : "0",
+                    right: badgeAtRight ? "0" : "auto",
+                  }}
+                >
+                  {label(obs.damage_code)} · {percent(obs.damage_confidence)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DamageEvidenceView({
+  viewing,
+  onClose,
+}: {
+  viewing: Viewing;
+  onClose: () => void;
+}) {
+  const [showOverlay, setShowOverlay] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  const allObservations = viewing.photos.flatMap((p) => p.observations);
+  const uniqueCodes = Array.from(
+    new Set(allObservations.map((o) => o.damage_code)),
+  );
+
+  return (
+    <EvidenceDialog
+      title={viewing.title}
+      subtitle={viewing.subtitle}
+      onClose={onClose}
+    >
+      <div className="damage-dialog-toolbar">
+        <div className="damage-dialog-filters">
+          <span className="damage-dialog-filter-label">Defect filter:</span>
+          <button
+            type="button"
+            className={`damage-filter-pill ${activeFilter === null ? "active" : ""}`}
+            onClick={() => setActiveFilter(null)}
+          >
+            All ({allObservations.length})
+          </button>
+          {uniqueCodes.map((code) => {
+            const count = allObservations.filter(
+              (o) => o.damage_code === code,
+            ).length;
+            const color = defectColor(code);
+            const isActive = activeFilter === code;
+            return (
+              <button
+                key={code}
+                type="button"
+                className={`damage-filter-pill ${isActive ? "active" : ""}`}
+                style={
+                  isActive
+                    ? {
+                        borderColor: color.stroke,
+                        backgroundColor: color.badgeBg,
+                        color: "#ffffff",
+                      }
+                    : {}
+                }
+                onClick={() => setActiveFilter(isActive ? null : code)}
+              >
+                <span
+                  className="damage-pill-dot"
+                  style={{
+                    backgroundColor: isActive ? "#ffffff" : color.stroke,
+                  }}
+                />
+                {label(code)} ({count})
+              </button>
+            );
+          })}
+        </div>
+        <label className="damage-dialog-toggle">
+          <input
+            type="checkbox"
+            checked={showOverlay}
+            onChange={(e) => setShowOverlay(e.target.checked)}
+          />
+          <span>Show defect overlay</span>
+        </label>
+      </div>
+
+      {viewing.photos.map((photo) => (
+        <figure className="evidence-dialog-figure" key={photo.id}>
+          <DamagePhotoView
+            photo={photo}
+            showOverlay={showOverlay}
+            activeFilter={activeFilter}
+            hoveredId={hoveredId}
+            onHover={setHoveredId}
+          />
+          <figcaption className="damage-photo-figcaption">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "8px",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}
+            >
+              <strong>{photo.name}</strong>
+              <div style={{ display: "inline-flex", gap: "8px" }}>
+                <a
+                  className="button button-outline button-small"
+                  href={photo.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    padding: "3px 8px",
+                    fontSize: "11px",
+                  }}
+                >
+                  <ExternalLink size={12} /> Open tab
+                </a>
+                <a
+                  className="button button-small"
+                  href={`${photo.url}?download=1`}
+                  download={photo.name}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    padding: "3px 8px",
+                    fontSize: "11px",
+                  }}
+                >
+                  <Download size={12} /> Download photo
+                </a>
+              </div>
+            </div>
+            {photo.observations.length > 0 ? (
+              <div className="damage-photo-obs-list">
+                {photo.observations.map((o) => {
+                  const color = defectColor(o.damage_code);
+                  const isFiltered =
+                    activeFilter && o.damage_code !== activeFilter;
+                  const isHovered = hoveredId === o.observation_id;
+                  return (
+                    <button
+                      key={o.observation_id}
+                      type="button"
+                      className={`damage-obs-chip ${isHovered ? "hovered" : ""} ${isFiltered ? "dimmed" : ""}`}
+                      style={{
+                        borderColor: color.stroke,
+                        backgroundColor: isHovered
+                          ? color.fillHover
+                          : isFiltered
+                            ? "#f1f5f9"
+                            : color.fillLight,
+                        opacity: isFiltered ? 0.45 : 1,
+                      }}
+                      onMouseEnter={() => setHoveredId(o.observation_id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                      onClick={() =>
+                        setActiveFilter(
+                          activeFilter === o.damage_code ? null : o.damage_code,
+                        )
+                      }
+                      title={`Click to filter to ${label(o.damage_code)}`}
+                    >
+                      <span
+                        className="damage-chip-indicator"
+                        style={{ backgroundColor: color.stroke }}
+                      />
+                      <strong>{label(o.damage_code)}</strong>
+                      <span className="damage-chip-conf">
+                        {percent(o.damage_confidence)}
+                      </span>
+                      {o.part_code && (
+                        <span className="damage-chip-part">
+                          ({label(o.part_code)})
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="muted">
+                No damage observations on this photograph.
+              </p>
+            )}
+          </figcaption>
+        </figure>
+      ))}
+
+      <p className="evidence-dialog-note">
+        {showOverlay
+          ? "Defect regions are predicted by the damage segmentation model (CarDD) and mapped to photograph coordinates. Hover or click a defect tag above to isolate and inspect that defect type."
+          : "Photographs are shown in original unprocessed form. Check 'Show defect overlay' to view predicted defect regions."}
+      </p>
+    </EvidenceDialog>
+  );
+}
+
+function QuickConfirmModal({
+  cardData,
+  files,
+  onClose,
+  onSave,
+  onRetract,
+}: {
+  cardData: ConfirmingCardData;
+  files: { file_id: string; original_name: string; url?: string }[];
+  onClose: () => void;
+  onSave: (actions: Record<string, unknown>[]) => Promise<void>;
+  onRetract?: (partCode: string, side: string, photoIds?: string[]) => void | Promise<void>;
+}) {
+  const [selectedPart, setSelectedPart] = useState(cardData.defaultPart || "");
+  const [selectedSide, setSelectedSide] = useState(cardData.defaultSide || "");
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>(
+    cardData.defaultPhotos.length > 0
+      ? cardData.defaultPhotos
+      : files.map((f) => f.file_id),
+  );
+  // Only an already-confirmed adequate coverage is shown as chosen; otherwise no default.
+  const [coverageState, setCoverageState] = useState<"adequate" | "inadequate" | "">(
+    cardData.row.coverage === "adequate" ? "adequate" : "",
+  );
+  const [insufficientReason, setInsufficientReason] = useState<string>("");
+  const [note, setNote] = useState<string>("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [showRetractConfirm, setShowRetractConfirm] = useState(false);
+  const [isRetracting, setIsRetracting] = useState(false);
+  const [error, setError] = useState("");
+
+  const currentPartMeta = partOptions.parts.find((p) => p.code === selectedPart);
+  const isSided = currentPartMeta ? currentPartMeta.sided : true;
+
+  const handlePartChange = (newPart: string) => {
+    setSelectedPart(newPart);
+    const meta = partOptions.parts.find((p) => p.code === newPart);
+    if (meta && !meta.sided) {
+      setSelectedSide("not_applicable");
+    } else if (meta && meta.sided && selectedSide === "not_applicable") {
+      setSelectedSide("");
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!selectedPart) {
+      setError("Please select a vehicle part.");
+      return;
+    }
+    if (!selectedSide) {
+      setError("Please choose the physical side.");
+      return;
+    }
+    if (selectedPhotoIds.length === 0) {
+      setError("Please select at least one photograph showing this part.");
+      return;
+    }
+    if (!coverageState) {
+      setError("Please choose whether these photographs show enough of this part.");
+      return;
+    }
+    if (coverageState === "inadequate" && !insufficientReason) {
+      setError("Please choose a reason why coverage is insufficient.");
+      return;
+    }
+
+    const trimmedNote = note.trim() || null;
+    const actions: Record<string, unknown>[] = [
+      {
+        action_type: "confirm_identity",
+        part_code: selectedPart,
+        side: selectedSide,
+        photo_ids: selectedPhotoIds,
+        note: trimmedNote,
+      },
+      {
+        action_type: "confirm_coverage",
+        part_code: selectedPart,
+        side: selectedSide,
+        photo_ids: selectedPhotoIds,
+        covers_enough: coverageState === "adequate",
+        reason_code: coverageState === "inadequate" ? insufficientReason : null,
+        note: trimmedNote,
+      },
+    ];
+
+    setIsSaving(true);
+    try {
+      await onSave(actions);
+      onClose();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to record confirmations.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const titleHeading =
+    cardData.row.part_code && cardData.row.part_code !== "unresolved"
+      ? label(cardData.row.part_code)
+      : "Unresolved Part";
+
+  return (
+    <div
+      className="retract-modal-overlay quick-confirm-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="retract-modal-card quick-confirm-modal-card">
+        <div className="retract-modal-header quick-confirm-modal-header">
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <CheckCircle2 size={18} color="#0284c7" />
+            <div>
+              <span className="retract-modal-title">
+                {cardData.canRetract
+                  ? "Edit Identity & Coverage"
+                  : "Confirm Identity & Coverage"}
+              </span>
+              <span className="quick-confirm-modal-subtitle">
+                Target: <strong>{titleHeading}</strong>
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="retract-modal-close"
+            onClick={onClose}
+            disabled={isSaving}
+            aria-label="Close dialog"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSave} className="quick-confirm-modal-form">
+          <div className="retract-modal-body quick-confirm-modal-body">
+            <div className="quick-confirm-grid-2">
+              <label className="quick-confirm-field">
+                <span className="quick-confirm-label">Vehicle Part</span>
+                <select
+                  required
+                  value={selectedPart}
+                  onChange={(e) => handlePartChange(e.target.value)}
+                >
+                  <option value="" disabled>
+                    Choose a part...
+                  </option>
+                  {partOptions.parts.map((p) => (
+                    <option key={p.code} value={p.code}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="quick-confirm-field">
+                <span className="quick-confirm-label">Physical Side</span>
+                <select
+                  required
+                  value={selectedSide}
+                  onChange={(e) => setSelectedSide(e.target.value)}
+                >
+                  {isSided ? (
+                    <>
+                      <option value="" disabled>
+                        Choose a side...
+                      </option>
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                    </>
+                  ) : (
+                    <option value="not_applicable">
+                      Not applicable (unsided part)
+                    </option>
+                  )}
+                </select>
+              </label>
+            </div>
+
+            <div className="quick-confirm-helper-tip">
+              Left and right are from the driver / vehicle&rsquo;s perspective.
+              Unsided parts (windshield, bumpers, hood, roof) use &ldquo;not
+              applicable&rdquo;.
+            </div>
+
+            <div className="quick-confirm-photos">
+              <div className="quick-confirm-photos-header">
+                <span className="quick-confirm-section-label">
+                  Supporting Photographs ({selectedPhotoIds.length} selected):
+                </span>
+                <div className="quick-confirm-photo-actions">
+                  <button
+                    type="button"
+                    className="button-link-small"
+                    onClick={() =>
+                      setSelectedPhotoIds(files.map((f) => f.file_id))
+                    }
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    className="button-link-small"
+                    onClick={() => setSelectedPhotoIds([])}
+                  >
+                    Deselect all
+                  </button>
+                </div>
+              </div>
+
+              <div className="quick-confirm-photo-grid">
+                {files.map((file) => {
+                  const isChecked = selectedPhotoIds.includes(file.file_id);
+                  const isAutoDetected = cardData.defaultPhotos.includes(
+                    file.file_id,
+                  );
+                  return (
+                    <label
+                      key={file.file_id}
+                      className={`quick-confirm-photo-item ${
+                        isChecked ? "is-selected" : ""
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedPhotoIds([
+                              ...selectedPhotoIds,
+                              file.file_id,
+                            ]);
+                          } else {
+                            setSelectedPhotoIds(
+                              selectedPhotoIds.filter(
+                                (id) => id !== file.file_id,
+                              ),
+                            );
+                          }
+                        }}
+                      />
+                      {file.url ? (
+                        <img
+                          src={file.url}
+                          alt={file.original_name}
+                          className="quick-confirm-photo-thumb"
+                        />
+                      ) : (
+                        <div className="quick-confirm-photo-placeholder">
+                          <ImageIcon size={18} />
+                        </div>
+                      )}
+                      <div className="quick-confirm-photo-info">
+                        <span
+                          className="quick-confirm-photo-name"
+                          title={file.original_name}
+                        >
+                          {file.original_name}
+                        </span>
+                        {isAutoDetected && (
+                          <span className="quick-confirm-photo-tag">
+                            Auto-detected
+                          </span>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="confirmation-card" style={{ marginTop: "14px" }}>
+              <span className="confirmation-heading">
+                Photographic Coverage
+              </span>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
+                <label
+                  className={`coverage-radio-option ${
+                    coverageState === "adequate" ? "is-selected" : ""
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="qc_coverage"
+                    value="adequate"
+                    checked={coverageState === "adequate"}
+                    onChange={() => setCoverageState("adequate")}
+                  />
+                  <div className="confirmation-option-body">
+                    <div className="coverage-radio-header">
+                      <span className="confirmation-option-title">Adequate</span>
+                    </div>
+                    <span className="confirmation-option-desc">
+                      These views show enough of this part to assess damage
+                    </span>
+                  </div>
+                </label>
+
+                <label
+                  className={`coverage-radio-option ${
+                    coverageState === "inadequate" ? "is-selected" : ""
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="qc_coverage"
+                    value="inadequate"
+                    checked={coverageState === "inadequate"}
+                    onChange={() => setCoverageState("inadequate")}
+                  />
+                  <div className="confirmation-option-body">
+                    <span className="confirmation-option-title">Inadequate</span>
+                    <span className="confirmation-option-desc">
+                      Coverage is insufficient or obscured
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {coverageState === "inadequate" && (
+                <div className="coverage-reason-box">
+                  <label>
+                    Why is coverage insufficient?
+                    <select
+                      value={insufficientReason}
+                      onChange={(e) => setInsufficientReason(e.target.value)}
+                      required
+                    >
+                      <option value="" disabled>
+                        Choose a reason...
+                      </option>
+                      <option value="partially_visible">
+                        The part is only partially visible
+                      </option>
+                      <option value="part_obscured">
+                        The part is obscured
+                      </option>
+                      <option value="image_unclear">
+                        The photographs are too unclear
+                      </option>
+                      <option value="part_not_visible">
+                        The part is not visible in these photographs
+                      </option>
+                      <option value="surveyor_retracted">
+                        Confirmation retracted by surveyor
+                      </option>
+                      <option value="other">Other visibility limitation</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <label className="quick-confirm-field" style={{ marginTop: "14px" }}>
+              <span className="quick-confirm-label">Surveyor Note (optional)</span>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                maxLength={2000}
+                rows={2}
+                placeholder="Optional explanation or observation notes..."
+              />
+            </label>
+
+            {error && (
+              <div
+                className="field-error-banner"
+                role="alert"
+                style={{ marginTop: "12px" }}
+              >
+                <span>{error}</span>
+              </div>
+            )}
+
+            {showRetractConfirm && (
+              <div className="modal-retract-confirm-box">
+                <div className="modal-retract-header">
+                  <AlertTriangle size={18} color="#d97706" />
+                  <span className="modal-retract-title">Revoke Surveyor Confirmation?</span>
+                </div>
+                <p className="modal-retract-text">
+                  This action records an audit-compliant revocation setting photographic coverage for <strong>{label(selectedPart)}</strong> ({selectedSide === "not_applicable" ? "unsided" : `side: ${label(selectedSide)}`}) to <code>inadequate</code> with reason <code>surveyor_retracted</code>.
+                </p>
+                <div className="modal-retract-actions">
+                  <button
+                    type="button"
+                    className="button button-outline button-small"
+                    onClick={() => setShowRetractConfirm(false)}
+                    disabled={isRetracting}
+                  >
+                    Keep Confirmation
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-danger button-small"
+                    onClick={async () => {
+                      setIsRetracting(true);
+                      setError("");
+                      try {
+                        await onRetract?.(
+                          selectedPart,
+                          selectedSide,
+                          selectedPhotoIds.length > 0 ? selectedPhotoIds : cardData.row.covering_photo_ids,
+                        );
+                        onClose();
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Failed to record retraction.");
+                        setIsRetracting(false);
+                      }
+                    }}
+                    disabled={isRetracting}
+                  >
+                    {isRetracting ? "Revoking..." : "Confirm Retraction"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="retract-modal-actions quick-confirm-modal-actions">
+            {cardData.canRetract && !showRetractConfirm && (
+              <button
+                type="button"
+                className="button button-outline button-small button-modal-retract"
+                onClick={() => setShowRetractConfirm(true)}
+                disabled={isSaving || isRetracting}
+                title="Revoke earlier surveyor confirmation (marks coverage as inadequate with reason surveyor_retracted)"
+              >
+                <Undo2 size={13} style={{ marginRight: "4px" }} />
+                Retract Confirmation
+              </button>
+            )}
+            <div className="quick-confirm-footer-right">
+              <button
+                type="button"
+                className="button button-outline"
+                onClick={onClose}
+                disabled={isSaving || isRetracting}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="button button-dark"
+                disabled={isSaving || isRetracting || showRetractConfirm}
+              >
+                {isSaving ? "Saving..." : "Save Identity & Coverage"}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }

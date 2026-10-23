@@ -333,7 +333,7 @@ def assign_damage_to_part(
         split_observations = []
         if (config.assignment.split_components
                 and part_mask is not None
-                and decision.part_reason == "ambiguous_between_parts"):
+                and decision.part_reason in ("ambiguous_between_parts", "below_containment_threshold")):
             containments, _ = measure_containment(comp_mask, part_mask, part_classes)
             min_pixels = config.assignment.split_min_pixels
             min_proportion = config.assignment.exact("split_min_proportion")
