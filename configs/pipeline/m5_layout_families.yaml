@@ -47,7 +47,7 @@ families:
       required_columns: [description, amount]
       aliases:
         description: ["DESCRIPTION", "DESCRIPTION OF WORK", "ITEM DESCRIPTION", "ITEM"]
-        operation: ["OPERATION", "OPER", "OPERATION TYPE"]
+        operation: ["OPERATION", "OPER", "OPERATION TYPE", "ACTION", "ACTN"]
         qty: ["QTY", "QUANTITY"]
         unit_price: ["UNIT PRICE", "U/PRICE", "UNIT COST"]
         amount: ["AMOUNT", "LINE TOTAL", "LINE AMOUNT"]
@@ -93,7 +93,7 @@ families:
       aliases:
         line_no: ["NO", "S/N", "SN", "ITEM NO"]    # recorded with the row, never parsed
         description: ["PARTICULARS", "PARTICULARS OF WORK", "REPAIR DETAILS"]
-        operation: ["ACTION", "ACTN", "WORK CODE"]
+        operation: ["ACTION", "ACTN", "WORK CODE", "OPERATION", "OPER"]
         qty: ["QTY", "QUANTITY", "NOS"]
         unit_price: ["RATE", "RATE (S$)", "UNIT RATE"]
         amount: ["AMT", "AMT (S$)", "AMOUNT (S$)", "AMOUNT (SGD)"]

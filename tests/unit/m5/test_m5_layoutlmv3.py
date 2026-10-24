@@ -63,6 +63,21 @@ def test_no_rows_and_unreadable_are_never_explicitly_empty():
     assert adapt([unreadable], {}).completeness.state == "unreadable"
 
 
+def test_standalone_amount_without_description_is_unparsed_not_phantom_row():
+    cells = row_cells({"description": "Rear bumper cover", "amount": "450.00"}, 200) + [
+        ("400", (820, 145, 890, 165), 0.92),
+    ]
+    page = make_page(cells)
+    result = adapt([page], {page.page_id: [
+        WordPrediction(page.text_boxes[0].box_id, "B-part_1_description", 0.95),
+        WordPrediction(page.text_boxes[1].box_id, "B-part_1_amount", 0.95),
+        WordPrediction(page.text_boxes[2].box_id, "B-part_2_amount", 0.52),
+    ]})
+    assert len(result.line_items) == 1
+    assert result.line_items[0].printed_line_amount == "450.00"
+    assert page.text_boxes[2].box_id in {box_id for region in result.unparsed_regions for box_id in region.box_ids}
+
+
 def test_incomplete_predictions_fail_instead_of_silent_omission():
     page = make_page(row_cells({"description": "FRT BUMPER"}, 200))
     with pytest.raises(ContractError, match="prediction_alignment_mismatch"):
