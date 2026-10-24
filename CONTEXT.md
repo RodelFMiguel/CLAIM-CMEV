@@ -6,6 +6,30 @@ Latest live-stack build fix (2026-10-21): MinIO Go dependency downloads now use 
 
 Latest M2 damage model status (2026-10-19): Retrained and deployed SegFormer-B3 on **CarDD** (`damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`). Validation foreground mIoU on CarDD is **0.7283** (72.83%) with dent precision **73.79%** and background IoU **92.71%**. Model is verified active in `configs/models/damage.yaml`, mounted into containers, and verified live in end-to-end claim reviews.
 
+## Fixed M4 Page Boundary Cropping, Flexible M5 Header Matching, Phantom Row Filtering & M6 Serving Threshold for CLM-24046 (2026-10-25)
+
+- **Changed paths:**
+  - `src/claim_cmev/documents/text_layout/geometry.py`:
+    - Updated `_boundary_contrast()` to use `max(0.0, float(np.median(small[inner])) - float(np.median(small[outer])))` instead of `abs(...)` so dark interior table borders/section bars on a bright white flat scan (`inner = 56`, `outer = 255`) are not mistaken for a bright page against a dark background and do not crop out the bottom estimate table (`y = 1693..2400`).
+  - `src/claim_cmev/documents/line_items/table.py` & `configs/pipeline/m5_layout_families.yaml`:
+    - Added `"ACTION"` / `"ACTN"` and `"OPERATION"` / `"OPER"` to operation header aliases across layout families.
+    - Updated `match_header()` to fall back to `find_phrases()` phrase matching inside a single header cell when exact full-string matching does not match (e.g. `"Description of Parts / Repair"`, `"Action"`, `"Amount (SGD)"`).
+  - `src/claim_cmev/documents/line_items/layoutlmv3.py`:
+    - Updated `adapt_predictions()` to require a `description` token in a candidate band (`if any(field == "description" for _, field in band_fields):`) before emitting a `LineItem`, placing standalone handwritten numbers between rows (such as `'400'`) into `unparsed_regions` instead of creating a phantom row.
+  - `configs/pipeline/m6_linking_serving.yaml`:
+    - Lowered `detection.score_threshold.exclusion` and `price_change` to `0.45` so the `0.492` confidence pen-mark detection over `'450.00'` is retained and linked.
+  - `tests/unit/m5/test_m5_table.py` & `tests/unit/m5/test_m5_layoutlmv3.py`:
+    - Added unit tests `test_flexible_header_keyword_matching_for_description_action_and_amount` and `test_standalone_amount_without_description_is_unparsed_not_phantom_row`.
+- **Decisions and status:**
+  - Synced updated modules to running worker and API containers, restarted services, and committed `input_revision = 2` for `CLM-24046` (`01M5Q9TQXRB5S6AYQC9G1PKWXQ`).
+- **Validation evidence:**
+  - Unit tests in `tests/unit/m4/test_m4_geometry.py`, `tests/unit/m5/test_m5_table.py`, and `tests/unit/m5/test_m5_layoutlmv3.py` all passed.
+  - `CLM-24046` (`assessment_revision = 2`, status `in_review`) extracted all 4 line items (`declared_total = 2040.00 SGD`) and linked pen mark `pm-a082a84d2612d4cddd92d4aa` (`EX-1`) to Row 3 (`Rear bumper cover`, `450.00`).
+- **Limitations:**
+  - Container Python package updates were synced via `docker cp`; rebuilding the container images will bake these changes permanently into the image layers.
+- **Next concrete step:**
+  - Review and confirm the linked pen mark on `CLM-24046` in the workbench UI.
+
 ## Auto-Positioning for Missed Pen Mark Actions (2026-10-22)
 
 - **Changed paths:**

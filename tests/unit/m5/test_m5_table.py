@@ -70,6 +70,22 @@ def test_a_line_box_is_never_split_to_find_header_words():
     assert detect_family([band], CONFIG).reason == "unsupported_layout"
 
 
+def test_flexible_header_keyword_matching_for_description_action_and_amount():
+    cells = [
+        ("No", (20, 100, 50, 120), 0.99),
+        ("Qty", (60, 100, 100, 120), 0.99),
+        ("Part or Work Description", (120, 100, 480, 120), 0.99),
+        ("Action", (500, 100, 620, 120), 0.99),
+        ("Amount $", (640, 100, 760, 120), 0.99),
+        ("Remarks", (780, 100, 900, 120), 0.99),
+    ]
+    bands = _bands(cells)
+    decision = detect_family(bands, CONFIG)
+    assert decision.family_id == "family-a-ruled-grid" and decision.reason is None
+    [header] = decision.headers
+    assert header.fields == ("qty", "description", "operation", "amount")
+
+
 def test_header_without_a_required_column_is_not_a_header():
     headers = {"description": "DESCRIPTION", "operation": "OPERATION", "qty": "QTY", "unit_price": "UNIT PRICE"}
     decision = detect_family(_bands(header_cells(100, headers)), CONFIG)

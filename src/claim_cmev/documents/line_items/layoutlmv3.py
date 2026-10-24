@@ -295,7 +295,7 @@ def adapt_predictions(pages, predictions, *, config: LayoutFamilyConfig,
         slot = 0
         for band in candidate_bands:
             band_fields = [matched_by_box[b.box_id] for b in band.boxes]
-            if any(field in ("description", "amount") for _, field in band_fields):
+            if any(field == "description" for _, field in band_fields):
                 slot += 1
                 groups[slot] = band_fields
             else:
