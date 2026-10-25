@@ -14,12 +14,13 @@ export interface Claim {
   vehicle: {
     make: string;
     model: string;
-    year: number;
+    year: number | null;
     plate: string;
     vehicle_class: string;
   };
   workshop: string;
-  loss_date: string;
+  loss_date: string | null;
+  manually_set_fields?: string[];
   status: string;
   photograph_count: number;
   estimate_row_count: number;
@@ -38,6 +39,7 @@ export interface Claim {
   latest_assessment_revision?: number | null;
   review_revision: number;
   source_kind: string;
+  created_at?: string;
 }
 export interface ClaimList {
   items: Claim[];

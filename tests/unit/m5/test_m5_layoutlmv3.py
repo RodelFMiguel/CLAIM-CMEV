@@ -3,7 +3,7 @@ import pytest
 
 from claim_cmev.contracts.common import ContractError
 from claim_cmev.documents.line_items.layoutlmv3 import WordPrediction, adapt_predictions
-from m5_support import (BASIS, CLAIM_ID, CONFIG, JOB_KEY, PROVENANCE, VOCABULARY,
+from m5_support import (BASIS, CLAIM_ID, CONFIG, COLS_A, JOB_KEY, PROVENANCE, VOCABULARY,
                         make_page, row_cells)
 
 
@@ -76,6 +76,32 @@ def test_standalone_amount_without_description_is_unparsed_not_phantom_row():
     assert len(result.line_items) == 1
     assert result.line_items[0].printed_line_amount == "450.00"
     assert page.text_boxes[2].box_id in {box_id for region in result.unparsed_regions for box_id in region.box_ids}
+
+
+def test_crossed_out_remarks_box_does_not_drop_confident_printed_amount():
+    cells = row_cells(
+        {"description": "Reur emblem and badging", "operation": "Replace", "amount": "120.00", "remarks": "77"},
+        200,
+        cols={**COLS_A, "remarks": (910, 950)},
+    )
+    page = make_page(cells)
+    result = adapt(
+        [page],
+        {
+            page.page_id: [
+                WordPrediction(page.text_boxes[0].box_id, "B-part_6_description", 0.93),
+                WordPrediction(page.text_boxes[1].box_id, "B-part_6_action", 0.93),
+                WordPrediction(page.text_boxes[2].box_id, "B-part_6_amount", 0.81),
+                WordPrediction(page.text_boxes[3].box_id, "B-part_6_amount", 0.17),
+            ]
+        },
+    )
+    assert len(result.line_items) == 1
+    assert result.line_items[0].printed_line_amount == "120.00"
+    assert result.line_items[0].original_amount_text == "120.00"
+    assert page.text_boxes[3].box_id in {
+        box_id for region in result.unparsed_regions for box_id in region.box_ids
+    }
 
 
 def test_incomplete_predictions_fail_instead_of_silent_omission():

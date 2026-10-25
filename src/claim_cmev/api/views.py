@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from decimal import Decimal
+import re
 from typing import Any
 
 from sqlalchemy import select, tuple_
@@ -162,23 +163,35 @@ def claim_view(db: Session, claim: Mapping[str, Any], *, snapshot=None,
     """
     view = deepcopy(dict(claim))
     cid, rev = claim["claim_id"], claim["input_revision"]
-    if view.get("surveyor") in (None, "", "Acery AI"):
-        from ..documents.surveyor import extract_surveyor_name
-        from ..persistence.tables import stage_records
-        box_rows = db.execute(
-            select(stage_records.c.body).where(
-                stage_records.c.claim_id == cid,
-                stage_records.c.record_kind == "page_text_box",
-            )
-        ).scalars().all()
-        if box_rows:
-            extracted = extract_surveyor_name(box_rows)
-            if extracted:
-                view["surveyor"] = extracted
-                claim_rec = get(db, "claim:" + cid)
-                if claim_rec and not claim_rec.get("surveyor_manually_set"):
-                    claim_rec["surveyor"] = extracted
-                    put(db, "claim:" + cid, "claim", claim_rec, cid)
+    if True:
+        from ..documents.surveyor import (
+            apply_extracted_metadata_to_claim,
+            claim_needs_metadata_extraction,
+            extract_report_metadata,
+        )
+        if claim_needs_metadata_extraction(view):
+            from ..persistence.tables import stage_records
+            box_rows = db.execute(
+                select(stage_records.c.body).where(
+                    stage_records.c.claim_id == cid,
+                    stage_records.c.record_kind == "page_text_box",
+                )
+            ).scalars().all()
+            if not box_rows:
+                pr_rows = db.execute(
+                    select(stage_records.c.body).where(
+                        stage_records.c.claim_id == cid,
+                        stage_records.c.record_kind == "page_reading",
+                    )
+                ).scalars().all()
+                box_rows = [b for pr in pr_rows for b in (pr.get("boxes") or [])]
+            if box_rows:
+                extracted = extract_report_metadata(box_rows)
+                if extracted:
+                    apply_extracted_metadata_to_claim(view, extracted)
+                    claim_rec = get(db, "claim:" + cid)
+                    if claim_rec and apply_extracted_metadata_to_claim(claim_rec, extracted):
+                        put(db, "claim:" + cid, "claim", claim_rec, cid)
     pointer = pointer_row(db, cid) if snapshot is None else snapshot["pointers"].get(cid)
     current = pointer is not None and pointer["input_revision"] == rev
     bs = (state.branch_row(db, cid, rev) if rev else None) if snapshot is None else snapshot["branches"].get((cid, rev))
@@ -304,22 +317,52 @@ def processing_view(db: Session, claim: Mapping[str, Any], input_revision: int |
 
 
 # ------------------------------------------------------------------ assessment view
+_CROSSED_AMOUNT_RE = re.compile(r"^\s*(\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2})\s+\d+\s*$")
+
+
+def _recover_crossed_amount(printed: str | None, orig_text: str | None) -> tuple[str | None, str | None]:
+    if printed is not None or not orig_text:
+        return printed, orig_text
+    m = _CROSSED_AMOUNT_RE.match(str(orig_text))
+    if m:
+        raw_amt = m.group(1)
+        return raw_amt.replace(",", ""), raw_amt
+    return printed, orig_text
+
+
 def _row_legacy(finding: Mapping[str, Any], item: Mapping[str, Any], marks: list[Mapping[str, Any]],
                 mark_state: Any, photo_ids: set[str]) -> dict[str, Any]:
     codes = [r["code"] for r in finding["reasons"]]
     evidence = [r["ref_id"] for r in finding["evidence_refs"] if r["kind"] == "photo" and r["ref_id"] in photo_ids]
     cost = finding["cost_check"]
+    printed_amt, orig_amt_text = _recover_crossed_amount(
+        item["printed_line_amount"], item.get("original_amount_text")
+    )
+    eff_amt = item["effective_price"]
+    eff_src = item["effective_price_source"]
+    eff_rsn = item["effective_price_reason"]
+    m_state = mark_state.state if mark_state else "none"
+    if (
+        eff_amt is None
+        and printed_amt is not None
+        and eff_rsn == "amount_unreadable"
+        and finding["row_state"] == "active"
+        and m_state in ("none", "rejected")
+    ):
+        eff_amt = printed_amt
+        eff_src = "printed"
+        eff_rsn = None
     return {
         "entry_id": item["entry_id"], "finding_id": finding["finding_id"],
         "description": " ".join(t for t in (item["original_part_text"], item["original_operation_text"]) if t),
         "part_code": item["part_code"] or "unmapped", "side": item["side"], "operation": item["operation"] or "unmapped",
-        "quantity": item["quantity"], "printed_amount": item["printed_line_amount"],
+        "quantity": item["quantity"], "printed_amount": printed_amt,
         "original_printed_amount": item.get("original_printed_line_amount"),
         "printed_amount_corrected": item.get("printed_amount_corrected", False),
-        "original_amount_text": item.get("original_amount_text"),
-        "effective_amount": item["effective_price"], "effective_price_source": item["effective_price_source"],
-        "effective_price_reason": item["effective_price_reason"], "currency": item["currency"],
-        "cost_basis": item["cost_basis"], "mark_state": mark_state.state if mark_state else "none",
+        "original_amount_text": orig_amt_text,
+        "effective_amount": eff_amt, "effective_price_source": eff_src,
+        "effective_price_reason": eff_rsn, "currency": item["currency"],
+        "cost_basis": item["cost_basis"], "mark_state": m_state,
         "mark_ids": [m["mark_id"] for m in marks], "row_state": finding["row_state"],
         "documentary_check": finding["documentary_check"]["result"], "mark_check": finding["mark_state_check"]["result"],
         "photo_check": finding["photographic_check"]["result"], "cost_check": cost["result"],

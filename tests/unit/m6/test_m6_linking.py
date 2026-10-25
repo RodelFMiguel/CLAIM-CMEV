@@ -203,6 +203,16 @@ def test_same_class_duplicates_at_dedupe_iou_are_merged_and_recorded():
     assert merged.iou >= CONFIG.detection.dedupe_iou
 
 
+def test_concentric_thin_strikethrough_exclusion_boxes_are_merged():
+    result = link([
+        det((130, 1072, 2180, 1106), "exclusion", 0.51),
+        det((400, 1075, 2100, 1091), "exclusion", 0.71),
+    ], ruled_rows())
+    (mark,) = result.marks
+    assert mark.detection_confidence == 0.71 and mark.entry_id == "e1"
+    assert len(result.merged_duplicates) == 1
+
+
 def test_distinct_same_class_boxes_below_dedupe_iou_stay_separate_marks():
     result = link([det((700, 1062, 1100, 1112)), det((1850, 1062, 2300, 1112))], ruled_rows())
     assert [m.entry_id for m in result.marks] == ["e1", "e1"] and result.merged_duplicates == ()

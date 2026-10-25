@@ -34,7 +34,6 @@ import {
   EyeOff,
   UploadCloud,
   X,
-  Car,
   Layers,
   LockKeyhole,
   Mail,
@@ -508,7 +507,23 @@ function Dashboard() {
       ? data.stats.open_discrepancies
       : null);
   const informationNeeded = total("information_needed_count");
-  const claims = data.items.filter(
+  const claimSortNum = (c: Claim) => {
+    const match = /^CLM-(\d+)$/i.exec((c.reference || "").trim());
+    return match ? Number(match[1]) : -1;
+  };
+  const sortedItems = [...data.items].sort((a, b) => {
+    const aSeed = a.claim_id.startsWith("01K5000000000000000000000");
+    const bSeed = b.claim_id.startsWith("01K5000000000000000000000");
+    if (aSeed !== bSeed) return aSeed ? 1 : -1;
+    if (!aSeed && a.created_at && b.created_at && a.created_at !== b.created_at) {
+      return b.created_at.localeCompare(a.created_at);
+    }
+    const aNum = claimSortNum(a);
+    const bNum = claimSortNum(b);
+    if (aNum !== bNum) return bNum - aNum;
+    return b.claim_id.localeCompare(a.claim_id);
+  });
+  const claims = sortedItems.filter(
     (c) =>
       (filter === "all" || c.status === filter) &&
       `${c.reference} ${c.policy_number} ${c.vehicle.plate} ${c.vehicle.make} ${c.vehicle.model} ${c.workshop}`
@@ -647,8 +662,10 @@ function Dashboard() {
                   </td>
                   <td>
                     <strong className="vehicle-name">
-                      {c.vehicle.make} {c.vehicle.model}{" "}
-                      <span>({c.vehicle.year})</span>
+                      {c.vehicle.make || c.vehicle.model
+                        ? `${c.vehicle.make || ""} ${c.vehicle.model || ""}`.trim()
+                        : "Pending extraction"}{" "}
+                      {c.vehicle.year ? <span>({c.vehicle.year})</span> : null}
                     </strong>
                     <p className="plate">{c.vehicle.plate}</p>
                     <p>{c.workshop}</p>
@@ -965,17 +982,19 @@ function NewClaim() {
       setProgress("Creating your claim...");
       let id = createdId;
       if (!id) {
+        const yearRaw = String(form.get("vehicle_year") || "").trim();
+        const lossRaw = String(form.get("loss_date") || "").trim();
         const claim = await save<Claim>("/claims", {
           reference: form.get("reference") || reference,
-          surveyor: form.get("surveyor") || undefined,
-          vehicle_make: form.get("vehicle_make"),
-          vehicle_model: form.get("vehicle_model"),
-          vehicle_year: Number(form.get("vehicle_year")),
-          vehicle_class: form.get("vehicle_class"),
-          plate: form.get("plate"),
-          policy_number: form.get("policy_number"),
-          workshop: form.get("workshop"),
-          loss_date: form.get("loss_date"),
+          surveyor: String(form.get("surveyor") || "").trim() || undefined,
+          vehicle_make: String(form.get("vehicle_make") || "").trim() || undefined,
+          vehicle_model: String(form.get("vehicle_model") || "").trim() || undefined,
+          vehicle_year: yearRaw ? Number(yearRaw) : undefined,
+          vehicle_class: String(form.get("vehicle_class") || "").trim() || "unknown",
+          plate: String(form.get("plate") || "").trim(),
+          policy_number: String(form.get("policy_number") || "").trim(),
+          workshop: String(form.get("workshop") || "").trim(),
+          loss_date: lossRaw || undefined,
           currency: "SGD",
         });
         id = claim.claim_id;
@@ -1040,14 +1059,16 @@ function NewClaim() {
         <section className="panel">
           <div className="panel-heading">
             <span className="section-icon">
-              <Car size={20} />
+              <UploadCloud size={20} />
             </span>
             <div>
-              <h2>Claim &amp; vehicle</h2>
-              <p>The essentials for a clear, traceable review.</p>
+              <h2>Policy &amp; evidence upload</h2>
+              <p>
+                Enter the policy number and upload the claim evidence. Vehicle, workshop, and surveyor details will be auto-extracted from the survey report.
+              </p>
             </div>
           </div>
-          <div className="form-grid">
+          <div className="intake-policy-grid">
             <label>
               Claim reference{" "}
               <input
@@ -1059,79 +1080,13 @@ function NewClaim() {
             </label>
             <label>
               Policy number
-              <input name="policy_number" placeholder="e.g. MOT/2026/884214" />
-            </label>
-            <label>
-              Field Surveyor
               <input
-                name="surveyor"
-                placeholder="e.g. S. Kumar or Cheryl Ong"
-              />
-              <small>Auto-extracted from survey report if left blank</small>
-            </label>
-            <label>
-              Vehicle make
-              <input name="vehicle_make" required placeholder="e.g. Toyota" />
-            </label>
-            <label>
-              Vehicle model
-              <input
-                name="vehicle_model"
+                name="policy_number"
                 required
-                placeholder="e.g. Corolla Altis"
+                placeholder="e.g. MOT/2026/884214"
               />
+              <small>Policy reference for this claim</small>
             </label>
-            <label>
-              Year
-              <input
-                name="vehicle_year"
-                type="number"
-                min="1950"
-                max="2100"
-                required
-                placeholder="2021"
-              />
-            </label>
-            <label>
-              Registration plate
-              <input name="plate" required placeholder="e.g. SJB 4412 K" />
-            </label>
-            <label>
-              Vehicle class
-              <select name="vehicle_class" defaultValue="unknown">
-                <option value="sedan_standard">Standard sedan</option>
-                <option value="suv_crossover">SUV / crossover</option>
-                <option value="hatchback_small">Small hatchback</option>
-                <option value="van_commercial">Van / commercial</option>
-                <option value="unknown">Not established</option>
-              </select>
-            </label>
-            <label>
-              Workshop
-              <input name="workshop" placeholder="Workshop name" />
-            </label>
-            <label>
-              Date of loss
-              <input name="loss_date" type="date" required />
-            </label>
-            <label>
-              Currency
-              <input value="SGD — Singapore dollar" readOnly />
-              <small>Fixed single-part cost basis</small>
-            </label>
-          </div>
-        </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <span className="section-icon">
-              <UploadCloud size={20} />
-            </span>
-            <div>
-              <h2>Evidence files</h2>
-              <p>
-                Original files are preserved alongside the processed results.
-              </p>
-            </div>
           </div>
           <div className="upload-grid">
             <FilePicker
@@ -1154,8 +1109,7 @@ function NewClaim() {
           <div className="inline-info">
             <Info size={16} />
             <span>
-              Results identify whether each branch used models or demonstration fixtures.
-              Review extracted amounts and proposed pen marks before finalizing.
+              Vehicle make &amp; model, year, registration plate, vehicle class, field surveyor, workshop, and date of loss are automatically extracted from the survey report and can be reviewed or modified on the review page.
             </span>
           </div>
         </section>
