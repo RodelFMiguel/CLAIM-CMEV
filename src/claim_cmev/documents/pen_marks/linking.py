@@ -122,6 +122,18 @@ def iou(a: Box, b: Box) -> float:
     return inter / union if union > 0 else (1.0 if a == b else 0.0)
 
 
+def _dedupe_overlap(a: Box, b: Box) -> float:
+    """IoU or smaller-box containment so concentric thin strike-through boxes merge."""
+    inter = _intersection(a, b)
+    if inter <= 0:
+        return 1.0 if a == b else 0.0
+    union = _area(a) + _area(b) - inter
+    base_iou = inter / union if union > 0 else 0.0
+    smaller = min(_area(a), _area(b))
+    containment = inter / smaller if smaller > 0 else 0.0
+    return max(base_iou, containment)
+
+
 def _column_match(columns: ColumnSet, centre_x: float, row: RowBox, amount_column: tuple[float, float] | None,
                   tolerance: float) -> int:
     if columns == "all":
@@ -241,7 +253,8 @@ def link_detections(
         ids = {index: deterministic_id("pm", job_key, page_id, position) for position, (index, _) in enumerate(ordered)}
         kept: list[tuple[int, Detection]] = []
         for index, d in sorted(ordered, key=lambda item: (-item[1].score, _canonical_key(item))):
-            overlaps = [(iou(d.box_norm, k.box_norm), k_index) for k_index, k in kept if k.mark_type == d.mark_type]
+            overlaps = [(_dedupe_overlap(d.box_norm, k.box_norm), k_index)
+                        for k_index, k in kept if k.mark_type == d.mark_type]
             best = max(overlaps, default=None)
             if best is not None and best[0] >= config.detection.dedupe_iou:
                 merged.append(MergedDetection(ids[best[1]], index, d.score, _round(best[0])))

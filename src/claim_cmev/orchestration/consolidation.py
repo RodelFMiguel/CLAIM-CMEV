@@ -27,7 +27,11 @@ from ..contracts.common import ContractError, Provenance
 from ..contracts.documents import with_effective_price
 from ..costs.reference import CostTableError, PinnedCostTable, active_table_version, load_table
 from ..documents.pen_marks import MarkAction, apply_mark_action
-from ..documents.surveyor import extract_surveyor_from_pages
+from ..documents.surveyor import (
+    apply_extracted_metadata_to_claim,
+    extract_report_metadata_from_pages,
+    extract_surveyor_from_pages,
+)
 from ..messaging.consumer import Context, PermanentError
 from ..messaging.outbox import build_message
 from ..persistence.store import load_records
@@ -131,6 +135,19 @@ class Consolidator:
         assessment_revision = 1 + (session.execute(select(func.max(assessments.c.assessment_revision))
                                                    .where(assessments.c.claim_id == claim_id)).scalar() or 0)
         superseded = claim.get("input_revision", rev) != rev
+        extracted_meta = extract_report_metadata_from_pages(
+            [*records.get("document_page", []), *records.get("page_reading", [])],
+            records.get("page_text_box", []),
+        )
+        if not extracted_meta.get("surveyor"):
+            legacy_surveyor = extract_surveyor_from_pages(records.get("document_page", []))
+            if legacy_surveyor:
+                extracted_meta["surveyor"] = legacy_surveyor
+        if extracted_meta:
+            apply_extracted_metadata_to_claim(claim, extracted_meta)
+            claim_rec = get(session, "claim:" + claim_id)
+            if claim_rec and apply_extracted_metadata_to_claim(claim_rec, extracted_meta):
+                put(session, "claim:" + claim_id, "claim", claim_rec, claim_id)
         vehicle_class = contract_vehicle_class((claim.get("vehicle") or {}).get("vehicle_class"))
         prior = claim_input.get("base_assessment_revision")
         provenance = Provenance(**ctx.provenance(source_dataset_id=claim_input.get("fixture_source")))
@@ -203,6 +220,31 @@ class Consolidator:
                                                   source_input_revision=job["input_revision"],
                                                   producing_job_key=job["job_key"]))
             for kind, found in load_records(session, claim_id, [j["job_key"] for j in jobs]).items():
+                if kind == "line_item":
+                    cleaned_found = []
+                    for li in found:
+                        if li.printed_line_amount is None and li.original_amount_text:
+                            import re as _re
+                            m_amt = _re.match(r"^\s*(\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2})\s+\d+\s*$", str(li.original_amount_text))
+                            if m_amt:
+                                raw_amt = m_amt.group(1)
+                                norm_amt = raw_amt.replace(",", "")
+                                li = li.model_copy(
+                                    update={
+                                        "printed_line_amount": norm_amt,
+                                        "original_amount_text": raw_amt,
+                                        "effective_price": norm_amt,
+                                        "effective_price_source": "printed",
+                                        "effective_price_reason": None,
+                                        "field_uncertainty": [
+                                            u
+                                            for u in li.field_uncertainty
+                                            if u.field != "printed_line_amount"
+                                        ],
+                                    }
+                                )
+                        cleaned_found.append(li)
+                    found = cleaned_found
                 records.setdefault(kind, []).extend(found)
         expected = {"part_summary": ("summary_id", "summary_ids"), "part_coverage": ("coverage_id", "coverage_ids"),
                     "line_item": ("entry_id", "line_item_ids"), "pen_mark": ("mark_id", "mark_ids")}

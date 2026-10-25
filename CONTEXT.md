@@ -6,7 +6,44 @@ Latest live-stack build fix (2026-10-21): MinIO Go dependency downloads now use 
 
 Latest M2 damage model status (2026-10-19): Retrained and deployed SegFormer-B3 on **CarDD** (`damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`). Validation foreground mIoU on CarDD is **0.7283** (72.83%) with dent precision **73.79%** and background IoU **92.71%**. Model is verified active in `configs/models/damage.yaml`, mounted into containers, and verified live in end-to-end claim reviews.
 
-## Fixed M4 Page Boundary Cropping, Flexible M5 Header Matching, Phantom Row Filtering & M6 Serving Threshold for CLM-24046 (2026-10-25)
+## Automated Survey Metadata Extraction, Reviewer Mark Decision Reversals, Crossed-Out Row Amount Preservation & UI Polishing (2026-10-25)
+
+- **Changed paths:**
+  - `src/claim_cmev/documents/surveyor.py`:
+    - Implemented report metadata extraction (`extract_report_metadata`, `extract_report_metadata_from_pages`, `apply_extracted_metadata_to_claim`, `claim_needs_metadata_extraction`) covering Vehicle Make, Model, Year, Plate, Workshop, Date of Loss, and Field Surveyor from OCR text boxes.
+    - Preserves reviewer manual overrides via `manually_set_fields`.
+  - `src/claim_cmev/documents/line_items/layoutlmv3.py`:
+    - Added `_resolve_row_numeric_fields` to isolate confident numeric amount boxes and move low-confidence remarks digits to unparsed regions instead of dropping the printed amount.
+  - `src/claim_cmev/orchestration/consolidation.py` & `src/claim_cmev/api/views.py`:
+    - Added recovery logic to parse and preserve printed line amounts from text representations like `"120.00 77"`.
+    - Maintained `field_uncertainty` consistency for `amount_box_norm` when recovering printed amounts.
+  - `src/claim_cmev/api/main.py`:
+    - Updated claim creation and update endpoints to accept optional intake metadata and support manual edits.
+    - Enabled decision reversal/toggling: resets mark states and filters conflicting prior corrections so reviewers can switch between confirmed and rejected exclusion marks.
+    - Updated claim queue sorting to place the latest claims at the top and earliest cases at the bottom.
+  - `src/claim_cmev/documents/pen_marks/linking.py`:
+    - Improved deduplication of overlapping pen marks on the same row.
+  - `src/workbench/src/ClaimReview.tsx` & `src/workbench/src/styles.css`:
+    - Removed duplicate "Confirm exclusion" buttons on pending marks.
+    - Added a "Restore line item (keep original amount)" action for excluded line items, retaining original printed amounts in display.
+    - Realigned "Edit details" grid layout and spacing to match view mode tile positions (Row 1: Surveyor, Policy, Workshop; Row 2: Make, Model, Year; Row 3: Plate, Class, Date).
+    - Replaced the top duplicate surveyor display with an integrated details card with manual/auto tags.
+    - Hid the intermediate/background processing table while running, displaying only the processing status banner until final review is ready.
+  - `src/workbench/src/App.tsx`:
+    - Simplified "New claim" intake: only requires policy number and evidence files, deferring vehicle details to auto-extraction.
+  - `src/workbench/src/DamageSummary.tsx`:
+    - Sized defect photo evidence to fit printed pages cleanly.
+  - `tests/unit/m5/test_m5_layoutlmv3.py` & `tests/unit/test_report_metadata_extraction.py`:
+    - Added unit tests for crossed-out printed amount preservation and survey report metadata extraction.
+- **Decisions and status:**
+  - Automated report metadata extraction replaces tedious manual claim intake entry while allowing full surveyor editing and audit traceability in review.
+  - Crossed-out estimate rows preserve original printed amounts and provide bidirectional decision control (confirm exclusion vs restore line item).
+  - Production container images and assets rebuilt and verified live.
+- **Validation evidence:**
+  - Unit tests passed for layoutlmv3 and metadata extraction.
+  - End-to-end verified on `CLM-24051`: both restored state ($120 active) and confirmed exclusion ($120 preserved, excluded) verified via live API and UI proxy.
+- **Next concrete step:**
+  - Continue standard surveyor review workflows on new claims.
 
 - **Changed paths:**
   - `src/claim_cmev/documents/text_layout/geometry.py`:

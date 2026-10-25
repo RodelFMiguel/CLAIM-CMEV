@@ -71,16 +71,29 @@ class ClaimCreate(StrictModel):
     reference: str = Field(min_length=1, max_length=100)
     surveyor: str | None = Field(default=None, max_length=100)
     reviewer: str | None = Field(default=None, max_length=100)
-    vehicle_make: str = Field(min_length=1, max_length=80)
-    vehicle_model: str = Field(min_length=1, max_length=100)
-    vehicle_year: int = Field(ge=1950, le=2100)
+    vehicle_make: str | None = Field(default=None, max_length=80)
+    vehicle_model: str | None = Field(default=None, max_length=100)
+    vehicle_year: int | None = Field(default=None, ge=1950, le=2100)
     vehicle_class: Literal["hatchback_small", "sedan_standard", "suv_crossover", "van_commercial", "unknown",
-                           "compact-sedan", "suv", "hatchback"] = "unknown"
-    plate: str = Field(default="", max_length=30)
-    policy_number: str = Field(default="", max_length=100)
-    workshop: str = Field(default="", max_length=150)
+                           "compact-sedan", "suv", "hatchback"] | None = "unknown"
+    plate: str | None = Field(default="", max_length=30)
+    policy_number: str | None = Field(default="", max_length=100)
+    workshop: str | None = Field(default="", max_length=150)
     loss_date: date | None = None
     currency: str = Field(default="SGD", pattern="^[A-Z]{3}$")
+
+
+class ClaimUpdate(StrictModel):
+    surveyor: str | None = Field(default=None, max_length=100)
+    policy_number: str | None = Field(default=None, max_length=100)
+    vehicle_make: str | None = Field(default=None, max_length=80)
+    vehicle_model: str | None = Field(default=None, max_length=100)
+    vehicle_year: int | None = Field(default=None, ge=1950, le=2100)
+    vehicle_class: Literal["hatchback_small", "sedan_standard", "suv_crossover", "van_commercial", "unknown",
+                           "compact-sedan", "suv", "hatchback"] | None = None
+    plate: str | None = Field(default=None, max_length=30)
+    workshop: str | None = Field(default=None, max_length=150)
+    loss_date: date | None = None
 
 
 class InputCreate(StrictModel):
@@ -332,6 +345,16 @@ def create_app(database_url=None, storage_path=None):
             all_items = views.claim_views(db, [r.data for r in db.scalars(select(Record).where(Record.kind == "claim")
                                                                           .order_by(Record.key))
                          if r.data.get("owner_id") == DEMO_USER["id"]])
+
+        def _claim_sort_key(c: dict):
+            cid = c.get("claim_id") or ""
+            is_seed = cid.startswith("01K5000000000000000000000")
+            ref = (c.get("reference") or "").strip().upper()
+            ref_num = int(ref[4:]) if ref.startswith("CLM-") and ref[4:].isdigit() else -1
+            created = (c.get("created_at") or "") if not is_seed else ""
+            return (0 if is_seed else 1, created, ref_num, cid)
+
+        all_items.sort(key=_claim_sort_key, reverse=True)
         items = [c for c in all_items if not q or q.lower() in json.dumps(c).lower()]
         return {"items": items, "total": len(items),
                 "stats": {"open_claims": sum(c["status"] != "ready_to_print" for c in all_items),
@@ -352,13 +375,36 @@ def create_app(database_url=None, storage_path=None):
                 cid = uid()
                 s_name = body.surveyor.strip() if body.surveyor and body.surveyor.strip() else DEMO_USER["name"]
                 r_name = body.reviewer.strip() if body.reviewer and body.reviewer.strip() else DEMO_USER["name"]
-                claim = {"claim_id": cid, "reference": body.reference.strip(), "policy_number": body.policy_number,
+                manual_fields: list[str] = []
+                if body.surveyor and body.surveyor.strip():
+                    manual_fields.append("surveyor")
+                if body.policy_number and body.policy_number.strip():
+                    manual_fields.append("policy_number")
+                if body.vehicle_make and body.vehicle_make.strip():
+                    manual_fields.append("vehicle_make")
+                if body.vehicle_model and body.vehicle_model.strip():
+                    manual_fields.append("vehicle_model")
+                if body.vehicle_year is not None:
+                    manual_fields.append("vehicle_year")
+                if body.plate and body.plate.strip():
+                    manual_fields.append("plate")
+                if body.workshop and body.workshop.strip():
+                    manual_fields.append("workshop")
+                if body.loss_date is not None:
+                    manual_fields.append("loss_date")
+                claim = {"claim_id": cid, "reference": body.reference.strip(),
+                         "policy_number": (body.policy_number or "").strip(),
                          "surveyor": s_name, "surveyor_manually_set": bool(body.surveyor and body.surveyor.strip()),
+                         "manually_set_fields": manual_fields,
                          "reviewer": r_name,
                          "owner_id": DEMO_USER["id"],
-                         "vehicle": {"make": body.vehicle_make, "model": body.vehicle_model, "year": body.vehicle_year,
-                                     "plate": body.plate, "vehicle_class": body.vehicle_class},
-                         "workshop": body.workshop, "loss_date": payload["loss_date"], "status": "awaiting_upload",
+                         "vehicle": {"make": (body.vehicle_make or "").strip(),
+                                     "model": (body.vehicle_model or "").strip(),
+                                     "year": body.vehicle_year,
+                                     "plate": (body.plate or "").strip(),
+                                     "vehicle_class": body.vehicle_class or "unknown"},
+                         "workshop": (body.workshop or "").strip(),
+                         "loss_date": payload["loss_date"], "status": "awaiting_upload",
                          "currency": body.currency, "input_revision": 0, "review_revision": 0, "source_kind": "fixture",
                          "created_at": utcnow().isoformat()}
                 put(db, "claim:" + cid, "claim", claim, cid)
@@ -369,6 +415,106 @@ def create_app(database_url=None, storage_path=None):
     def detail(cid: str):
         with database.session() as db:
             return views.claim_view(db, claim_for(db, cid))
+
+    @app.patch("/api/v1/claims/{cid}")
+    def update_claim(cid: str, body: ClaimUpdate, request: Request):
+        payload = body.model_dump(mode="json", exclude_unset=True)
+        with database.session.begin() as db:
+            c = claim_for(db, cid, lock=True)
+
+            def action():
+                ptr = views.pointer_row(db, cid)
+                if ptr is not None:
+                    rev_rec = get(db, f"review:{cid}:{ptr['assessment_revision']}")
+                    if rev_rec and rev_rec.get("finalized"):
+                        fail(409, "review_finalized", "This review is frozen.")
+                manual = set(c.get("manually_set_fields") or [])
+                vehicle = dict(c.get("vehicle") or {})
+                old_class = vehicle.get("vehicle_class") or "unknown"
+
+                if "surveyor" in body.model_fields_set:
+                    s_val = (body.surveyor or "").strip()
+                    c["surveyor"] = s_val or DEMO_USER["name"]
+                    c["surveyor_manually_set"] = bool(s_val)
+                    if s_val:
+                        manual.add("surveyor")
+                    else:
+                        manual.discard("surveyor")
+                if "policy_number" in body.model_fields_set:
+                    p_val = (body.policy_number or "").strip()
+                    c["policy_number"] = p_val
+                    if p_val:
+                        manual.add("policy_number")
+                    else:
+                        manual.discard("policy_number")
+                if "vehicle_make" in body.model_fields_set:
+                    m_val = (body.vehicle_make or "").strip()
+                    vehicle["make"] = m_val
+                    if m_val:
+                        manual.add("vehicle_make")
+                    else:
+                        manual.discard("vehicle_make")
+                if "vehicle_model" in body.model_fields_set:
+                    mod_val = (body.vehicle_model or "").strip()
+                    vehicle["model"] = mod_val
+                    if mod_val:
+                        manual.add("vehicle_model")
+                    else:
+                        manual.discard("vehicle_model")
+                if "vehicle_year" in body.model_fields_set:
+                    vehicle["year"] = body.vehicle_year
+                    if body.vehicle_year is not None:
+                        manual.add("vehicle_year")
+                    else:
+                        manual.discard("vehicle_year")
+                if "plate" in body.model_fields_set:
+                    pl_val = (body.plate or "").strip()
+                    vehicle["plate"] = pl_val
+                    if pl_val:
+                        manual.add("plate")
+                    else:
+                        manual.discard("plate")
+                if "vehicle_class" in body.model_fields_set and body.vehicle_class is not None:
+                    vehicle["vehicle_class"] = body.vehicle_class
+                    manual.add("vehicle_class")
+                if "workshop" in body.model_fields_set:
+                    w_val = (body.workshop or "").strip()
+                    c["workshop"] = w_val
+                    if w_val:
+                        manual.add("workshop")
+                    else:
+                        manual.discard("workshop")
+                if "loss_date" in body.model_fields_set:
+                    c["loss_date"] = payload.get("loss_date")
+                    if c["loss_date"]:
+                        manual.add("loss_date")
+                    else:
+                        manual.discard("loss_date")
+
+                c["vehicle"] = vehicle
+                c["manually_set_fields"] = sorted(manual)
+                put(db, "claim:" + cid, "claim", c, cid)
+
+                from ..orchestration.intake import contract_vehicle_class
+                new_class = vehicle.get("vehicle_class") or "unknown"
+                if (
+                    contract_vehicle_class(old_class) != contract_vehicle_class(new_class)
+                    and c.get("input_revision", 0) >= 1
+                    and ptr is not None
+                    and ptr["input_revision"] == c["input_revision"]
+                ):
+                    previous = get(db, f"input:{cid}:{c['input_revision']}") or {}
+                    files = [get(db, "file:" + fid) for fid in previous.get("file_ids", []) if get(db, "file:" + fid)]
+                    if files:
+                        from ..review.state import BRANCH_STAGES
+                        commit(db, c, files, corrections=previous.get("corrections", []),
+                               base_assessment_revision=ptr["assessment_revision"],
+                               reuse_from=c["input_revision"], reuse_stages=BRANCH_STAGES,
+                               cost_table_version=previous.get("cost_table_version"),
+                               review_revision=c["review_revision"])
+
+                return views.claim_view(db, c)
+            return idem(db, request, payload, action, cid)
 
     @app.post("/api/v1/claims/{cid}/files", status_code=201)
     async def upload(cid: str, request: Request, files: list[UploadFile] = File(...),
@@ -614,8 +760,40 @@ def create_app(database_url=None, storage_path=None):
                 # Wait for the previous decision to finish before editing its old assessment.
                 if c["input_revision"] != row["input_revision"]:
                     fail(409, "reassessment_pending", "Wait for the current reassessment before saving.")
+                loaded_state = review_service.load(db, c, row, review)
+                if body.action_type in ("confirm_mark", "reject_mark") and body.mark_id:
+                    if any(
+                        m.mark_id == body.mark_id and m.state in ("confirmed", "rejected")
+                        for m in loaded_state.marks
+                    ):
+                        loaded_state = loaded_state.model_copy(
+                            update={
+                                "marks": tuple(
+                                    m.model_copy(
+                                        update={
+                                            "state": "pending",
+                                            "decision_action_id": None,
+                                            "decided_by": None,
+                                            "decided_at": None,
+                                            "review_revision": None,
+                                        }
+                                    )
+                                    if m.mark_id == body.mark_id
+                                    else m
+                                    for m in loaded_state.marks
+                                ),
+                                "actions": tuple(
+                                    a
+                                    for a in loaded_state.actions
+                                    if not (
+                                        a.event.mark_id == body.mark_id
+                                        and a.event.action_type in ("confirm_mark", "reject_mark")
+                                    )
+                                ),
+                            }
+                        )
                 outcome = apply_review_action(
-                    review_service.load(db, c, row, review), body, actor=DEMO_USER["name"],
+                    loaded_state, body, actor=DEMO_USER["name"],
                     recorded_at=utcnow(), idempotency_key=digest(request.url.path + "|" + request.headers.get("Idempotency-Key", "")),
                     action_id="ra-" + uid().lower())
                 if not outcome.ok:
@@ -629,7 +807,25 @@ def create_app(database_url=None, storage_path=None):
                     previous = get(db, f"input:{cid}:{c['input_revision']}")
                     files = [get(db, "file:" + fid) for fid in previous["file_ids"]]
                     correction = {"kind": "review_event", "event": outcome.event.model_dump(mode="json")}
-                    result = commit(db, c, files, corrections=[*previous.get("corrections", []), correction],
+                    prev_corrections = list(previous.get("corrections", []))
+                    if body.action_type in ("confirm_mark", "reject_mark") and body.mark_id:
+                        prev_corrections = [
+                            pc
+                            for pc in prev_corrections
+                            if not (
+                                (
+                                    pc.get("kind") == "review_event"
+                                    and (pc.get("event") or {}).get("mark_id") == body.mark_id
+                                    and (pc.get("event") or {}).get("action_type") in ("confirm_mark", "reject_mark")
+                                )
+                                or (
+                                    pc.get("kind") == "mark_action"
+                                    and pc.get("mark_id") == body.mark_id
+                                    and pc.get("action_type") in ("confirm_mark", "reject_mark")
+                                )
+                            )
+                        ]
+                    result = commit(db, c, files, corrections=[*prev_corrections, correction],
                                     base_assessment_revision=rev, reuse_from=row["input_revision"],
                                     reuse_stages=outcome.plan.reused_stages,
                                     review_revision=outcome.review_revision,
@@ -652,8 +848,36 @@ def create_app(database_url=None, storage_path=None):
                 if c["input_revision"] != row["input_revision"]:
                     fail(409, "reassessment_pending", "Wait for the current reassessment before saving.")
                 action_ids = ["ra-" + uid().lower() for _ in requests_list]
+                loaded_state = review_service.load(db, c, row, review)
+                batch_mark_ids = {
+                    req.mark_id
+                    for req in requests_list
+                    if req.action_type in ("confirm_mark", "reject_mark") and req.mark_id
+                }
+                if batch_mark_ids and any(
+                    m.mark_id in batch_mark_ids and m.state in ("confirmed", "rejected")
+                    for m in loaded_state.marks
+                ):
+                    loaded_state = loaded_state.model_copy(
+                        update={
+                            "marks": tuple(
+                                m.model_copy(
+                                    update={
+                                        "state": "pending",
+                                        "decision_action_id": None,
+                                        "decided_by": None,
+                                        "decided_at": None,
+                                        "review_revision": None,
+                                    }
+                                )
+                                if m.mark_id in batch_mark_ids and m.state in ("confirmed", "rejected")
+                                else m
+                                for m in loaded_state.marks
+                            )
+                        }
+                    )
                 batch_outcome = apply_review_batch(
-                    review_service.load(db, c, row, review), requests_list, actor=DEMO_USER["name"],
+                    loaded_state, requests_list, actor=DEMO_USER["name"],
                     recorded_at=utcnow(),
                     idempotency_key=digest(request.url.path + "|" + request.headers.get("Idempotency-Key", "")),
                     action_ids=action_ids)
@@ -687,7 +911,25 @@ def create_app(database_url=None, storage_path=None):
                     from ..review.state import BRANCH_STAGES
                     reused_stages = tuple(s for s in BRANCH_STAGES if s not in all_rerun)
 
-                    result = commit(db, c, files, corrections=[*previous.get("corrections", []), *new_corrections],
+                    prev_corrections = list(previous.get("corrections", []))
+                    if batch_mark_ids:
+                        prev_corrections = [
+                            pc
+                            for pc in prev_corrections
+                            if not (
+                                (
+                                    pc.get("kind") == "review_event"
+                                    and (pc.get("event") or {}).get("mark_id") in batch_mark_ids
+                                    and (pc.get("event") or {}).get("action_type") in ("confirm_mark", "reject_mark")
+                                )
+                                or (
+                                    pc.get("kind") == "mark_action"
+                                    and pc.get("mark_id") in batch_mark_ids
+                                    and pc.get("action_type") in ("confirm_mark", "reject_mark")
+                                )
+                            )
+                        ]
+                    result = commit(db, c, files, corrections=[*prev_corrections, *new_corrections],
                                     base_assessment_revision=rev, reuse_from=row["input_revision"],
                                     reuse_stages=reused_stages,
                                     review_revision=batch_outcome.review_revision,
@@ -763,10 +1005,19 @@ def create_app(database_url=None, storage_path=None):
             frozen = review_service.public(review)
             assessment = review["assessment_snapshot"]
             claim_snap = dict(review["claim_snapshot"])
+            current_claim = views.claim_view(db, claim_for(db, cid))
             if claim_snap.get("surveyor") in (None, "", "Acery AI"):
-                current_claim = views.claim_view(db, claim_for(db, cid))
                 if current_claim.get("surveyor") and current_claim["surveyor"] != "Acery AI":
                     claim_snap["surveyor"] = current_claim["surveyor"]
+            for k in ("policy_number", "workshop", "loss_date"):
+                if not claim_snap.get(k) and current_claim.get(k):
+                    claim_snap[k] = current_claim[k]
+            snap_veh = dict(claim_snap.get("vehicle") or {})
+            curr_veh = current_claim.get("vehicle") or {}
+            for vk in ("make", "model", "year", "plate"):
+                if snap_veh.get(vk) in (None, "", 0, "unknown") and curr_veh.get(vk) not in (None, "", 0, "unknown"):
+                    snap_veh[vk] = curr_veh[vk]
+            claim_snap["vehicle"] = snap_veh
             return {"claim": claim_snap, "assessment": assessment, "review": frozen, "report": review.get("report"),
                     "disclaimer": assessment["fixture_notice"] or "Synthetic reference costs; not a final approval."}
 

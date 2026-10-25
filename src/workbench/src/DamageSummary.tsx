@@ -298,54 +298,170 @@ export function DamageSummary({
         ? "Side: unknown (unconfirmed)"
         : `Side: ${label(row.side)}`;
     const showSide = row.side !== "unknown" || SHOW_UNKNOWN_SIDE || print;
-    const detail = members.map((o) => (
-      <li key={o.observation_id}>
-        <strong>{label(o.damage_code)}</strong> · Model confidence:{" "}
-        {percent(o.damage_confidence)}
-        <p>
-          {onPhoto && names.has(o.photo_id) && row.source_kind === "real" ? (
-            <button
-              type="button"
-              className="damage-photo-link"
-              onClick={() => onPhoto(o.photo_id)}
-            >
-              View {names.get(o.photo_id)}
-            </button>
-          ) : (
-            (names.get(o.photo_id) ?? `Photograph ${o.photo_id}`)
-          )}
-        </p>
-        {o.assignment_status === "unresolved" &&
-          o.part_reason &&
-          !row.reason_codes?.includes(o.part_reason) && (
-            <p>{reasonText(o.part_reason)}</p>
-          )}
-        {o.part_reason === "part_masks_missing" ? (
-          <p>Candidate overlap unavailable.</p>
-        ) : (
-          <>
-            <p>
-              {o.candidates.length
-                ? "Candidate parts — share of damage region:"
-                : "No candidate part overlaps this region."}
-            </p>
-            {o.candidates.length > 0 && (
-              <ul>
-                {o.candidates.map((c) => (
-                  <li key={c.rank}>
-                    {label(c.part_code)}: {percent(c.containment)} overlap
-                  </li>
-                ))}
-              </ul>
+    const detail = members.map((o) => {
+      const photoUrl =
+        row.source_kind === "real" ? urls.get(o.photo_id) : undefined;
+      const photoName = names.get(o.photo_id) ?? `Photograph ${o.photo_id}`;
+      const color = defectColor(o.damage_code);
+      const hasBox = Array.isArray(o.bbox_norm) && o.bbox_norm.length >= 4;
+      const capDamage = label(o.damage_code).replace(/^\w/, (c) =>
+        c.toUpperCase(),
+      );
+      const badgeText = `${capDamage} · ${percent(o.damage_confidence)}`;
+      const pillWidth = Math.round(badgeText.length * 5.2 + 10);
+
+      return (
+        <li
+          key={o.observation_id}
+          className={print && photoUrl ? "damage-obs-print-item" : undefined}
+        >
+          <div
+            className={print && photoUrl ? "damage-obs-print-row" : undefined}
+          >
+            <div className="damage-obs-print-text">
+              <strong>{label(o.damage_code)}</strong> · Model confidence:{" "}
+              {percent(o.damage_confidence)}
+              <p>
+                {onPhoto &&
+                names.has(o.photo_id) &&
+                row.source_kind === "real" ? (
+                  <button
+                    type="button"
+                    className="damage-photo-link"
+                    onClick={() => onPhoto(o.photo_id)}
+                  >
+                    View {names.get(o.photo_id)}
+                  </button>
+                ) : (
+                  photoName
+                )}
+              </p>
+              {o.assignment_status === "unresolved" &&
+                o.part_reason &&
+                !row.reason_codes?.includes(o.part_reason) && (
+                  <p>{reasonText(o.part_reason)}</p>
+                )}
+              {o.part_reason === "part_masks_missing" ? (
+                <p>Candidate overlap unavailable.</p>
+              ) : (
+                <>
+                  <p>
+                    {o.candidates.length
+                      ? "Candidate parts — share of damage region:"
+                      : "No candidate part overlaps this region."}
+                  </p>
+                  {o.candidates.length > 0 && (
+                    <ul>
+                      {o.candidates.map((c) => (
+                        <li key={c.rank}>
+                          {label(c.part_code)}: {percent(c.containment)} overlap
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p>
+                    Part-model background: {percent(o.background_containment)}{" "}
+                    overlap.
+                  </p>
+                </>
+              )}
+            </div>
+            {print && photoUrl && (
+              <figure className="print-defect-figure">
+                <div className="print-defect-media">
+                  <img
+                    src={photoUrl}
+                    alt={`${photoName} — ${label(o.damage_code)}`}
+                    className="print-defect-img"
+                  />
+                  {hasBox &&
+                    (() => {
+                      const [x0, y0, x1, y1] = o.bbox_norm!;
+                      const w = Math.max(0.015, x1 - x0);
+                      const h = Math.max(0.015, y1 - y0);
+                      const badgeX = Math.min(58, Math.max(1, x0 * 100));
+                      const badgeY =
+                        y0 < 0.14
+                          ? Math.min(84, y0 * 100 + 2)
+                          : Math.max(1, y0 * 100 - 13);
+                      return (
+                        <svg
+                          className="print-defect-svg"
+                          width="100%"
+                          height="100%"
+                          aria-label={`Annotated defect: ${label(o.damage_code)}`}
+                        >
+                          <rect
+                            x={`${x0 * 100}%`}
+                            y={`${y0 * 100}%`}
+                            width={`${w * 100}%`}
+                            height={`${h * 100}%`}
+                            fill={color.fill}
+                            stroke={color.stroke}
+                            strokeWidth="2.5"
+                            rx="2"
+                          />
+                          <svg
+                            x={`${badgeX}%`}
+                            y={`${badgeY}%`}
+                            overflow="visible"
+                          >
+                            <rect
+                              x="0"
+                              y="0"
+                              width={pillWidth}
+                              height="15"
+                              rx="3"
+                              fill={color.badgeBg}
+                            />
+                            <text
+                              x="5"
+                              y="11"
+                              fill="#ffffff"
+                              fontSize="9"
+                              fontWeight="700"
+                              fontFamily="system-ui, -apple-system, sans-serif"
+                            >
+                              {badgeText}
+                            </text>
+                          </svg>
+                        </svg>
+                      );
+                    })()}
+                </div>
+                <figcaption className="print-defect-caption">
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 10 10"
+                    aria-hidden="true"
+                    style={{ flexShrink: 0 }}
+                  >
+                    <rect
+                      x="1"
+                      y="1"
+                      width="8"
+                      height="8"
+                      rx="2"
+                      fill={color.fill}
+                      stroke={color.stroke}
+                      strokeWidth="2"
+                    />
+                  </svg>
+                  <span
+                    className="print-defect-caption-tag"
+                    style={{ color: color.badgeBg }}
+                  >
+                    {capDamage} ({percent(o.damage_confidence)})
+                  </span>
+                  <span className="print-defect-caption-name">{photoName}</span>
+                </figcaption>
+              </figure>
             )}
-            <p>
-              Part-model background: {percent(o.background_containment)}{" "}
-              overlap.
-            </p>
-          </>
-        )}
-      </li>
-    ));
+          </div>
+        </li>
+      );
+    });
     const details = (
       <>
         <p className="damage-detail-note">

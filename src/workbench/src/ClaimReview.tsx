@@ -19,6 +19,7 @@ import {
   ArrowUpToLine,
   Calculator,
   Camera,
+  Car,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -31,6 +32,7 @@ import {
   Maximize2,
   MinusCircle,
   OctagonAlert,
+  Pencil,
   Printer,
   RefreshCw,
   ShieldCheck,
@@ -403,6 +405,7 @@ function ReviewOverview({ id }: { id: string }) {
   const [localReady, setLocalReady] = useState(false);
   const [tabId, setTabId] = useState("");
   const [expandReviewHistory, setExpandReviewHistory] = useState(false);
+  const [editingClaimDetails, setEditingClaimDetails] = useState(false);
   useEffect(() => {
     void reviewTabId()
       .then(setTabId)
@@ -650,6 +653,23 @@ function ReviewOverview({ id }: { id: string }) {
   }
   async function markDecision(mark: Mark, decision: "confirm" | "reject") {
     if (!claim || !review || !assessment) return;
+    if (mark.type === "exclusion" && mark.entry_id) {
+      const siblings = assessment.marks.filter(
+        (m) =>
+          m.entry_id === mark.entry_id &&
+          (m.state === "pending" || m.state === mark.state) &&
+          m.type === "exclusion",
+      );
+      if (siblings.length > 1) {
+        await reviewAction(
+          siblings.map((m) => ({
+            action_type: decision === "confirm" ? "confirm_mark" : "reject_mark",
+            mark_id: m.mark_id,
+          })),
+        );
+        return;
+      }
+    }
     await mutate(
       `${base}/assessments/${assessment.assessment_revision}/marks/${mark.mark_id}/decision`,
       {
@@ -749,10 +769,16 @@ function ReviewOverview({ id }: { id: string }) {
             {claim.reference}
             <span className="title-dot">.</span>
           </h1>
-          <p>
-            {claim.vehicle.make} {claim.vehicle.model} ({claim.vehicle.year})
-            &middot; {claim.vehicle.plate} &middot; {claim.workshop}
-          </p>
+          {Boolean(assessment) && claim.status !== "processing" && (
+            <p>
+              {claim.vehicle.make || claim.vehicle.model
+                ? `${claim.vehicle.make || ""} ${claim.vehicle.model || ""}`.trim()
+                : "Vehicle pending extraction"}
+              {claim.vehicle.year ? ` (${claim.vehicle.year})` : ""}
+              {claim.vehicle.plate ? ` \u00b7 ${claim.vehicle.plate}` : ""}
+              {claim.workshop ? ` \u00b7 ${claim.workshop}` : ""}
+            </p>
+          )}
         </div>
         <div className="review-header-actions">
           <Status value={claim.status} />
@@ -774,9 +800,6 @@ function ReviewOverview({ id }: { id: string }) {
         </div>
       </div>
       <div className="revision-strip">
-        <span>
-          Field Surveyor <b>{claim.surveyor || "Unspecified"}</b>
-        </span>
         <span>
           Reviewer <b>{review?.report?.header?.reviewed_by || claim.reviewer || "Acery AI"}</b>
         </span>
@@ -800,6 +823,289 @@ function ReviewOverview({ id }: { id: string }) {
           Currency <b>{claim.currency}</b>
         </span>
       </div>
+      {Boolean(assessment) && claim.status !== "processing" && (
+      <section className="panel claim-details-review-panel" aria-label="Claim and vehicle details">
+        <div className="claim-details-review-header">
+          <div className="panel-heading claim-details-panel-heading">
+            <span className="section-icon">
+              <Car size={20} />
+            </span>
+            <div>
+              <h2>Claim &amp; vehicle details</h2>
+              <p>Extracted from the survey report when left blank at intake. Click Edit details to adjust any field.</p>
+            </div>
+          </div>
+          {!editingClaimDetails && (
+            <button
+              type="button"
+              className="button button-outline button-small claim-details-edit-btn"
+              disabled={busy || frozen}
+              onClick={() => setEditingClaimDetails(true)}
+            >
+              <Pencil size={13} /> Edit details
+            </button>
+          )}
+        </div>
+        {!editingClaimDetails ? (
+          <div className="claim-details-summary-grid">
+            <div className="claim-detail-tile">
+              <div className="claim-detail-tile-top">
+                <span>Field Surveyor</span>
+                {claim.surveyor && claim.surveyor !== "Acery AI" && (
+                  <em className={`claim-detail-badge ${(claim.manually_set_fields ?? []).includes("surveyor") ? "manual" : "auto"}`}>
+                    {(claim.manually_set_fields ?? []).includes("surveyor") ? "Manual" : "Auto"}
+                  </em>
+                )}
+              </div>
+              <strong>{claim.surveyor && claim.surveyor !== "Acery AI" ? claim.surveyor : claim.surveyor || "—"}</strong>
+            </div>
+            <div className="claim-detail-tile">
+              <div className="claim-detail-tile-top">
+                <span>Policy number</span>
+              </div>
+              <strong>{claim.policy_number || "—"}</strong>
+            </div>
+            <div className="claim-detail-tile">
+              <div className="claim-detail-tile-top">
+                <span>Workshop</span>
+                {claim.workshop && (
+                  <em className={`claim-detail-badge ${(claim.manually_set_fields ?? []).includes("workshop") ? "manual" : "auto"}`}>
+                    {(claim.manually_set_fields ?? []).includes("workshop") ? "Manual" : "Auto"}
+                  </em>
+                )}
+              </div>
+              <strong>{claim.workshop || "—"}</strong>
+            </div>
+            <div className="claim-detail-tile">
+              <div className="claim-detail-tile-top">
+                <span>Vehicle make</span>
+                {claim.vehicle.make && (
+                  <em className={`claim-detail-badge ${(claim.manually_set_fields ?? []).includes("vehicle_make") ? "manual" : "auto"}`}>
+                    {(claim.manually_set_fields ?? []).includes("vehicle_make") ? "Manual" : "Auto"}
+                  </em>
+                )}
+              </div>
+              <strong>{claim.vehicle.make || "—"}</strong>
+            </div>
+            <div className="claim-detail-tile">
+              <div className="claim-detail-tile-top">
+                <span>Vehicle model</span>
+                {claim.vehicle.model && (
+                  <em className={`claim-detail-badge ${(claim.manually_set_fields ?? []).includes("vehicle_model") ? "manual" : "auto"}`}>
+                    {(claim.manually_set_fields ?? []).includes("vehicle_model") ? "Manual" : "Auto"}
+                  </em>
+                )}
+              </div>
+              <strong>{claim.vehicle.model || "—"}</strong>
+            </div>
+            <div className="claim-detail-tile">
+              <div className="claim-detail-tile-top">
+                <span>Year</span>
+                {claim.vehicle.year && (
+                  <em className={`claim-detail-badge ${(claim.manually_set_fields ?? []).includes("vehicle_year") ? "manual" : "auto"}`}>
+                    {(claim.manually_set_fields ?? []).includes("vehicle_year") ? "Manual" : "Auto"}
+                  </em>
+                )}
+              </div>
+              <strong>{claim.vehicle.year ?? "—"}</strong>
+            </div>
+            <div className="claim-detail-tile">
+              <div className="claim-detail-tile-top">
+                <span>Registration plate</span>
+                {claim.vehicle.plate && (
+                  <em className={`claim-detail-badge ${(claim.manually_set_fields ?? []).includes("plate") ? "manual" : "auto"}`}>
+                    {(claim.manually_set_fields ?? []).includes("plate") ? "Manual" : "Auto"}
+                  </em>
+                )}
+              </div>
+              <strong>
+                {claim.vehicle.plate ? (
+                  <span className="claim-detail-plate-pill">{claim.vehicle.plate}</span>
+                ) : (
+                  "—"
+                )}
+              </strong>
+            </div>
+            <div className="claim-detail-tile">
+              <div className="claim-detail-tile-top">
+                <span>Vehicle class</span>
+              </div>
+              <strong>
+                {{
+                  sedan_standard: "Standard sedan",
+                  "compact-sedan": "Standard sedan",
+                  suv_crossover: "SUV / crossover",
+                  suv: "SUV / crossover",
+                  hatchback_small: "Small hatchback",
+                  hatchback: "Small hatchback",
+                  van_commercial: "Van / commercial",
+                  unknown: "Not established",
+                }[claim.vehicle.vehicle_class] ?? claim.vehicle.vehicle_class}
+              </strong>
+            </div>
+            <div className="claim-detail-tile">
+              <div className="claim-detail-tile-top">
+                <span>Date of loss</span>
+                {claim.loss_date && (
+                  <em className={`claim-detail-badge ${(claim.manually_set_fields ?? []).includes("loss_date") ? "manual" : "auto"}`}>
+                    {(claim.manually_set_fields ?? []).includes("loss_date") ? "Manual" : "Auto"}
+                  </em>
+                )}
+              </div>
+              <strong>{claim.loss_date || "—"}</strong>
+            </div>
+          </div>
+        ) : (
+          <form
+            className="claim-details-edit-form"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError("");
+              setNotice("");
+              const form = new FormData(e.currentTarget);
+              const yearStr = String(form.get("vehicle_year") || "").trim();
+              const lossStr = String(form.get("loss_date") || "").trim();
+              try {
+                await api<Claim>(`/claims/${id}`, {
+                  method: "PATCH",
+                  headers: { "Idempotency-Key": crypto.randomUUID() },
+                  body: JSON.stringify({
+                    surveyor: String(form.get("surveyor") || "").trim(),
+                    policy_number: String(form.get("policy_number") || "").trim(),
+                    vehicle_make: String(form.get("vehicle_make") || "").trim(),
+                    vehicle_model: String(form.get("vehicle_model") || "").trim(),
+                    vehicle_year: yearStr ? Number(yearStr) : null,
+                    plate: String(form.get("plate") || "").trim(),
+                    vehicle_class: String(form.get("vehicle_class") || "unknown"),
+                    workshop: String(form.get("workshop") || "").trim(),
+                    loss_date: lossStr || null,
+                  }),
+                });
+                setEditingClaimDetails(false);
+                setNotice("Claim & vehicle details updated.");
+                await reload();
+              } catch (err) {
+                setError(
+                  err instanceof Error
+                    ? err.message
+                    : "Unable to update claim details.",
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <div className="form-grid">
+              <label>
+                Field Surveyor
+                <input
+                  name="surveyor"
+                  defaultValue={claim.surveyor === "Acery AI" ? "" : claim.surveyor || ""}
+                  placeholder="e.g. H. Tan"
+                />
+              </label>
+              <label>
+                Policy number
+                <input
+                  name="policy_number"
+                  defaultValue={claim.policy_number || ""}
+                  placeholder="e.g. MOT/2026/884214"
+                />
+              </label>
+              <label>
+                Workshop
+                <input
+                  name="workshop"
+                  defaultValue={claim.workshop || ""}
+                  placeholder="e.g. Star Automotive"
+                />
+              </label>
+              <label>
+                Vehicle make
+                <input
+                  name="vehicle_make"
+                  defaultValue={claim.vehicle.make || ""}
+                  placeholder="e.g. Subaru"
+                />
+              </label>
+              <label>
+                Vehicle model
+                <input
+                  name="vehicle_model"
+                  defaultValue={claim.vehicle.model || ""}
+                  placeholder="e.g. Forester"
+                />
+              </label>
+              <label>
+                Year
+                <input
+                  name="vehicle_year"
+                  type="number"
+                  min="1950"
+                  max="2100"
+                  defaultValue={claim.vehicle.year ?? ""}
+                  placeholder="2018"
+                />
+              </label>
+              <label>
+                Registration plate
+                <input
+                  name="plate"
+                  defaultValue={claim.vehicle.plate || ""}
+                  placeholder="e.g. SMB1234A"
+                />
+              </label>
+              <label>
+                Vehicle class
+                <select
+                  name="vehicle_class"
+                  defaultValue={
+                    ({
+                      "compact-sedan": "sedan_standard",
+                      suv: "suv_crossover",
+                      hatchback: "hatchback_small",
+                    } as Record<string, string>)[claim.vehicle.vehicle_class] ??
+                    (claim.vehicle.vehicle_class || "unknown")
+                  }
+                >
+                  <option value="sedan_standard">Standard sedan</option>
+                  <option value="suv_crossover">SUV / crossover</option>
+                  <option value="hatchback_small">Small hatchback</option>
+                  <option value="van_commercial">Van / commercial</option>
+                  <option value="unknown">Not established</option>
+                </select>
+              </label>
+              <label>
+                Date of loss
+                <input
+                  name="loss_date"
+                  type="date"
+                  defaultValue={claim.loss_date || ""}
+                />
+              </label>
+            </div>
+            <div className="claim-details-edit-actions">
+              <button
+                type="button"
+                className="button button-outline button-small"
+                disabled={busy}
+                onClick={() => setEditingClaimDetails(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="button button-dark button-small"
+                disabled={busy}
+              >
+                Save changes
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+      )}
       <div className="fixture-banner">
         <Info size={18} />
         <p>
@@ -1257,6 +1563,11 @@ function ReviewOverview({ id }: { id: string }) {
                             m.entry_id === item.entry_id &&
                             m.state === "pending",
                         )
+                        .filter((m, idx, arr) =>
+                          m.type === "exclusion"
+                            ? arr.findIndex((x) => x.type === "exclusion") === idx
+                            : true,
+                        )
                         .map((mark) => (
                           <form
                             className="mark-form"
@@ -1317,6 +1628,126 @@ function ReviewOverview({ id }: { id: string }) {
                             </small>
                           </form>
                         ))}
+                      {item.row_state === "excluded" && (() => {
+                        const confirmedMark = assessment.marks.find(
+                          (m) =>
+                            m.entry_id === item.entry_id &&
+                            m.state === "confirmed" &&
+                            m.type === "exclusion",
+                        );
+                        if (!confirmedMark) return null;
+                        return (
+                          <div
+                            className="mark-restore-bar"
+                            style={{
+                              marginTop: "0.75rem",
+                              marginBottom: "0.75rem",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: "1rem",
+                              background: "#f8fafc",
+                              padding: "0.75rem 1rem",
+                              borderRadius: "8px",
+                              border: "1px solid #e2e8f0",
+                            }}
+                          >
+                            <div>
+                              <strong
+                                style={{
+                                  display: "block",
+                                  fontSize: "0.875rem",
+                                  color: "#334155",
+                                }}
+                              >
+                                Line item excluded by pen mark
+                              </strong>
+                              <span
+                                style={{
+                                  fontSize: "0.8125rem",
+                                  color: "#64748b",
+                                }}
+                              >
+                                Original printed amount:{" "}
+                                <strong>
+                                  {money(item.printed_amount, claim.currency)}
+                                </strong>
+                                . You can restore this line item to keep the
+                                original printed amount.
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="button button-outline button-small"
+                              disabled={locked}
+                              onClick={() => markDecision(confirmedMark, "reject")}
+                            >
+                              Restore line item (keep original amount)
+                            </button>
+                          </div>
+                        );
+                      })()}
+                      {item.row_state !== "excluded" && (() => {
+                        const rejectedMark = assessment.marks.find(
+                          (m) =>
+                            m.entry_id === item.entry_id &&
+                            m.state === "rejected" &&
+                            m.type === "exclusion",
+                        );
+                        if (!rejectedMark) return null;
+                        return (
+                          <div
+                            className="mark-restore-bar"
+                            style={{
+                              marginTop: "0.75rem",
+                              marginBottom: "0.75rem",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: "1rem",
+                              background: "#f8fafc",
+                              padding: "0.75rem 1rem",
+                              borderRadius: "8px",
+                              border: "1px solid #e2e8f0",
+                            }}
+                          >
+                            <div>
+                              <strong
+                                style={{
+                                  display: "block",
+                                  fontSize: "0.875rem",
+                                  color: "#334155",
+                                }}
+                              >
+                                Pen mark rejected (original amount kept)
+                              </strong>
+                              <span
+                                style={{
+                                  fontSize: "0.8125rem",
+                                  color: "#64748b",
+                                }}
+                              >
+                                Effective amount:{" "}
+                                <strong>
+                                  {money(item.effective_amount, claim.currency)}
+                                </strong>
+                                . You can still confirm the exclusion if
+                                intended.
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="button button-outline button-small"
+                              disabled={locked}
+                              onClick={() =>
+                                markDecision(rejectedMark, "confirm")
+                              }
+                            >
+                              Exclude line item (confirm mark)
+                            </button>
+                          </div>
+                        );
+                      })()}
                       {(() => {
                         const itemPage = assessment.pages?.find(
                           (p) => p.page_id === item.page_id,
@@ -2515,8 +2946,11 @@ function PrintReport({ id }: { id: string }) {
         <div className="eyebrow">CLAIM-CMEV / FROZEN REVIEW REPORT</div>
         <h1>{claim.reference}</h1>
         <p>
-          {claim.vehicle.make} {claim.vehicle.model} ({claim.vehicle.year})
-          &middot; {claim.vehicle.plate}
+          {claim.vehicle.make || claim.vehicle.model
+            ? `${claim.vehicle.make || ""} ${claim.vehicle.model || ""}`.trim()
+            : "Unspecified vehicle"}
+          {claim.vehicle.year ? ` (${claim.vehicle.year})` : ""}
+          {claim.vehicle.plate ? ` \u00b7 ${claim.vehicle.plate}` : ""}
         </p>
         <dl className="report-details">
           <dt>Policy</dt>
