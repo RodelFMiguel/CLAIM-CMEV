@@ -14,7 +14,7 @@ from typing import Literal
 from claim_cmev.contracts.documents import DocumentPage
 
 from .config import FamilySpec, LayoutFamilyConfig, ParserSettings
-from .text import normalise_text, starts_with_phrase
+from .text import find_phrases, normalise_text, starts_with_phrase, tokens
 
 AssignmentStatus = Literal["assigned", "spanning", "overlap", "outside"]
 RawKind = Literal["item", "heading", "total", "tax", "footer", "repeated_header", "continuation"]
@@ -106,6 +106,7 @@ class HeaderMatch:
 def match_header(band: Band, family: FamilySpec, word_gap: float) -> HeaderMatch:
     """Match header aliases in one band; adjacent word boxes may join into a multi-word alias."""
     table = {normalise_text(a): f for f, aliases in family.header.aliases.items() for a in aliases}
+    phrases = {tokens(a): (f, normalise_text(a)) for f, aliases in family.header.aliases.items() for a in aliases}
     longest = max(len(k.split()) for k in table)
     boxes = band.boxes
     found: list[HeaderColumn] = []
@@ -122,6 +123,12 @@ def match_header(band: Band, family: FamilySpec, word_gap: float) -> HeaderMatch
                 i = j
                 break
         else:
+            box = boxes[i]
+            hits = find_phrases(tokens(box.text.replace("$", " ")), phrases)
+            matched_fields = {f for _, _, (f, _) in hits}
+            if len(matched_fields) == 1:
+                field_name, alias = hits[0][2]
+                found.append(HeaderColumn(field_name, alias, box.x0, box.x1, (box.box_id,)))
             i += 1
     fields = [c.field for c in found]
     duplicates = tuple(sorted({f for f in fields if fields.count(f) > 1}))

@@ -4,7 +4,76 @@ Latest review fixes (2026-10-21): seven priority findings from the `test-m1-m2-i
 
 Latest live-stack build fix (2026-10-21): MinIO Go dependency downloads now use persistent BuildKit caches and up to five attempts after interrupted downloads (`unexpected EOF`). The patched `claim-cmev-minio:2025-10-15` image built successfully locally and its binary ran; full-stack startup was not exercised in this task. Resume with `sh scripts/live-stack.sh up --build -d`.
 
+Latest report update (2026-10-24, Claude Code): `docs/Project Report_ACERY_v2.docx` local reference links now point to https://github.com/RodelFMiguel/CLAIM-CMEV/blob/main/… (all 8 targets verified on origin/main); appendices added at the end: A (proposal placeholder), B (deployment guide) and C (user guide, 8 read-only screenshots of the live workbench). `cmev-web` was rebuilt from the current branch so screenshots show the cfd9472 review fixes; no claim data changed. Build script in `scratch/report-appx/`. Earlier: `docs/Project Report_ACERY_v2.docx` section 11 "Integration of all modules" written (two pages, Figure 26); Tables 2 and 3 gained the three M1 notebook runs (validation results, marked † with a note). Built from the teammate-edited v2 (backup and script in `scratch/report-integ/`); validate.py passes. Table 2 caption and the "ten configurations" text in 3.4 now undercount the rows. Earlier: section 2 "System architecture and modelling" of `docs/Project Report_ACERY_v2.docx` filled (9 subsections, Figures 2.1–2.4, Tables 2.1–2.4) from the technical/platform specs, Compose overlays and slides 4–5 of the final presentation. Captions use plain 2.N numbering so later SEQ-numbered figures/tables and their text references stay unchanged; build script and sources in `scratch/report-arch/` (original v2 backed up there); validate.py passes and every other body node is unchanged. Earlier: M4–M6 chapters of `docs/Project Report_ACERY_v1.docx` expanded with 13 tables, 15 figures (four new workflow diagrams plus figures from the selected 13 October notebook runs) and verified synthetic-validation numbers; validate.py passes and other chapters are unchanged. Details in `docs/handoffs/2026-10-24-m4-m6-report-claude.md` (final section). Earlier same-day update: `docs/Project Report_ACERY_v1.docx` now contains concise M4–M6 implementation chapters and nine linked references. Model origins, synthetic training data/splits, workflows and human-confirmation limits are documented; unrelated report content is preserved. Completed validation and continuation details are in `docs/handoffs/2026-10-24-m4-m6-report-claude.md`.
+
+Latest presentation draft (2026-10-23): `docs/CLAIM_CMEV_Final_Presentation_v1.pptx` contains ten slides in the seven agreed team sections, using the original ACERY v2 template. Architecture is updated for the configured live stack; section 6 contains editable text from the two supplied images. Other section bodies remain blank for teammates. Original deck unchanged.
+
+Latest review fixes (2026-10-21): seven priority findings from the `test-m1-m2-improvements` branch review are fixed with regression tests (wrong-row correction remapping, consolidator claim overwrite, pending amounts counted as $0 in "Agreed" totals, pre-filled identity/coverage confirmations, supplementary uploads dropping existing evidence, nginx security headers). Committed, not pushed; the running web/API containers were not rebuilt. See [the handoff](#branch-review-priority-fixes-2026-10-21).
+
+Latest live-stack build fix (2026-10-21): MinIO Go dependency downloads now use persistent BuildKit caches and up to five attempts after interrupted downloads (`unexpected EOF`). The patched `claim-cmev-minio:2025-10-15` image built successfully locally and its binary ran; full-stack startup was not exercised in this task. Resume with `sh scripts/live-stack.sh up --build -d`.
+
 Latest M2 damage model status (2026-10-19): Retrained and deployed SegFormer-B3 on **CarDD** (`damage-cardd/damage_cardd-segformer-20261018T160256Z-377ddc4e-serving`). Validation foreground mIoU on CarDD is **0.7283** (72.83%) with dent precision **73.79%** and background IoU **92.71%**. Model is verified active in `configs/models/damage.yaml`, mounted into containers, and verified live in end-to-end claim reviews.
+
+## Automated Survey Metadata Extraction, Reviewer Mark Decision Reversals, Crossed-Out Row Amount Preservation & UI Polishing (2026-10-25)
+
+- **Changed paths:**
+  - `src/claim_cmev/documents/surveyor.py`:
+    - Implemented report metadata extraction (`extract_report_metadata`, `extract_report_metadata_from_pages`, `apply_extracted_metadata_to_claim`, `claim_needs_metadata_extraction`) covering Vehicle Make, Model, Year, Plate, Workshop, Date of Loss, and Field Surveyor from OCR text boxes.
+    - Preserves reviewer manual overrides via `manually_set_fields`.
+  - `src/claim_cmev/documents/line_items/layoutlmv3.py`:
+    - Added `_resolve_row_numeric_fields` to isolate confident numeric amount boxes and move low-confidence remarks digits to unparsed regions instead of dropping the printed amount.
+  - `src/claim_cmev/orchestration/consolidation.py` & `src/claim_cmev/api/views.py`:
+    - Added recovery logic to parse and preserve printed line amounts from text representations like `"120.00 77"`.
+    - Maintained `field_uncertainty` consistency for `amount_box_norm` when recovering printed amounts.
+  - `src/claim_cmev/api/main.py`:
+    - Updated claim creation and update endpoints to accept optional intake metadata and support manual edits.
+    - Enabled decision reversal/toggling: resets mark states and filters conflicting prior corrections so reviewers can switch between confirmed and rejected exclusion marks.
+    - Updated claim queue sorting to place the latest claims at the top and earliest cases at the bottom.
+  - `src/claim_cmev/documents/pen_marks/linking.py`:
+    - Improved deduplication of overlapping pen marks on the same row.
+  - `src/workbench/src/ClaimReview.tsx` & `src/workbench/src/styles.css`:
+    - Removed duplicate "Confirm exclusion" buttons on pending marks.
+    - Added a "Restore line item (keep original amount)" action for excluded line items, retaining original printed amounts in display.
+    - Realigned "Edit details" grid layout and spacing to match view mode tile positions (Row 1: Surveyor, Policy, Workshop; Row 2: Make, Model, Year; Row 3: Plate, Class, Date).
+    - Replaced the top duplicate surveyor display with an integrated details card with manual/auto tags.
+    - Hid the intermediate/background processing table while running, displaying only the processing status banner until final review is ready.
+  - `src/workbench/src/App.tsx`:
+    - Simplified "New claim" intake: only requires policy number and evidence files, deferring vehicle details to auto-extraction.
+  - `src/workbench/src/DamageSummary.tsx`:
+    - Sized defect photo evidence to fit printed pages cleanly.
+  - `tests/unit/m5/test_m5_layoutlmv3.py` & `tests/unit/test_report_metadata_extraction.py`:
+    - Added unit tests for crossed-out printed amount preservation and survey report metadata extraction.
+- **Decisions and status:**
+  - Automated report metadata extraction replaces tedious manual claim intake entry while allowing full surveyor editing and audit traceability in review.
+  - Crossed-out estimate rows preserve original printed amounts and provide bidirectional decision control (confirm exclusion vs restore line item).
+  - Production container images and assets rebuilt and verified live.
+- **Validation evidence:**
+  - Unit tests passed for layoutlmv3 and metadata extraction.
+  - End-to-end verified on `CLM-24051`: both restored state ($120 active) and confirmed exclusion ($120 preserved, excluded) verified via live API and UI proxy.
+- **Next concrete step:**
+  - Continue standard surveyor review workflows on new claims.
+
+- **Changed paths:**
+  - `src/claim_cmev/documents/text_layout/geometry.py`:
+    - Updated `_boundary_contrast()` to use `max(0.0, float(np.median(small[inner])) - float(np.median(small[outer])))` instead of `abs(...)` so dark interior table borders/section bars on a bright white flat scan (`inner = 56`, `outer = 255`) are not mistaken for a bright page against a dark background and do not crop out the bottom estimate table (`y = 1693..2400`).
+  - `src/claim_cmev/documents/line_items/table.py` & `configs/pipeline/m5_layout_families.yaml`:
+    - Added `"ACTION"` / `"ACTN"` and `"OPERATION"` / `"OPER"` to operation header aliases across layout families.
+    - Updated `match_header()` to fall back to `find_phrases()` phrase matching inside a single header cell when exact full-string matching does not match (e.g. `"Description of Parts / Repair"`, `"Action"`, `"Amount (SGD)"`).
+  - `src/claim_cmev/documents/line_items/layoutlmv3.py`:
+    - Updated `adapt_predictions()` to require a `description` token in a candidate band (`if any(field == "description" for _, field in band_fields):`) before emitting a `LineItem`, placing standalone handwritten numbers between rows (such as `'400'`) into `unparsed_regions` instead of creating a phantom row.
+  - `configs/pipeline/m6_linking_serving.yaml`:
+    - Lowered `detection.score_threshold.exclusion` and `price_change` to `0.45` so the `0.492` confidence pen-mark detection over `'450.00'` is retained and linked.
+  - `tests/unit/m5/test_m5_table.py` & `tests/unit/m5/test_m5_layoutlmv3.py`:
+    - Added unit tests `test_flexible_header_keyword_matching_for_description_action_and_amount` and `test_standalone_amount_without_description_is_unparsed_not_phantom_row`.
+- **Decisions and status:**
+  - Synced updated modules to running worker and API containers, restarted services, and committed `input_revision = 2` for `CLM-24046` (`01M5Q9TQXRB5S6AYQC9G1PKWXQ`).
+- **Validation evidence:**
+  - Unit tests in `tests/unit/m4/test_m4_geometry.py`, `tests/unit/m5/test_m5_table.py`, and `tests/unit/m5/test_m5_layoutlmv3.py` all passed.
+  - `CLM-24046` (`assessment_revision = 2`, status `in_review`) extracted all 4 line items (`declared_total = 2040.00 SGD`) and linked pen mark `pm-a082a84d2612d4cddd92d4aa` (`EX-1`) to Row 3 (`Rear bumper cover`, `450.00`).
+- **Limitations:**
+  - Container Python package updates were synced via `docker cp`; rebuilding the container images will bake these changes permanently into the image layers.
+- **Next concrete step:**
+  - Review and confirm the linked pen mark on `CLM-24046` in the workbench UI.
 
 ## Auto-Positioning for Missed Pen Mark Actions (2026-10-22)
 
@@ -3677,3 +3746,43 @@ Uncommitted work, limitations and missing prerequisites:
 - Prettier flags the four touched UI files, as it did at `167de5f`; they were not reformatted.
 - No Docker/Kafka/PostgreSQL run: the row lock is exercised only on SQLite, which ignores `FOR UPDATE`.
 Next concrete step and agreed owner (or unassigned): rebuild `cmev-api` and `cmev-web` with `sh scripts/live-stack.sh up --build -d` and spot-check a claim with a pending mark; then fix the batch-replay regression and the remaining review findings (unassigned).
+
+## Final presentation v1 (2026-10-23)
+
+Date/time and timezone: 2026-10-23, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request.
+Task and relevant module: Prepare the final presentation scaffold and update architecture / future improvements content.
+Branch / baseline commit / resulting commit or PR (if one exists): `test-m1-m2-improvements`, baseline `cfd9472`; no commit or push made.
+Changed paths and completed behaviour:
+- `docs/CLAIM_CMEV_Final_Presentation_v1.pptx`: ten slides with seven native PowerPoint sections and assigned presenter names. Retains the original cover artwork, theme, photographic slide background and institutional footers. Section 3 has editable high-level and technical architecture diagrams. Section 6 has two editable slides transcribed from the user's limitations/recommendations images. Sections 1, 2, 4, 5 and 7 have blank editable body placeholders.
+- `CONTEXT.md`: draft status and handoff.
+Decisions (accepted/proposed) and references:
+- Follow the seven sections explicitly requested by the user. Future-improvements material includes both supplied images; potential applications remains blank.
+- Update the original slides 7/8 architecture against `scripts/live-stack.sh`, the three Compose overlays, current worker roles and model/cost configurations. Depict the current lean combined orchestration/M8 worker, one M1–M3 image worker, three M4/M5/M6 document workers, Kafka/Redpanda, PostgreSQL, MinIO, read-only registry and offline M7 build. Replace the stale fixture/planned-split presentation. Speaker notes record source paths and candidate/synthetic limitations.
+Checks actually run, results and artifact locations:
+- Rendered source and final decks with local headless LibreOffice. Final PDF has ten pages. Inspected a full contact sheet and the corrected high-level architecture slide.
+- Verified every visible text paragraph appears in the rendered PDF, ZIP integrity, seven native sections assigning all ten slides exactly once, and the five blank editable teammate body placeholders.
+- Verified the original `docs/ACERY_Project_Presentation_v2.pptx` SHA-256 remained unchanged.
+- Build script, render previews and validation summary are in ignored `scratch/final-presentation/`; temporary presentation libraries are under `/private/tmp/cmev-final-presentation-venv`.
+Uncommitted work, limitations and missing prerequisites: New deck and handoff remain uncommitted. No live deployment/model evaluation was performed. Supplied section-6 wording about separate ResNet50 evaluation is retained without new experimental verification. Rendering checked with LibreOffice, not the Microsoft PowerPoint application.
+Next concrete step and agreed owner (or unassigned): Edwin fills sections 1/2; Yann fills section 4; Charlene / Arun fill section 5; Arun fills section 7. Rodel reviews the architecture slides and Charlene reviews section 6 before the team finalises the deck.
+
+## M4–M6 report implementation details and Claude handover (2026-10-24)
+
+Date/time and timezone: 2026-10-24, Asia/Singapore.
+Contributor / coding agent: Codex, at the user's request.
+Task and relevant module: Update report chapters for M4 page reading, M5 line-item extraction and M6 pen-mark recognition; prepare a persistent handover for Claude.
+Branch / baseline commit / resulting commit or PR (if one exists): `test-m1-m2-improvements`, baseline `cfd9472`; no commit or push made.
+Changed paths and completed behaviour:
+- `docs/Project Report_ACERY_v1.docx`: replaced blank chapters 6–8 with approximately 1,030 words of concise implementation detail. Added nine references with 13 hyperlinks after the existing locked Mendeley bibliography. Updated cached chapter titles and marked contents fields for refresh. Kept other chapter content, all figures, all 16 tables, styles, headers and footers.
+- `docs/handoffs/2026-10-24-m4-m6-report-claude.md`: request, finished status, evidence, verified implementation facts, file locations, original/final hashes, preservation method, local tools and optional continuation steps.
+- `CONTEXT.md`: status and handoff.
+Decisions (accepted/proposed) and references:
+- Document actual neural M5 serving, distinguishing it from older parser-only specification text. Describe M4 pretrained OCR without project-specific training, M5 LayoutLMv3 and M6 Faster R-CNN fine-tuned on the annotated 500-page synthetic dataset, claim-grouped splits and real-page limitations. Use the selected 13 October export manifests for epoch details, not historical 12 October reference-run metrics. Retain human authority over exclusions and revised amounts; TrOCR remains disabled.
+- References checked against the M4–M6 specifications, both requested notebooks, current code/configuration, dataset documentation and cache receipt, selected artifact manifests, and official model documentation/papers. No new model run or accuracy claim.
+Checks actually run, results and artifact locations:
+- Original/updated report rendered with LibreOffice: 78 / 79 pages; new module content on pages 69–72, added references on page 79. Reviewed section and reference renderings, corrected numerical notation/reference alignment, and confirmed all 27 new paragraphs/subheadings plus three chapter titles appear in PDF extraction.
+- OOXML ZIP integrity, unchanged non-target archive entries, canonical equality of unrelated original body nodes and all 16 tables passed. All 13 new hyperlinks checked; local repository targets exist and external sources were opened.
+- Original backup, exact generation script, validation script/summary and renderings remain in ignored `scratch/report-m4-m6/`. Final validation summary reports `passed`. Original DOCX SHA-256: `c461c38dda2828b5e478cc840a233801421a5d6fd8a839638ecf3a8d709221e3`.
+Uncommitted work, limitations and missing prerequisites: Report was supplied as an untracked file; updated report, handover and earlier presentation remain uncommitted. No Microsoft Word application check, live deployment or new model evaluation. Full TOC subsection/page-number refresh may be needed in Word; fields are configured for refresh. Local relative references require the repository alongside the report.
+Next concrete step and agreed owner (or unassigned): User/teammates review the completed M4–M6 prose and refresh the full TOC in Word. Claude can read the named handover and current files if further changes are requested; no required implementation work remains for this report update.

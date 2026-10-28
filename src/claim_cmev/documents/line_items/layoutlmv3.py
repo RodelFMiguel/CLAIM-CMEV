@@ -248,6 +248,60 @@ class LocalLayoutLMv3:
                      for index, box in enumerate(words.boxes))
 
 
+def _resolve_row_numeric_fields(
+    band_fields: list[tuple[WordPrediction, str]],
+    source: dict[str, Any],
+    builder: _Builder,
+    family: Any,
+    min_confidence: float,
+    min_box_confidence: float,
+    unparsed_set: set[str],
+) -> list[tuple[WordPrediction, str]]:
+    """When a row band has multiple boxes predicted for a scalar numeric field (e.g. a real
+    printed amount plus a low-confidence stray box from a crossed-out remarks column), keep
+    the confident valid numeric box and move the stray box to ``unparsed_set``.
+    """
+    def is_confident(pred: WordPrediction) -> bool:
+        box = source[pred.box_id]
+        return (
+            pred.confidence >= min_confidence
+            and box.confidence is not None
+            and box.confidence >= min_box_confidence
+        )
+
+    drop_ids: set[str] = set()
+    for num_field in ("amount", "unit_price", "qty"):
+        pairs = [(pred, fld) for pred, fld in band_fields if fld == num_field]
+        if len(pairs) <= 1:
+            continue
+        all_boxes = [source[p.box_id] for p, _ in pairs]
+        joined_res, _ = builder.numeric(family, num_field, all_boxes, frozenset({num_field}), {})
+        if all(is_confident(p) for p, _ in pairs) and joined_res.value is not None:
+            continue
+        valid_candidates: list[tuple[int, float, str]] = []
+        dec_sep = family.numbers.decimal_separator
+        for p, _ in pairs:
+            if not is_confident(p):
+                continue
+            box = source[p.box_id]
+            res, _ = builder.numeric(family, num_field, [box], frozenset({num_field}), {})
+            if res.value is not None:
+                has_dec = 1 if (dec_sep and dec_sep in box.text and num_field in ("amount", "unit_price")) else 0
+                score = p.confidence * (box.confidence or 0.0)
+                valid_candidates.append((has_dec, score, p.box_id))
+        if valid_candidates:
+            valid_candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
+            keep_id = valid_candidates[0][2]
+            for p, _ in pairs:
+                if p.box_id != keep_id:
+                    drop_ids.add(p.box_id)
+                    unparsed_set.add(p.box_id)
+
+    if not drop_ids:
+        return band_fields
+    return [(p, f) for p, f in band_fields if p.box_id not in drop_ids]
+
+
 def adapt_predictions(pages, predictions, *, config: LayoutFamilyConfig,
                       vocabulary: EstimateVocabulary, family_id: str, job_key: str,
                       claim_id: str, input_revision: int, currency: str, cost_basis: str,
@@ -295,9 +349,17 @@ def adapt_predictions(pages, predictions, *, config: LayoutFamilyConfig,
         slot = 0
         for band in candidate_bands:
             band_fields = [matched_by_box[b.box_id] for b in band.boxes]
-            if any(field in ("description", "amount") for _, field in band_fields):
+            if any(field == "description" for _, field in band_fields):
                 slot += 1
-                groups[slot] = band_fields
+                groups[slot] = _resolve_row_numeric_fields(
+                    band_fields,
+                    source,
+                    builder,
+                    family,
+                    min_confidence,
+                    config.parser.min_box_confidence,
+                    unparsed_set,
+                )
             else:
                 unparsed_set.update(b.box_id for b in band.boxes)
         unparsed = [p.box_id for p in predicted if p.box_id in unparsed_set]

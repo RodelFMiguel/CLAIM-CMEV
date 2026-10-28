@@ -150,7 +150,7 @@ def _boundary_contrast(small: np.ndarray, quad: np.ndarray, strip: int) -> tuple
     touches = outer.sum() < 0.25 * inner.sum()
     if outer.sum() == 0:
         return None, touches
-    return abs(float(np.median(small[inner])) - float(np.median(small[outer]))), touches
+    return max(0.0, float(np.median(small[inner])) - float(np.median(small[outer]))), touches
 
 
 def estimate_skew(image: np.ndarray, cfg: PageConfig) -> SkewEstimate:

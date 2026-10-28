@@ -2,8 +2,8 @@
 link_config_version: m6-linking-serving/20261014
 detection:
   score_threshold:
-    exclusion: 0.89
-    price_change: 0.59
+    exclusion: 0.45
+    price_change: 0.45
   dedupe_iou: 0.6
 band:
   extend_above_row_heights: 0.6
